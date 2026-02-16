@@ -133,7 +133,7 @@ export const boardData: WemaBoardData = {
     {
       id: 'poweredby',
       x: 0, y: 0,
-      width: 220, height: 110,
+      width: 260, height: 110,
       text: [
         '<b>Powered by</b><br><br>',
         siIcon(siCloudflarepages, 'https://pages.cloudflare.com'),
@@ -142,6 +142,7 @@ export const boardData: WemaBoardData = {
         siIcon(siTypescript, 'https://www.typescriptlang.org'),
         siIcon(siNpm, 'https://www.npmjs.com/package/@kanf/wema'),
         siIcon(siClaude, 'https://claude.com/product/claude-code'),
+        siIcon(siGithub, 'https://github.com/kan/fushihara.net'),
       ].join(''),
       color: C.poweredby,
       zIndex: 1,
