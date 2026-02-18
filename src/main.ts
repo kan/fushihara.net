@@ -117,6 +117,15 @@ function animateToLayout(targets: Map<string, NoteLayout>, duration = 300) {
   requestAnimationFrame(step);
 }
 
+// On mobile, expand all collapsed edges (no hover to toggle)
+if (window.innerWidth < MOBILE_BP) {
+  for (const edge of boardData.edges) {
+    if (edge.collapsed) {
+      board.updateEdge(edge.id, { collapsed: false });
+    }
+  }
+}
+
 // Initial layout (instant)
 applyLayout(getTargetLayout());
 

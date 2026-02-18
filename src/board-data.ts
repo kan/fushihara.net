@@ -1,7 +1,7 @@
 import type { WemaBoardData } from '@kanf/wema';
 import {
   siBluesky, siX, siGithub, siFacebook, siInstagram,
-  siCloudflarepages, siCloudflareworkers, siVite, siTypescript, siNpm, siClaude,
+  siCloudflarepages, siCloudflareworkers, siVite, siTypescript, siClaude,
 } from 'simple-icons';
 
 // Left-accent stripe colors (card theme uses note.color for the stripe)
@@ -17,6 +17,13 @@ const C = {
   interests: '#CE93D8',// Light purple
   poweredby: '#555',   // Subtle gray
 } as const;
+
+// Monochrome wema icon (official logo with #999 tones)
+const wemaIcon = (href: string) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M15 9.5C21 9.5 23.5 12 23.5 15" fill="none" stroke="#999" stroke-width="1.5" stroke-linecap="round"/><polygon points="23.5,17 21.5,14 25.5,14" fill="#999"/><rect x="2" y="4" width="13" height="11" rx="2" fill="#999"/><line x1="5" y1="8" x2="12" y2="8" stroke="#fff" opacity=".6" stroke-linecap="round"/><line x1="5" y1="11" x2="10" y2="11" stroke="#fff" opacity=".6" stroke-linecap="round"/><rect x="17" y="17" width="13" height="11" rx="2" fill="#999"/><line x1="20" y1="21" x2="27" y2="21" stroke="#fff" opacity=".6" stroke-linecap="round"/><line x1="20" y1="24" x2="25" y2="24" stroke="#fff" opacity=".6" stroke-linecap="round"/></svg>`;
+  const uri = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  return `<a href="${href}" target="_blank"><img src="${uri}" width="22" height="22" style="vertical-align:middle"></a>`;
+};
 
 // Build a data URI from a simple-icons path (monochrome #999)
 const siIcon = (si: { path: string }, href: string) => {
@@ -140,7 +147,7 @@ export const boardData: WemaBoardData = {
         siIcon(siCloudflareworkers, 'https://workers.cloudflare.com'),
         siIcon(siVite, 'https://vitejs.dev'),
         siIcon(siTypescript, 'https://www.typescriptlang.org'),
-        siIcon(siNpm, 'https://www.npmjs.com/package/@kanf/wema'),
+        wemaIcon('https://www.npmjs.com/package/@kanf/wema'),
         siIcon(siClaude, 'https://claude.com/product/claude-code'),
         siIcon(siGithub, 'https://github.com/kan/fushihara.net'),
       ].join(''),
@@ -150,7 +157,7 @@ export const boardData: WemaBoardData = {
   ],
 
   edges: [
-    { id: 'e-email', from: 'center', to: 'email', fromAnchor: 'auto', toAnchor: 'auto', style: 'dashed', lineStyle: 'dashed', arrowHead: 'none', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-email', from: 'center', to: 'email', fromAnchor: 'auto', toAnchor: 'auto', style: 'dashed', lineStyle: 'dashed', arrowHead: 'none', strokeWidth: 2, routing: 'curve', collapsed: true },
     { id: 'e-social', from: 'center', to: 'social', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
     { id: 'e-zenn', from: 'center', to: 'zenn', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
     { id: 'e-book', from: 'center', to: 'book', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
