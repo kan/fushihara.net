@@ -9,6 +9,8 @@ on:
   pull_request:
     paths-ignore:
       - 'blog/**'
+  # デプロイをスキップした後などに、手で出したいとき用
+  workflow_dispatch:
 
 # GITHUB_TOKEN は checkout の読み取りにしか使わない。Cloudflare へのデプロイは
 # 別の secrets を使うため、既定の書き込み権限は与えない。
@@ -16,6 +18,52 @@ permissions:
   contents: read
 
 jobs:
+  # 配信物に影響しない変更 (ドキュメント / テスト / CI 設定) だけの push で
+  # デプロイを回さないための判定。テスト自体は変更の内容によらず必ず走らせる。
+  changes:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      deployable: ${{ steps.check.outputs.deployable }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # deployed タグと全履歴が要る
+          fetch-depth: 0
+      - id: check
+        run: |
+          set -euo pipefail
+
+          # ビルド成果物と Worker の設定に影響する = 変わればデプロイが要るパス。
+          # tsconfig / test / e2e / *.md / .github は成果物を変えないので含めない。
+          deploy_paths='^(src/|worker/|public/|index\.html$|package\.json$|package-lock\.json$|vite\.config\.ts$|wrangler\.jsonc$)'
+
+          # 比較元は「前回デプロイした地点」。直前の push と比べると、テスト失敗などで
+          # デプロイされずに終わった変更が、次の無関係な push で「変更なし」と判定されて
+          # 恒久的に取り残される。deployed タグは deploy ジョブが成功時に進める。
+          if ! base=$(git rev-parse -q --verify 'refs/tags/deployed^{commit}'); then
+            echo "deployed タグが無いため、判定せずデプロイします"
+            echo "deployable=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "前回デプロイ: $base"
+
+          # --no-renames を付けないと、配信パスから外へ移動したファイルが
+          # 移動先だけしか出力されず、削除を見落とす。
+          changed=$(git diff --no-renames --name-only "$base" "$GITHUB_SHA")
+          echo "前回デプロイ以降に変更されたファイル:"
+          echo "$changed"
+
+          # here-string にすること。パイプにすると grep -q の即時終了で echo が
+          # SIGPIPE を受け、pipefail により黙って「変更なし」と誤判定する。
+          if grep -qE "$deploy_paths" <<< "$changed"; then
+            echo "配信物に影響する変更があります → デプロイします"
+            echo "deployable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "配信物に影響する変更がありません → デプロイをスキップします"
+            echo "deployable=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -37,9 +85,12 @@ jobs:
           retention-days: 7
 
   deploy:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, changes]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.deployable == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      # deployed タグを進めるため。他のジョブは既定の read のまま
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -52,3 +103,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # 次回の判定基準。ここが失敗しても既にデプロイは済んでいるので、
+      # 次の push で再デプロイされるだけ (安全側)。
+      - name: デプロイ地点を記録する
+        run: |
+          git tag -f deployed "$GITHUB_SHA"
+          git push -f origin refs/tags/deployed

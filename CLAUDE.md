@@ -55,8 +55,55 @@ E2E で踏みやすい罠が 2 つある。
   OS 設定の変化を 2 段階で試すときは、1 段ずつ発火を確認してから次へ進める
   （`e2e/theme.spec.ts` の「保存だけ失敗する環境でも〜」参照）
 
-main への push で `.github/workflows/deploy.yml` が同じ deploy を実行する
-（`blog/**` のみの変更は `paths-ignore` でスキップ）。
+## コミット前の手順
+
+**コード変更を含むコミットの前に、次を順に実行する。**
+
+1. `/code-review` — 実害のあるバグを洗う
+2. `/simplify` — 重複・冗長・設計の深さを見て直す
+3. `npm run typecheck && npm test && npm run test:e2e`
+4. ユーザーの承認を得てからコミットする
+
+順番に実行すること。`/simplify` は修正を適用するので、`/code-review` と
+並行させると衝突する。ドキュメントだけの変更ならスキップしてよい。
+
+指摘に対応したら、**意図的に実装を壊して該当テストだけが落ちることを確認する**。
+このリポジトリでは、通ったはずのテストが実は何も検証していなかった例が
+複数回あった（詳細は「動的データ」節の E2E の罠を参照）。
+
+なお `/code-review` と `/simplify` のサブエージェントが結果を返さないことがある。
+その場合は待たずに、同じ観点を自分で見て直す。
+
+## CI とデプロイ
+
+main への push で `.github/workflows/deploy.yml` が動く。
+
+- `test` は**変更の内容によらず必ず走る**（push / pull_request の両方）
+- `deploy` は `changes` ジョブの判定で、**配信物に影響する変更があるときだけ**走る。
+  対象は `src/` `worker/` `public/` `index.html` `package.json` `package-lock.json`
+  `vite.config.ts` `wrangler.jsonc`。ドキュメント・テスト・tsconfig・CI 設定だけの
+  変更ではデプロイしない
+- 判定の比較元は **`deployed` タグ**（deploy ジョブが成功時に進める軽量タグ）。
+  直前の push と比べてはいけない。テスト失敗などでデプロイされずに終わった変更が、
+  次の無関係な push で「変更なし」と判定されて**恒久的に取り残される**ため。
+  タグが無いときは安全側に倒してデプロイする
+- スキップされた後に手で出したいときは `workflow_dispatch`（Actions 画面の Run workflow）
+- `blog/**` のみの変更は `paths-ignore` でワークフローごとスキップ（Phase 2 用）
+
+注意点:
+
+- **`.github/` は `deploy_paths` に入っていない。** deploy ステップ自体を変えた
+  （`wrangler deploy` にオプションを足した等）コミットではデプロイが走らないので、
+  その変更を試したいときは `workflow_dispatch` を回す
+- デプロイ先を変えるパスを増やしたら `deploy_paths` にも足すこと
+- `git diff` には **`--no-renames`** が要る。付けないと配信パスの外へ移動した
+  ファイルが移動先しか出力されず、削除を見落とす
+- 判定は `grep -qE ... <<< "$changed"` と here-string で書く。パイプにすると
+  `grep -q` の即時終了で `echo` が SIGPIPE を受け、`pipefail` により
+  **黙って「変更なし」と誤判定する**（ジョブは成功したまま）
+- `deployed` タグは毎回 force update されるので、手元で `git fetch --tags` すると
+  `would clobber existing tag` と拒否されることがある。`git fetch --tags --force`
+  で解消する（通常の `git pull` では起きない）
 
 ## Architecture
 
