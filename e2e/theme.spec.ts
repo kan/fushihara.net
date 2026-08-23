@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { STORAGE_KEY } from '../src/theme';
+import { STORAGE_KEY } from '../shared/theme';
 
 // 外部 API は描画待ちを安定させるためだけにモックする（内容は問わない）。
 test.beforeEach(async ({ page }) => {

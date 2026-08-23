@@ -1,0 +1,33 @@
+{
+  "name": "fushihara-net-blog",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "//clean:dev-store": "astro dev のコンテンツストアは cacheDir ではなく .astro/ にある。BLOG_CONTENT_DIR の切り替えを覚えていないので、dev と dev:fixtures を行き来すると前のモードの記事が残る。起動のたびに捨てる (記事数が少ないので再同期は一瞬)",
+    "clean:dev-store": "rm -rf .astro/data-store.json .astro/content-assets.mjs",
+    "dev": "npm run clean:dev-store && astro dev",
+    "dev:fixtures": "npm run clean:dev-store && BLOG_CONTENT_DIR=./test-content/posts astro dev",
+    "//clean:build-store": "astro build は記事の削除・リネームをストアに反映しない。消した記事がページ・一覧・RSS に出続ける (実測)。ビルドのたびに捨てて同期し直す。cacheDir を分けてある両モード分を消すのは、どちらで走ってもよいようにするため",
+    "clean:build-store": "rm -f node_modules/.astro/data-store.json node_modules/.astro-e2e/data-store.json",
+    "check:post-layout": "bash scripts/assert-post-layout.sh",
+    "build": "npm run check:post-layout && npm run clean:build-store && rm -rf dist && astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "test:e2e": "playwright test",
+    "check:no-fixtures": "bash scripts/assert-no-fixtures.sh",
+    "deploy": "npm run build && npm run check:no-fixtures && wrangler deploy -c ./wrangler.jsonc"
+  },
+  "dependencies": {
+    "astro": "^7.2.4"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.5",
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.3",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.2.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.125.0"
+  }
+}

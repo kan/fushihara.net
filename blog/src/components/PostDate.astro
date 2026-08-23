@@ -1,0 +1,15 @@
+---
+import { isoDate, displayDate } from '../lib/date';
+
+interface Props {
+  date: Date;
+  /** 「更新 」のような前置き。付けないと公開日として読まれる */
+  label?: string;
+}
+
+const { date, label } = Astro.props;
+---
+
+<!-- label は <time> の外。中身は日付そのものでないと、datetime 属性と食い違ううえ
+     テキストでの突き合わせも壊れる。 -->
+<span class="post-date">{label}<time datetime={isoDate(date)}>{displayDate(date)}</time></span>

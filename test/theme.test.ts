@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STORAGE_KEY, isTheme, nextTheme, resolveInitialTheme } from '../src/theme';
+import { STORAGE_KEY, isTheme, nextTheme, resolveInitialTheme } from '../shared/theme';
 
 describe('isTheme', () => {
   it('light と dark だけを受け付ける', () => {

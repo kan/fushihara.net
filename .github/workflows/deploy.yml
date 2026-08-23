@@ -3,7 +3,7 @@ name: CI / Deploy to Cloudflare Workers
 on:
   push:
     branches: [main]
-    # ブログ (Phase 2) は独立した Worker として別ジョブでデプロイする
+    # ブログは独立した Worker なので deploy-blog.yml が受け持つ
     paths-ignore:
       - 'blog/**'
   pull_request:
@@ -36,7 +36,9 @@ jobs:
 
           # ビルド成果物と Worker の設定に影響する = 変わればデプロイが要るパス。
           # tsconfig / test / e2e / *.md / .github は成果物を変えないので含めない。
-          deploy_paths='^(src/|worker/|public/|index\.html$|package\.json$|package-lock\.json$|vite\.config\.ts$|wrangler\.jsonc$)'
+          # shared/ はブログと共用するトークンとテーマ定数。本体の CSS/JS に入るので要る
+          # (同じ変更でブログ側も deploy-blog.yml が拾う)。
+          deploy_paths='^(src/|shared/|worker/|public/|index\.html$|package\.json$|package-lock\.json$|vite\.config\.ts$|wrangler\.jsonc$)'
 
           # 比較元は「前回デプロイした地点」。直前の push と比べると、テスト失敗などで
           # デプロイされずに終わった変更が、次の無関係な push で「変更なし」と判定されて

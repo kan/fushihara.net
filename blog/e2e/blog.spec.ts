@@ -1,0 +1,265 @@
+import { test, expect, type Page } from '@playwright/test';
+import { STORAGE_KEY } from '../../shared/theme';
+import { SITE_NAME, pageTitle } from '../src/lib/site';
+
+/**
+ * このファイルは「Astro のテスト」ではなく「ブログの契約のテスト」。
+ *
+ * 対象は content/ の実記事ではなく test-content/ のフィクスチャ。実記事に依存させると
+ * 記事を書き換えるたびにテストが落ちるため (playwright.config.ts の BLOG_CONTENT_DIR)。
+ * CONTRACT.md に書いた URL / RSS / 404 / テーマの取り決めだけを検査していて、
+ * Astro 固有の API には一切触れていない。将来生成器を自作 OSS に置き換えるとき、
+ * そのまま合否判定に使えることを狙っている。
+ */
+
+const POST = '/blog/rendering-sample/';
+
+async function themeState(page: Page) {
+  return page.evaluate(() => ({
+    attr: document.documentElement.dataset.theme ?? null,
+    bg: getComputedStyle(document.body).backgroundColor,
+  }));
+}
+
+test.describe('URL 設計', () => {
+  test('一覧が記事へリンクする', async ({ page }) => {
+    await page.goto('/blog/');
+    const link = page.getByRole('link', { name: '描画サンプル' });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', POST);
+  });
+
+  test('記事は /blog/<slug>/ で開ける', async ({ page }) => {
+    const res = await page.goto(POST);
+    expect(res?.status()).toBe(200);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      `https://fushihara.net${POST}`,
+    );
+    await expect(page.getByRole('heading', { level: 1, name: '描画サンプル' })).toBeVisible();
+  });
+
+  test('末尾スラッシュ無しは付きへ寄せられる', async ({ page }) => {
+    await page.goto('/blog/rendering-sample');
+    expect(new URL(page.url()).pathname).toBe(POST);
+  });
+
+  test('存在しないパスは 404 ページを返す', async ({ page }) => {
+    const res = await page.goto('/blog/no-such-post/');
+    expect(res?.status()).toBe(404);
+    await expect(page.getByRole('heading', { level: 1, name: '404' })).toBeVisible();
+  });
+
+  test('404 ページはインデックスさせない', async ({ page }) => {
+    // /blog/404 は素直に辿ると 200 を返せてしまう。canonical で指すと実在ページとして
+    // 拾われるので、canonical を出さず noindex を立てる。
+    await page.goto('/blog/no-such-post/');
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex');
+    await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
+  });
+});
+
+test.describe('ナビゲーション', () => {
+  // パンくずが「どこにいるか」と「戻り道」の両方を担っている。ここが壊れると
+  // 記事から検索で来た人がポートフォリオにも一覧にも辿り着けない。
+  test('記事からポートフォリオと一覧に戻れる', async ({ page }) => {
+    await page.goto(POST);
+    await expect(page.getByRole('link', { name: 'fushihara.net' })).toHaveAttribute('href', '/');
+    await expect(page.getByRole('link', { name: 'blog', exact: true })).toHaveAttribute('href', '/blog/');
+  });
+
+  test('見出しは一覧ではパンくず、記事では記事名', async ({ page }) => {
+    await page.goto('/blog/');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('blog');
+
+    await page.goto(POST);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('描画サンプル');
+  });
+});
+
+test.describe('並び順と日付', () => {
+  test('新しい順。date が同じときは slug の昇順', async ({ page }) => {
+    await page.goto('/blog/');
+    const paths = await page
+      .locator('.post-list h2 a')
+      .evaluateAll((els) => els.map((el) => new URL((el as HTMLAnchorElement).href).pathname));
+
+    expect(paths).toEqual([
+      '/blog/rendering-sample/', // 8/23
+      '/blog/order-time-z/', // 8/20 21:00 — slug は a より後ろだが時刻で勝つ
+      '/blog/order-time-a/', // 8/20 08:00
+      '/blog/order-tie-a/', // 8/19 — date が同じなので slug 昇順
+      '/blog/order-tie-b/', // 8/19
+    ]);
+  });
+
+  test('早朝 JST の記事が前日にならない', async ({ page }) => {
+    await page.goto('/blog/order-time-a/');
+    // frontmatter は 2026-08-20T08:00:00+09:00。UTC で切り出すと 8/19 になってしまう
+    const time = page.locator('article time').first();
+    await expect(time).toHaveAttribute('datetime', '2026-08-20');
+    await expect(time).toHaveText('2026/08/20');
+  });
+});
+
+test.describe('記事の描画', () => {
+  test('見出し・コード・画像・引用が出る', async ({ page }) => {
+    await page.goto(POST);
+    await expect(page.getByRole('heading', { level: 2, name: '見出し 2' })).toBeVisible();
+
+    // コードブロックがハイライトされている。span があるだけでは Shiki の色付けが
+    // 効いているか分からない (色が当たらなくても span は出る) ので、地の文と違う色に
+    // なっていることまで見る。
+    const keyword = page.locator('pre code span', { hasText: 'export' }).first();
+    await expect(keyword).toBeVisible();
+    const [codeColor, bodyColor] = await Promise.all([
+      keyword.evaluate((el) => getComputedStyle(el).color),
+      page.locator('body').evaluate((el) => getComputedStyle(el).color),
+    ]);
+    expect(codeColor).not.toBe(bodyColor);
+
+    const img = page.getByAltText('サンプル画像');
+    await expect(img).toBeVisible();
+    // 壊れた img は naturalWidth が 0 になる
+    expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+
+    await expect(page.locator('blockquote')).toContainText('引用も使える');
+  });
+});
+
+test.describe('コードハイライト', () => {
+  // Shiki は色を書かず --shiki-light / --shiki-dark だけを出し、light-dark() が
+  // どちらを使うか決める。テーマで色が変わらなければその配線が切れている。
+  test('どちらのテーマでも地の文と違う色になる', async ({ page }) => {
+    const colors = () =>
+      page.evaluate(() => ({
+        keyword: getComputedStyle(
+          [...document.querySelectorAll('pre code span')].find((el) => el.textContent === 'export')!,
+        ).color,
+        body: getComputedStyle(document.body).color,
+      }));
+
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto(POST);
+
+    // 片側だけ配線が切れると、そのテーマでだけ地の文の色を継いでしまう。
+    // 「テーマ間で色が変わること」を見るだけでは、地の文の色も変わるので気付けない。
+    const dark = await colors();
+    expect(dark.keyword).not.toBe(dark.body);
+
+    await page.locator('.theme-toggle').click();
+    await expect.poll(async () => (await colors()).body, { timeout: 5_000 }).not.toBe(dark.body);
+
+    const light = await colors();
+    expect(light.keyword).not.toBe(light.body);
+    expect(light.keyword).not.toBe(dark.keyword);
+  });
+});
+
+test.describe('配信物', () => {
+  // 画面には出ないので目視では気付けない。名前の置き場所が 1 箇所に保たれて
+  // いるかを見る (値そのものは好みなので、ずれていないことだけを検査する)。
+  test('title と RSS の名前が揃っている', async ({ page, request }) => {
+    await page.goto('/blog/');
+    await expect(page).toHaveTitle(SITE_NAME);
+
+    await page.goto(POST);
+    await expect(page).toHaveTitle(pageTitle('描画サンプル'));
+
+    const xml = await (await request.get('/blog/rss.xml')).text();
+    expect(xml).toContain(`<title>${SITE_NAME}</title>`);
+  });
+
+  test('RSS が絶対 URL の記事リンクを持つ', async ({ request }) => {
+    const res = await request.get('/blog/rss.xml');
+    expect(res.status()).toBe(200);
+    const xml = await res.text();
+    expect(xml).toContain('<link>https://fushihara.net/blog/rendering-sample/</link>');
+    expect(xml).toContain('<title>描画サンプル</title>');
+  });
+
+  test('sitemap がある', async ({ request }) => {
+    const res = await request.get('/blog/sitemap-index.xml');
+    expect(res.status()).toBe(200);
+  });
+
+  test('一覧が RSS を autodiscovery で指す', async ({ page }) => {
+    await page.goto('/blog/');
+    await expect(page.locator('link[type="application/rss+xml"]')).toHaveAttribute(
+      'href',
+      '/blog/rss.xml',
+    );
+  });
+});
+
+test.describe('下書き', () => {
+  // draft: true が本番ビルドから落ちることを守る。ここが唯一の担保なので、
+  // test-content/posts/draft-example/ を消すとこの検査も無効になる。
+  test('一覧に出ない', async ({ page }) => {
+    await page.goto('/blog/');
+    await expect(page.getByRole('link', { name: '下書きの例' })).toHaveCount(0);
+  });
+
+  test('ページが生成されない', async ({ page }) => {
+    const res = await page.goto('/blog/draft-example/');
+    expect(res?.status()).toBe(404);
+  });
+
+  test('RSS に載らない', async ({ request }) => {
+    const xml = await (await request.get('/blog/rss.xml')).text();
+    expect(xml).not.toContain('下書きの例');
+  });
+});
+
+test.describe('テーマ', () => {
+  test('既定はダーク', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/blog/');
+    expect((await themeState(page)).attr).toBe('dark');
+  });
+
+  test('切り替えると背景色まで変わる', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/blog/');
+    const before = await themeState(page);
+
+    await page.locator('.theme-toggle').click();
+
+    expect((await themeState(page)).attr).toBe('light');
+    // 背景色には 0.25s の transition が乗っている。クリック直後に読むと
+    // まだ遷移前の値が返るので、確定するまで待つ。
+    await expect
+      .poll(async () => (await themeState(page)).bg, { timeout: 5_000 })
+      .not.toBe(before.bg);
+  });
+
+  test('ラベルが押した先を伝える', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/blog/');
+    const button = page.locator('.theme-toggle');
+
+    // 静的 HTML の中立な文言は、読み込み後に方向つきへ差し替わる
+    await expect(button).toHaveAttribute('aria-label', 'ライトテーマに切り替え');
+    await button.click();
+    await expect(button).toHaveAttribute('aria-label', 'ダークテーマに切り替え');
+  });
+
+  test('選択は本体サイトと同じキーに保存される', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/blog/');
+    await page.locator('.theme-toggle').click();
+
+    // キーがずれると / と /blog/ を行き来したときにテーマが引き継がれない
+    expect(await page.evaluate((k) => localStorage.getItem(k), STORAGE_KEY)).toBe('light');
+  });
+
+  test('保存した選択は再読み込みでも残り、JS を待たずに反映される', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.addInitScript((k) => localStorage.setItem(k, 'light'), STORAGE_KEY);
+
+    // head のインラインスクリプトの仕事なので、モジュールが動く前に確定していること
+    await page.goto('/blog/', { waitUntil: 'commit' });
+    await page.waitForFunction(() => document.body !== null);
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light');
+  });
+});

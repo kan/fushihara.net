@@ -1,3 +1,7 @@
+/* 色とフォントのトークンは shared/tokens.css が唯一の正本。
+ * ブログ (blog/) も同じファイルを読むので、片方だけ直すとずれる。 */
+@import '../shared/tokens.css';
+
 /* === Global Reset === */
 *,
 *::before,
@@ -7,66 +11,13 @@
   padding: 0;
 }
 
-/* === Theme tokens ===
- * Colors are declared once with light-dark(); which half applies is decided by
- * color-scheme, so the light and dark palettes never drift apart. Lightning CSS
- * lowers light-dark() to a var() pair for older browser targets automatically.
- *
- * Dark is the default; without JS the OS preference still applies via the media
- * query, and an explicit [data-theme] beats both.
- *
- * Contrast measured against --note-bg, since all body text renders inside notes
- * (AA needs 4.5:1 for text, WCAG 1.4.11 needs 3:1 for meaningful non-text):
- *   dark  text 14.2:1  muted 4.8:1  link 5.1:1  icons 3.6:1
- *   light text 17.1:1  muted 5.3:1  link 5.6:1  icons 3.7:1
- */
-:root {
-  color-scheme: dark;
-
-  --bg: light-dark(#F5F5F7, #0A0A0F);
-  --note-bg: light-dark(#FFFFFF, #1A1A2E);
-  --note-border: light-dark(#D8D8DE, #444);
-  --note-border-hover: light-dark(#B0B0BA, #666);
-  --note-shadow: light-dark(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.4));
-  --note-shadow-hover: light-dark(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.5));
-  --note-glow-hover: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06));
-  --text: light-dark(#1A1A2E, #EAEAEA);
-  --text-muted: light-dark(#6B6B72, #888);
-  --link: light-dark(#C81E4A, #F25570);
-  --link-hover: light-dark(#B81238, #FF6B81);
-  --edge: light-dark(#6B7A8F, #7B8DA4);
-
-  /* Same in both themes: the brand color on the note stripes */
-  --accent: #E94560;
-
-  /* light-dark() only takes colors, so these two still need a per-theme block */
-  --icon-filter: none;
-  --icon-opacity: 0.7;
-}
-
-/* The icons are monochrome data URIs, so light theme re-tints them by inverting.
- * Opacity is tuned so both themes clear WCAG 1.4.11 (3:1) against the note. */
-:root[data-theme='light'] {
-  color-scheme: light;
-  --icon-filter: invert(1);
-  --icon-opacity: 0.8;
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme='dark']) {
-    color-scheme: light;
-    --icon-filter: invert(1);
-    --icon-opacity: 0.8;
-  }
-}
-
 html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
   background-color: var(--bg);
   color: var(--text);
-  font-family: 'Inter', 'Noto Sans JP', sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.25s ease, color 0.25s ease;

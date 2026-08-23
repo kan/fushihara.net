@@ -1,0 +1,78 @@
+name: CI / Deploy blog to Cloudflare Workers
+
+# 本体 (deploy.yml) とは独立した Worker なので、ワークフローも分けてある。
+# 記事を 1 本足しただけで本体の E2E まで回るのを避けるのが目的。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'blog/**'
+      - 'shared/**'
+      - '.github/workflows/deploy-blog.yml'
+  pull_request:
+    paths:
+      - 'blog/**'
+      - 'shared/**'
+      - '.github/workflows/deploy-blog.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: blog
+
+jobs:
+  # 本体の deploy.yml にある `changes` ジョブ (deployed タグとの差分判定) は、
+  # ここでは意図的に持ち込んでいない。上の paths フィルタが既に「ブログに関係する
+  # 変更のときだけ動く」を保証しているうえ、ブログは毎回フル静的ビルドなので、
+  # テスト失敗でデプロイされずに終わった変更も次の push で丸ごと出し直される。
+  # 本体にあの仕組みが要るのは「取り残しが恒久化する」問題があるからで、
+  # ここに同じものを置くと deployed タグの衝突と複雑さだけが残る。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: blog/package-lock.json
+      - run: npm ci
+      # E2E は test-content/ のフィクスチャに対して回るので、実記事はここでビルドする。
+      # これが無いと、画像パスのタイプミスや index.md 以外の Markdown が PR では
+      # 素通りして main の deploy ジョブで初めて落ちる (記事だけのコミットは
+      # ローカル手順を飛ばす運用なので、ここが実記事の唯一の砦)。
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: blog-playwright-report
+          path: blog/playwright-report/
+          retention-days: 7
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: blog/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      # E2E のフィクスチャが配信物に混ざっていないことを最後に確かめる
+      - run: npm run check:no-fixtures
+      # -c を明示するのは、リポジトリ直下に .wrangler/deploy/config.json が
+      # 残っていると「どちらの設定か分からない」で落ちるため。
+      - run: npx wrangler deploy -c ./wrangler.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

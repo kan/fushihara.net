@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fushihara-net-blog",
+  "compatibility_date": "2026-08-23",
+  // main を持たない静的アセット専用の Worker。Astro のビルド成果物をそのまま配る。
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  // 本体は Custom Domain (fushihara.net) で、route はそれより優先される。
+  // `/blog*` の 1 本にすると /blogfoo まで拾ってしまうので 2 本に分ける。
+  "routes": [
+    { "pattern": "fushihara.net/blog", "zone_name": "fushihara.net" },
+    { "pattern": "fushihara.net/blog/*", "zone_name": "fushihara.net" }
+  ],
+  "observability": { "enabled": true }
+}

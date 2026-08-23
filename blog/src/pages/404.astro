@@ -1,0 +1,11 @@
+---
+import Base from '../layouts/Base.astro';
+import { base } from '../lib/paths';
+import { pageTitle } from '../lib/site';
+---
+
+<Base title={pageTitle('404')} noindex>
+  <h1>404</h1>
+  <p class="post-summary">そのページはありません。</p>
+  <p><a href={base}>記事一覧へ</a></p>
+</Base>

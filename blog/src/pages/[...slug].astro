@@ -1,0 +1,29 @@
+---
+import { render } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import { publishedPosts } from '../lib/posts';
+import PostDate from '../components/PostDate.astro';
+import { pageTitle } from '../lib/site';
+
+export async function getStaticPaths() {
+  const posts = await publishedPosts();
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+---
+
+<Base title={pageTitle(post.data.title)} description={post.data.description} ogType="article">
+  <article>
+    <div class="post-meta">
+      <PostDate date={post.data.date} />
+      {post.data.updated && <PostDate date={post.data.updated} label="更新 " />}
+      {post.data.tags.map((tag) => <span class="tag">{tag}</span>)}
+    </div>
+    <h1 class="post-title">{post.data.title}</h1>
+    <div class="prose">
+      <Content />
+    </div>
+  </article>
+</Base>

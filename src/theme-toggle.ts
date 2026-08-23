@@ -1,30 +1,11 @@
-import { STORAGE_KEY, isTheme, nextTheme, resolveInitialTheme, type Theme } from './theme';
+import { isTheme, nextTheme, resolveInitialTheme, type Theme } from '../shared/theme';
+import { readStoredTheme, writeStoredTheme } from '../shared/theme-storage';
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 // アイコンはボード外に置くので wema のサニタイザの制約を受けず、inline SVG が使える。
 const SUN = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
 const MOON = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
-
-/**
- * localStorage はプライベートモードやサイトデータ拒否設定で throw する。
- * テーマは無くても困らない機能なので、失敗しても黙って既定に落とす。
- */
-function readStored(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeStored(theme: Theme): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, theme);
-  } catch {
-    // 保存できなくても、このセッションの切り替えは効いている
-  }
-}
 
 function prefersDark(): boolean {
   return window.matchMedia(DARK_QUERY).matches;
@@ -50,7 +31,7 @@ function render(button: HTMLButtonElement, theme: Theme): void {
  * ここでの適用は保存値が無いケースの確定と、以降の操作の受け口が役割。
  */
 export function initTheme(): void {
-  const stored = readStored();
+  const stored = readStoredTheme();
   let theme = resolveInitialTheme(stored, prefersDark());
   // 保存済みの選択も「明示的に選んだ」扱いにする。以降 OS 設定の変化で上書きしない
   let chosen = isTheme(stored);
@@ -65,7 +46,7 @@ export function initTheme(): void {
     theme = nextTheme(theme);
     chosen = true;
     applyTheme(theme);
-    writeStored(theme);
+    writeStoredTheme(theme);
     render(button, theme);
   });
 

@@ -10,7 +10,7 @@
   "include": [
     "e2e",
     "src/layout.ts",
-    "src/theme.ts",
+    "shared/theme.ts",
     "playwright.config.ts",
     "vite.config.ts",
     "vitest.config.ts"
