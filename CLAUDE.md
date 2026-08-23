@@ -46,6 +46,10 @@ lint の設定はない。型チェックは `tsc -b` が 4 つのプロジェ�
 Worker が `caches.default` を使う以上 URL が同じだとテスト間でキャッシュ
 ヒットし、上流呼び出しを観測できなくなるため。
 
+`playwright.config.ts` は **`reuseExistingServer: false`** にしてある。`preview` は
+ビルド済みスナップショットを配信するだけで再ビルドしないので、居残ったサーバーを
+再利用すると**古い成果物に対してテストが通ってしまい、変更が検証されない**。
+
 main への push で `.github/workflows/deploy.yml` が同じ deploy を実行する
 （`blog/**` のみの変更は `paths-ignore` でスキップ）。
 

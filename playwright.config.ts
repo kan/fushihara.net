@@ -5,11 +5,14 @@ const baseURL = `http://localhost:${PORT}`;
 
 export default defineConfig({
   testDir: './e2e',
-  // 描画の検証なので、開発サーバではなく本番と同じビルド成果物に対して回す
+  // 描画の検証なので、開発サーバではなく本番と同じビルド成果物に対して回す。
+  // reuseExistingServer は使わない。preview はビルド済みスナップショットを配信する
+  // だけで再ビルドしないため、居残ったサーバーを再利用すると古い成果物に対して
+  // テストが通ってしまい、変更が検証されない。
   webServer: {
     command: 'npm run preview',
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
   use: { baseURL, trace: 'on-first-retry' },
