@@ -12,6 +12,7 @@
     "worker-configuration.d.ts",
     "worker",
     "src/board-data.ts",
-    "src/layout.ts"
+    "src/layout.ts",
+    "src/theme.ts"
   ]
 }

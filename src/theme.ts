@@ -1,15 +1,20 @@
-/**
- * Apply dark theme CSS custom properties to the wema board.
- * Called after the board mounts so the .wema-board element exists.
- */
-export function applyDarkTheme(boardEl: HTMLElement): void {
-  const board = boardEl.querySelector('.wema-board') as HTMLElement | null;
-  if (!board) return;
+export type Theme = 'light' | 'dark';
 
-  board.style.setProperty('--wema-note-border-radius', '12px');
-  board.style.setProperty('--wema-note-shadow', '0 4px 20px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.3)');
-  board.style.setProperty('--wema-note-color-text', '#EAEAEA');
-  board.style.setProperty('--wema-edge-color', '#7B8DA4');
-  board.style.setProperty('--wema-edge-width', '2px');
-  board.style.setProperty('--wema-anchor-size', '0px');
+export const STORAGE_KEY = 'fushihara-net-theme';
+
+export function isTheme(value: unknown): value is Theme {
+  return value === 'light' || value === 'dark';
+}
+
+export function nextTheme(current: Theme): Theme {
+  return current === 'dark' ? 'light' : 'dark';
+}
+
+/**
+ * 保存された選択があればそれを優先し、無ければ OS 設定に従う。
+ * 保存値が壊れている場合も OS 設定に落とす。
+ */
+export function resolveInitialTheme(stored: string | null, prefersDark: boolean): Theme {
+  if (isTheme(stored)) return stored;
+  return prefersDark ? 'dark' : 'light';
 }

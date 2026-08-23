@@ -46,9 +46,14 @@ lint の設定はない。型チェックは `tsc -b` が 4 つのプロジェ�
 Worker が `caches.default` を使う以上 URL が同じだとテスト間でキャッシュ
 ヒットし、上流呼び出しを観測できなくなるため。
 
-`playwright.config.ts` は **`reuseExistingServer: false`** にしてある。`preview` は
-ビルド済みスナップショットを配信するだけで再ビルドしないので、居残ったサーバーを
-再利用すると**古い成果物に対してテストが通ってしまい、変更が検証されない**。
+E2E で踏みやすい罠が 2 つある。
+
+- `playwright.config.ts` は **`reuseExistingServer: false`** にしてある。`preview` は
+  ビルド済みスナップショットを配信するだけで再ビルドしないので、居残ったサーバーを
+  再利用すると**古い成果物に対してテストが通ってしまい、変更が検証されない**
+- `page.emulateMedia()` を**連続で呼ぶと変更が合体して `change` が飛ばない**。
+  OS 設定の変化を 2 段階で試すときは、1 段ずつ発火を確認してから次へ進める
+  （`e2e/theme.spec.ts` の「保存だけ失敗する環境でも〜」参照）
 
 main への push で `.github/workflows/deploy.yml` が同じ deploy を実行する
 （`blog/**` のみの変更は `paths-ignore` でスキップ）。
@@ -114,19 +119,71 @@ main への push で `.github/workflows/deploy.yml` が同じ deploy を実行�
 `not_found_handling: "404-page"` なので、クライアントルータのないこのサイトでは
 存在しないパスは素の 404 になる（`dist` に `404.html` を置けばそれが返る）。
 
-### tsconfig が 3 つある理由
+### tsconfig を分けている理由
 
 `src/`（DOM lib）と `worker/`（Workers ランタイム型）を同じ tsconfig に入れると
 `Request` / `Response` / `caches` の型が衝突する。そのため
-`tsconfig.app.json`（`src`）と `tsconfig.worker.json`（`worker`）に分け、
-ルートの `tsconfig.json` は `references` だけを持つ。`tsc -b` が両方をまとめて見る。
+`tsconfig.app.json`（`src`）/ `tsconfig.worker.json`（`worker`）/
+`tsconfig.test.json` / `tsconfig.e2e.json` に分け、共通のコンパイラオプションは
+`tsconfig.base.json` に置く。ルートの `tsconfig.json` は `references` だけを持ち、
+`tsc -b` が 4 つをまとめて見る。
 
 `worker-configuration.d.ts` は `wrangler types` の生成物（`Env` とランタイム型）で
 git 管理外。`wrangler.jsonc` を変えたら再生成が要る（`npm run build` が毎回走らせる）。
 
-### スタイル
+### テーマ（ライト / ダーク）
 
-ダークテーマは 2 箇所に分かれる。`src/style.css` の `.wema-board` セレクタが基本で、
-`src/theme.ts` の `applyDarkTheme()` はボードのマウント後に
-DOM 要素へ直接 CSS カスタムプロパティを設定する（ライブラリ側のインラインスタイルに
-勝つ必要があるものだけ）。値を変えるときは両方の整合を確認する。
+色は **すべて `src/style.css` の CSS カスタムプロパティ**に集約してある。
+JS は `data-theme` を切り替えるだけで、色を一切持たない。
+
+```
+:root                                  color-scheme: dark（既定）
+:root[data-theme='light']              color-scheme: light
+@media (prefers-color-scheme: light)
+  :root:not([data-theme='dark'])       JS 無しでも OS 設定に従う
+```
+
+**色は `light-dark(ライト値, ダーク値)` で 1 回だけ書く。** どちらが使われるかは
+`color-scheme` が決めるので、2 つのパレットがずれようがない。Vite 8 の Lightning CSS
+が古いブラウザ向けのフォールバックを自動生成するため、対応状況を気にする必要もない。
+
+例外は `--icon-filter` と `--icon-opacity` の 2 つ。`light-dark()` は色専用で
+`filter` や数値には使えないため、この 2 つだけ 3 ブロックに分かれている。
+**触るときは 3 箇所すべて直す。**
+
+- `src/theme.ts` — DOM に触れない純粋モジュール（`nextTheme` / `resolveInitialTheme`）。
+  workerd プールのユニットテストから使えるようにこの形にしている
+- `src/theme-toggle.ts` — DOM 側。`localStorage` は**プライベートモードで throw する**ので
+  try/catch で包む。OS 設定に追従するかどうかは保存値ではなく `chosen` フラグで判定する。
+  `getItem` は通るのに `setItem` だけ throw する環境（Safari プライベートモード /
+  QuotaExceededError）で、保存に失敗したユーザーの選択を OS 側の変更に奪われないため
+- `index.html` の `<head>` にある同期スクリプトが、保存値を**描画前に** `data-theme` へ
+  stamp する。モジュールスクリプトは defer なので、これが無いとちらつく。
+  `STORAGE_KEY` の文字列をここに直書きしているので、変えるときは両方直す
+
+### wema のサニタイザという制約（重要）
+
+wema はノートの `text` を **許可リストでサニタイズ**する
+（`node_modules/@kanf/wema/dist/wema.js` の `src/utils/sanitize.ts` 領域）。
+
+- **`svg` と `button` は除去される** → 対話的な UI をノート内に置くことはできない。
+  テーマトグルが `#app` の外にいるのはこのため
+- `class` は全タグで通る。`style` は
+  `color / background-color / font-size / font-weight / font-style / text-decoration /
+  text-align / margin / padding / display / list-style-type / white-space` だけ通る
+- したがって**ノート内の色はインライン `style` ではなく class で当てる**。
+  二次テキストは `class="muted"`（`--text-muted` に追従）。インラインで色を書くと
+  片方のテーマに固定されてしまう
+
+`board-data.ts` のアイコンは `#999` を焼き込んだ data URI なので、テーマ追従は
+CSS の `filter: var(--icon-filter)` で行っている（ライトでは `invert(1)`）。
+
+wema が `--wema-anchor-color` から塗る折りたたみバッジは、アンカーを隠すために
+その変数を `transparent` にしている都合で**素の板に白文字が乗る**。
+`.wema-note-collapse-btn` / `-badge` に独自の背景を当てて回避している。
+
+### スタイルの上書きが効く理由
+
+`main.ts` は wema の CSS を読んだ**後**に `src/style.css` を読むので、同じ
+`.wema-board` セレクタでこちらが勝つ。wema が JS からインライン設定するのは
+`--wema-note-color`（ノート左端の帯）だけなので、他はすべて CSS で上書きできる。

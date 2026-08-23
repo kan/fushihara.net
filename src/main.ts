@@ -2,11 +2,13 @@ import { WemaBoard } from '@kanf/wema';
 import '@kanf/wema/style.css';
 import './style.css';
 import { boardData } from './board-data';
-import { applyDarkTheme } from './theme';
+import { initTheme } from './theme-toggle';
 import { fetchZennArticles, fetchGitHubRepos, fetchGitHubLanguages } from './api';
 import { MOBILE_BP, getTargetLayout, noteBases, type NoteLayout } from './layout';
 
 const appEl = document.getElementById('app')!;
+
+initTheme();
 
 // Initialize the board with pre-defined data
 const board = new WemaBoard({
@@ -122,8 +124,8 @@ async function loadDynamicData() {
   if (repos.status === 'fulfilled' && repos.value.length > 0) {
     const items = repos.value
       .map((r) => {
-        const star = r.stargazers_count > 0 ? ` <span style="color:#888">${r.stargazers_count}</span>` : '';
-        const desc = r.description ? ` <span style="font-size:10px;color:#888">- ${r.description}</span>` : '';
+        const star = r.stargazers_count > 0 ? ` <span class="muted">${r.stargazers_count}</span>` : '';
+        const desc = r.description ? ` <span class="muted" style="font-size:10px">- ${r.description}</span>` : '';
         return `<div class="oss-row"><a href="${r.html_url}" target="_blank">${r.name}</a>${star}${desc}</div>`;
       })
       .join('');
@@ -144,6 +146,3 @@ loadDynamicData().finally(() => {
   board.setViewOnly(true);
   isLocked = true;
 });
-
-// Apply dark theme overrides
-applyDarkTheme(appEl);

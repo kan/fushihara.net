@@ -3,7 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
     <title>kan / fushihara - Portfolio</title>
+
+    <!-- 保存されたテーマを描画前に反映する。モジュールスクリプトは defer なので、
+         これが無いと OS 設定と違うテーマを選んだ訪問者に一瞬ちらつきが出る。
+         保存値が無いときは何もせず、style.css の prefers-color-scheme に任せる。 -->
+    <script>
+      try {
+        var t = localStorage.getItem('fushihara-net-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
 
     <!-- OGP -->
     <meta property="og:title" content="kan / fushihara - Portfolio" />
