@@ -15,9 +15,11 @@
   // `fushihara.net/blog` と書いていたときは、共有リンクに付いた
   // `/blog?utm_source=...` が本体 Worker に落ちて真っ白な 404 になっていた (実測)。
   //
-  // 代償として /blogfoo もこの Worker に届く (ブログの 404 ページが出る)。本体は
-  // `/` と `/api/*` しか持たないので実害は無い。将来 /blogroll のようなパスを本体に
-  // 足すなら、より長い route を足せばそちらが優先される。
+  // 代償として /blogfoo もこの Worker に届くが、見え方は変わらない。404-page 解決は
+  // リクエストパスから上へ 404.html を探すので、/blogfoo では dist/404.html を見に行き、
+  // 存在しないため本文の無い素の 404 になる (本体 Worker が返す 404 と同じ)。
+  // ブログの 404 ページが出るのは dist/blog/404.html に辿り着ける /blog/... のときだけ。
+  // 将来 /blogroll のようなパスを本体に足すなら、より長い route を足せば優先される。
   "routes": [
     { "pattern": "fushihara.net/blog*", "zone_name": "fushihara.net" }
   ],
