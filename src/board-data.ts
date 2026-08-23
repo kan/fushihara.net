@@ -46,7 +46,7 @@ export const boardData: WemaBoardData = {
     // === Center ===
     {
       id: 'center',
-      x: 500, y: 350,
+      x: 500, y: 250,
       width: CW, height: CH,
       text: '<b style="font-size:20px">KAN Fushihara</b><br><span style="font-size:11px;color:#888">伏原 幹 / ふしはら かん</span><br><br>Programmer<br><span style="font-size:13px"><a href="https://communitylinks.co.jp/" target="_blank">@ Community Links</a></span><br><span style="font-size:11px;color:#888">Kawagoe, Saitama, Japan</span>',
       color: C.center,
@@ -56,7 +56,7 @@ export const boardData: WemaBoardData = {
     // === Email (top center) ===
     {
       id: 'email',
-      x: 530, y: 120,
+      x: 530, y: 20,
       width: W, height: 80,
       text: '<b>Email</b><br><a href="mailto:kan.fushihara@gmail.com">kan.fushihara@gmail.com</a>',
       color: C.email,
@@ -66,7 +66,7 @@ export const boardData: WemaBoardData = {
     // === Social (left side, single card with monochrome icons) ===
     {
       id: 'social',
-      x: 60, y: 220,
+      x: 60, y: 120,
       width: 220, height: 110,
       text: [
         '<b>Social</b><br><br>',
@@ -83,7 +83,7 @@ export const boardData: WemaBoardData = {
     // === Skills (left side, between Social and Interests) ===
     {
       id: 'skills',
-      x: 100, y: 400,
+      x: 100, y: 300,
       width: 240, height: 130,
       text: '<b>Skills</b><br><br><span style="color:#888">Loading...</span>',
       color: C.skills,
@@ -93,7 +93,7 @@ export const boardData: WemaBoardData = {
     // === Content (right side) ===
     {
       id: 'zenn',
-      x: 920, y: 200,
+      x: 920, y: 100,
       width: 280, height: 220,
       text: '<b>Tech log</b><br><br><span style="color:#888">Loading...</span>',
       color: C.zenn,
@@ -101,7 +101,7 @@ export const boardData: WemaBoardData = {
     },
     {
       id: 'book',
-      x: 980, y: 500,
+      x: 980, y: 400,
       width: W, height: H,
       text: '<b>Book</b><br><br><a href="https://amzn.to/4rj8ti5" target="_blank">ふしはらかんのらーめん話</a>',
       color: C.book,
@@ -109,7 +109,7 @@ export const boardData: WemaBoardData = {
     },
     {
       id: 'talks',
-      x: 960, y: 660,
+      x: 960, y: 560,
       width: W, height: H,
       text: '<b>Slides</b><br><br><a href="https://speakerdeck.com/kan" target="_blank">Speaker Deck</a>',
       color: C.talks,
@@ -119,7 +119,7 @@ export const boardData: WemaBoardData = {
     // === OSS (right bottom) ===
     {
       id: 'oss',
-      x: 510, y: 680,
+      x: 510, y: 580,
       width: 280, height: 220,
       text: '<b>OSS Projects</b><br><br><span style="color:#888">Loading...</span>',
       color: C.oss,
@@ -129,7 +129,7 @@ export const boardData: WemaBoardData = {
     // === Interests (bottom) ===
     {
       id: 'interests',
-      x: 160, y: 600,
+      x: 160, y: 500,
       width: OSSW, height: OSSH,
       text: '<b>Interests</b><br><br><a href="https://idolmaster-official.jp/" target="_blank">THE IDOLM@STER</a><br><a href="https://zombielandsaga.com/" target="_blank">ゾンビランドサガ</a><br><a href="https://anime-precure.com/" target="_blank">プリキュアシリーズ</a><br><a href="https://www.moukotanmen-nakamoto.com/" target="_blank">蒙古タンメン中本</a>',
       color: C.interests,
