@@ -11,13 +11,20 @@ https://fushihara.net/ のソース。個人ポートフォリオサイトで、
 `/blog/` 配下は Astro のブログで、**別 Worker** として動く:
 
 ```
-fushihara.net/*        → Worker: fushihara-net       (Custom Domain)
-fushihara.net/blog     → Worker: fushihara-net-blog  (Route)
-fushihara.net/blog/*   → Worker: fushihara-net-blog  (Route)
+fushihara.net/*      → Worker: fushihara-net       (Custom Domain)
+fushihara.net/blog*  → Worker: fushihara-net-blog  (Route)
 ```
 
-route は Custom Domain より優先されるので、`/blog` 配下だけがブログ Worker に届く。
-route を `/blog*` の 1 本にしないこと。それだと `/blogfoo` まで拾ってしまう。
+route は Custom Domain より優先されるので、`/blog` 配下がブログ Worker に届く。
+
+**末尾の `*` は必須。** route はクエリ文字列まで含めて URL 全体と突き合わせ、パターンに
+`?` は書けないため、`*` で終わらせないとクエリ付き URL に一致しない。`/blog` と
+`/blog/*` の 2 本に分けていたときは、`/blog?utm_source=...` が本体 Worker に落ちて
+真っ白な 404 になっていた（本番で踏んだ）。`/blog/*` 側は末尾が `*` なので無事だった。
+
+代償として `/blogfoo` もブログ Worker に届く（ブログの 404 ページが出る）。本体は `/` と
+`/api/*` しか持たないので実害は無く、将来 `/blogroll` のようなパスが要るなら、より長い
+route を足せばそちらが優先される。
 
 ブログは `blog/` に独自の `package.json` / `wrangler.jsonc` を持つ独立プロジェクトで、
 依存は本体と混ざっていない。詳細は「ブログ」節と `blog/CONTRACT.md`。

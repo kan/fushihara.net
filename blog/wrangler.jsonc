@@ -9,10 +9,17 @@
     "html_handling": "auto-trailing-slash"
   },
   // 本体は Custom Domain (fushihara.net) で、route はそれより優先される。
-  // `/blog*` の 1 本にすると /blogfoo まで拾ってしまうので 2 本に分ける。
+  //
+  // 末尾の `*` は必須。route はクエリ文字列まで含めて URL 全体と突き合わせるうえ、
+  // パターンに `?` は書けないので、`*` で終わらせないとクエリ付き URL に一致しない。
+  // `fushihara.net/blog` と書いていたときは、共有リンクに付いた
+  // `/blog?utm_source=...` が本体 Worker に落ちて真っ白な 404 になっていた (実測)。
+  //
+  // 代償として /blogfoo もこの Worker に届く (ブログの 404 ページが出る)。本体は
+  // `/` と `/api/*` しか持たないので実害は無い。将来 /blogroll のようなパスを本体に
+  // 足すなら、より長い route を足せばそちらが優先される。
   "routes": [
-    { "pattern": "fushihara.net/blog", "zone_name": "fushihara.net" },
-    { "pattern": "fushihara.net/blog/*", "zone_name": "fushihara.net" }
+    { "pattern": "fushihara.net/blog*", "zone_name": "fushihara.net" }
   ],
   "observability": { "enabled": true }
 }
