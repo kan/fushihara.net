@@ -5,18 +5,22 @@ Source code for [https://fushihara.net/](https://fushihara.net/) — a personal 
 ## Tech Stack
 
 - TypeScript + Vite
-- Cloudflare Pages + Functions
+- Cloudflare Workers (Static Assets)
 - [wema](https://github.com/kan/wema) for the board UI
 
 ## Development
 
 ```bash
 npm install
-npm run dev     # localhost:8788 (wrangler + vite)
+npm run dev     # localhost:5173 (Vite + workerd via @cloudflare/vite-plugin)
 ```
+
+`/api/*` runs on the real Workers runtime in dev, so the Zenn / GitHub proxies work locally.
 
 ## Deploy
 
 ```bash
-npm run deploy  # builds and deploys to Cloudflare Pages
+npm run deploy  # builds and deploys to Cloudflare Workers
 ```
+
+Pushing to `main` deploys via GitHub Actions.

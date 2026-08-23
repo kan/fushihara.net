@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fushihara-net",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-08-23",
+  "assets": {
+    "binding": "ASSETS",
+    // このサイトはクライアントルータを持たないので SPA モードにはしない。
+    // dist に 404.html を置けばそれが返る。
+    "not_found_handling": "404-page",
+    // Workers は既定で assets を先に見るため、API パスだけ Worker に流す
+    // (Pages の _routes.json 相当)。
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": { "enabled": true }
+}

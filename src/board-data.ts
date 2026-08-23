@@ -1,7 +1,7 @@
 import type { WemaBoardData } from '@kanf/wema';
 import {
   siBluesky, siX, siGithub, siFacebook, siInstagram,
-  siCloudflarepages, siCloudflareworkers, siVite, siTypescript, siClaude,
+  siCloudflareworkers, siVite, siTypescript, siClaude,
 } from 'simple-icons';
 
 // Left-accent stripe colors (card theme uses note.color for the stripe)
@@ -143,7 +143,6 @@ export const boardData: WemaBoardData = {
       width: 260, height: 110,
       text: [
         '<b>Powered by</b><br><br>',
-        siIcon(siCloudflarepages, 'https://pages.cloudflare.com'),
         siIcon(siCloudflareworkers, 'https://workers.cloudflare.com'),
         siIcon(siVite, 'https://vitejs.dev'),
         siIcon(siTypescript, 'https://www.typescriptlang.org'),

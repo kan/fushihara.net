@@ -1,8 +1,11 @@
-name: Deploy to Cloudflare Pages
+name: Deploy to Cloudflare Workers
 
 on:
   push:
     branches: [main]
+    # ブログは独立した Worker として別ジョブでデプロイする
+    paths-ignore:
+      - 'blog/**'
 
 jobs:
   deploy:
@@ -11,11 +14,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx wrangler pages deploy dist --project-name=fushihara-net
+      - run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
