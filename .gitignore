@@ -27,3 +27,7 @@ dist-ssr
 # wrangler types の生成物
 worker-configuration.d.ts
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/

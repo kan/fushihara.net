@@ -4,6 +4,7 @@ import './style.css';
 import { boardData } from './board-data';
 import { applyDarkTheme } from './theme';
 import { fetchZennArticles, fetchGitHubRepos, fetchGitHubLanguages } from './api';
+import { MOBILE_BP, getTargetLayout, noteBases, type NoteLayout } from './layout';
 
 const appEl = document.getElementById('app')!;
 
@@ -16,69 +17,25 @@ const board = new WemaBoard({
 });
 
 // --- Responsive repositioning ---
-// Reference viewport size that the base layout in board-data.ts is designed for
-const REF_W = 1400;
-const REF_H = 900;
-const MARGIN = 20;
-
-// Store original positions and dimensions from board data
-const basePositions = new Map<string, { x: number; y: number }>();
-const baseSizes = new Map<string, { width: number; height: number }>();
-for (const note of boardData.notes) {
-  basePositions.set(note.id, { x: note.x, y: note.y });
-  baseSizes.set(note.id, { width: note.width, height: note.height });
-}
-
-const MOBILE_BP = 768;
-const MOBILE_GAP = 16;
-// Display order for mobile vertical layout
-const mobileOrder = [
-  'center', 'email', 'social', 'skills',
-  'zenn', 'oss', 'book', 'talks',
-  'interests', 'poweredby',
-];
+// Layout maths lives in ./layout.ts so it can be tested without a DOM.
+const bases = noteBases(boardData);
 
 let isLocked = false;
 
-interface NoteLayout { x: number; y: number; width: number }
-
-function getTargetLayout(): Map<string, NoteLayout> {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const targets = new Map<string, NoteLayout>();
-
-  if (vw < MOBILE_BP) {
-    // Mobile: single column, nearly full-width
-    const noteWidth = vw - MARGIN * 2;
-    let y = MARGIN;
-    for (const id of mobileOrder) {
-      const size = baseSizes.get(id);
-      if (!size) continue;
-      targets.set(id, { x: MARGIN, y, width: noteWidth });
-      y += size.height + MOBILE_GAP;
-    }
-  } else {
-    // Desktop: proportional scaling, original widths
-    const sx = vw / REF_W;
-    const sy = vh / REF_H;
-    for (const [id, base] of basePositions) {
-      const size = baseSizes.get(id)!;
-      if (id === 'poweredby') {
-        targets.set(id, { x: vw - size.width - MARGIN, y: vh - size.height - MARGIN, width: size.width });
-        continue;
-      }
-      targets.set(id, { x: Math.round(base.x * sx), y: Math.round(base.y * sy), width: size.width });
-    }
-  }
-  return targets;
+// The board is locked to view-only once the dynamic data lands, so any
+// programmatic mutation has to lift the lock around itself.
+function withEditableBoard(mutate: () => void) {
+  if (isLocked) board.setViewOnly(false);
+  mutate();
+  if (isLocked) board.setViewOnly(true);
 }
 
 function applyLayout(layout: Map<string, NoteLayout>) {
-  if (isLocked) board.setViewOnly(false);
-  for (const [id, l] of layout) {
-    board.updateNote(id, { x: l.x, y: l.y, width: l.width });
-  }
-  if (isLocked) board.setViewOnly(true);
+  withEditableBoard(() => {
+    for (const [id, l] of layout) {
+      board.updateNote(id, { x: l.x, y: l.y, width: l.width });
+    }
+  });
 }
 
 // Animate notes + edges together via JS lerp
@@ -117,21 +74,32 @@ function animateToLayout(targets: Map<string, NoteLayout>, duration = 300) {
   requestAnimationFrame(step);
 }
 
-// On mobile, expand all collapsed edges (no hover to toggle)
-if (window.innerWidth < MOBILE_BP) {
-  for (const edge of boardData.edges) {
-    if (edge.collapsed) {
-      board.updateEdge(edge.id, { collapsed: false });
+// Collapsed edges are opened by hovering, which mobile cannot do, so expand them
+// below the breakpoint. Resizing across the breakpoint has to revisit this too,
+// otherwise a narrowed desktop window leaves the email note stuck at zero width.
+const collapsibleEdges = boardData.edges.filter((e) => e.collapsed);
+let edgesExpanded = false;
+
+function syncCollapsedEdges(vw: number) {
+  const expand = vw < MOBILE_BP;
+  if (expand === edgesExpanded) return;
+
+  withEditableBoard(() => {
+    for (const edge of collapsibleEdges) {
+      board.updateEdge(edge.id, { collapsed: !expand });
     }
-  }
+  });
+  edgesExpanded = expand;
 }
 
 // Initial layout (instant)
-applyLayout(getTargetLayout());
+syncCollapsedEdges(window.innerWidth);
+applyLayout(getTargetLayout(window.innerWidth, window.innerHeight, bases));
 
 // Resize: animate smoothly to new layout
 window.addEventListener('resize', () => {
-  animateToLayout(getTargetLayout(), 300);
+  syncCollapsedEdges(window.innerWidth);
+  animateToLayout(getTargetLayout(window.innerWidth, window.innerHeight, bases), 300);
 });
 
 // --- Dynamic data loading ---

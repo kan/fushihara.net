@@ -1,0 +1,177 @@
+import { expect, test, type Page } from '@playwright/test';
+import { MARGIN, mobileOrder } from '../src/layout';
+
+// 外部 API はモックする。CI を zenn.dev / api.github.com の生存とレートリミットに
+// 依存させないため。Worker 側のプロキシ挙動は test/worker.test.ts が担当する。
+const ZENN = {
+  articles: [{ title: 'モック記事タイトル', path: '/kan/articles/mock', emoji: '📝' }],
+};
+const REPOS = [
+  {
+    name: 'mock-repo',
+    description: 'モックの説明',
+    html_url: 'https://github.com/kan/mock-repo',
+    stargazers_count: 42,
+    language: 'TypeScript',
+    fork: false,
+  },
+];
+const LANGUAGES = { languages: [{ name: 'MockLang', count: 9 }] };
+
+const NOTE = '.wema-note';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/zenn*', (r) => r.fulfill({ json: ZENN }));
+  await page.route('**/api/github?*', (r) => r.fulfill({ json: REPOS }));
+  await page.route('**/api/github-languages*', (r) => r.fulfill({ json: LANGUAGES }));
+});
+
+/** ノート id → 画面上の矩形 */
+async function noteBoxes(page: Page) {
+  return page.$$eval(NOTE, (els) =>
+    Object.fromEntries(
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return [
+          el.getAttribute('data-note-id') ?? '',
+          { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) },
+        ];
+      }),
+    ),
+  );
+}
+
+/** 動的データの反映まで待つ */
+async function gotoAndSettle(page: Page) {
+  await page.goto('/');
+  await expect(page.locator(NOTE).first()).toBeVisible();
+  await expect(page.getByText('モック記事タイトル')).toBeVisible();
+}
+
+test('ボードが描画され、全ノートが表示される', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  const boxes = await noteBoxes(page);
+  expect(Object.keys(boxes).sort()).toEqual([
+    'book', 'center', 'email', 'interests', 'oss',
+    'poweredby', 'skills', 'social', 'talks', 'zenn',
+  ]);
+});
+
+test('取得したデータが対応するノートに反映される', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  await expect(page.locator(NOTE).filter({ hasText: 'Tech log' }))
+    .toContainText('モック記事タイトル');
+  await expect(page.locator(NOTE).filter({ hasText: 'OSS Projects' }))
+    .toContainText('mock-repo');
+  await expect(page.locator(NOTE).filter({ hasText: 'Skills' }))
+    .toContainText('MockLang');
+});
+
+test('リンクが新しいタブで開く形になっている', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  const link = page.getByRole('link', { name: 'モック記事タイトル' });
+  await expect(link).toHaveAttribute('href', 'https://zenn.dev/kan/articles/mock');
+  await expect(link).toHaveAttribute('target', '_blank');
+});
+
+test('API が全滅しても静的な内容は残る', async ({ page }) => {
+  await page.route('**/api/**', (r) => r.fulfill({ status: 500, body: 'boom' }));
+
+  await page.goto('/');
+  await expect(page.locator(NOTE).first()).toBeVisible();
+
+  // board-data.ts のフォールバック文言がそのまま出ている
+  await expect(page.locator(NOTE).filter({ hasText: 'Tech log' })).toBeVisible();
+  expect(Object.keys(await noteBoxes(page))).toHaveLength(10);
+});
+
+test.describe('デスクトップ', () => {
+  test.skip(({ isMobile }) => !!isMobile, 'デスクトップ専用');
+
+  test('poweredby が右下に固定される', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    const { boxes, vw, vh } = await page.evaluate(() => ({
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      boxes: [...document.querySelectorAll('.wema-note')].map((el) => {
+        const r = el.getBoundingClientRect();
+        return { id: el.getAttribute('data-note-id'), right: r.right, bottom: r.bottom };
+      }),
+    }));
+
+    const pb = boxes.find((b) => b.id === 'poweredby')!;
+    expect(Math.round(vw - pb.right)).toBe(MARGIN);
+    expect(Math.round(vh - pb.bottom)).toBe(MARGIN);
+  });
+
+  test('ノートが 1 カラムに潰れていない', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    const xs = new Set(Object.values(await noteBoxes(page)).map((b) => b.x));
+    expect(xs.size).toBeGreaterThan(1);
+  });
+
+  test('幅を狭めると 1 カラムに再配置され、畳まれたエッジも開く', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    // デスクトップでは email は collapsed のまま幅 0
+    expect((await noteBoxes(page)).email.w).toBe(0);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    // resize はアニメーション (300ms) 経由なので落ち着くまで待つ。
+    // ここで幅 0 を除外してしまうと、collapsed が解除されない不具合を
+    // 見逃すので全ノートを対象に判定する。
+    await expect
+      .poll(async () => Object.values(await noteBoxes(page)), { timeout: 5_000 })
+      .toEqual(
+        Array(mobileOrder.length).fill(
+          expect.objectContaining({ x: MARGIN, w: 390 - MARGIN * 2 }),
+        ),
+      );
+  });
+});
+
+test.describe('モバイル', () => {
+  test.skip(({ isMobile }) => !isMobile, 'モバイル専用');
+
+  test('全ノートが左マージン揃いの 1 カラムになる', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    const vw = await page.evaluate(() => window.innerWidth);
+    for (const [id, box] of Object.entries(await noteBoxes(page))) {
+      expect(box.x, id).toBe(MARGIN);
+      expect(box.w, id).toBe(vw - MARGIN * 2);
+    }
+  });
+
+  test('mobileOrder の順に上から積まれる', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    const boxes = await noteBoxes(page);
+    const ys = mobileOrder.map((id) => boxes[id].y);
+
+    expect(ys).toEqual([...ys].sort((a, b) => a - b));
+  });
+
+  test('畳まれたエッジが展開され、email ノートも読める', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    // デスクトップでは collapsed:true で幅 0。モバイルでは hover できないので開く
+    expect((await noteBoxes(page)).email.w).toBeGreaterThan(0);
+  });
+
+  test('横スクロールが発生しない', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  });
+});

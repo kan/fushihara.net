@@ -28,10 +28,23 @@ npm run dev      # vite dev。localhost:5173。@cloudflare/vite-plugin が worke
 npm run build    # wrangler types → tsc -b（型チェックのみ）→ vite build
 npm run preview  # ビルドしたものを workerd で配信（localhost:4173）
 npm run deploy   # build して wrangler deploy
+
+npm test         # Vitest。worker/ は実 workerd 上で動く
+npm run test:e2e # Playwright。本番ビルドを preview で配信して desktop / mobile を検証
+npm run typecheck
 ```
 
-テスト・lint の設定はない。型チェックは `npm run build` の `tsc -b` が担う
-（`strict` / `noUnusedLocals` / `noUnusedParameters` 有効）。
+lint の設定はない。型チェックは `tsc -b` が 4 つのプロジェクト
+（app / worker / test / e2e）をまとめて見る。
+
+テストの外部 API は Vitest では `vi.stubGlobal('fetch')`、E2E では
+`page.route()` で止めてある。CI を zenn.dev / api.github.com の生存と
+レートリミットに依存させないため。**逆に言うと上流の仕様変更は CI では
+検知できない**ので、そこは手動確認に委ねている。
+
+`test/worker.test.ts` の `call()` がクエリに `__t=N` を足しているのは、
+Worker が `caches.default` を使う以上 URL が同じだとテスト間でキャッシュ
+ヒットし、上流呼び出しを観測できなくなるため。
 
 main への push で `.github/workflows/deploy.yml` が同じ deploy を実行する
 （`blog/**` のみの変更は `paths-ignore` でスキップ）。

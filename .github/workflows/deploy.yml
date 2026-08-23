@@ -1,14 +1,39 @@
-name: Deploy to Cloudflare Workers
+name: CI / Deploy to Cloudflare Workers
 
 on:
   push:
     branches: [main]
-    # ブログは独立した Worker として別ジョブでデプロイする
+    # ブログ (Phase 2) は独立した Worker として別ジョブでデプロイする
+    paths-ignore:
+      - 'blog/**'
+  pull_request:
     paths-ignore:
       - 'blog/**'
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
