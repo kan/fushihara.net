@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+  # npm の依存。Dependabot の PR は deploy.yml の pull_request トリガーで
+  # typecheck / Vitest / Playwright を通るので、壊れる更新はマージ前に落ちる。
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    groups:
+      # minor / patch は 1 本の PR にまとめる。個別に立つと数が多すぎて
+      # 結局まとめてマージすることになり、レビューの単位として意味を成さない。
+      # major は破壊的変更を含みうるので、まとめず個別に見る。
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: deps
+
+  # Actions のバージョン。actions/*@v4 が Node 20 前提で deprecated 警告を
+  # 出しているが、ここからの PR で解消する。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Tokyo
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+    commit-message:
+      prefix: ci
+# ブログ (Phase 2) を blog/ に追加したら、独自の package.json を持つので
+# directory: /blog の npm エントリをここに足す。
