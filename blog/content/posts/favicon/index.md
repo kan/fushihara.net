@@ -8,6 +8,6 @@ description: サイトを再構築した時に作るの忘れてた。
 
 サイトを再構築した時に作るの忘れてた。以前のサイトの色違いみたいな感じだけど、まあ気合入れすぎても仕方ないので。
 
-<img src="https://fushihara.net/favicon.svg" width="100px" />
+![作ったfavicon](./favicon.svg)
 
 しかし改めてみるとマークザッカーバーグに怒られそうな意匠に見える……。
