@@ -61,7 +61,7 @@
 | `/blog/rss.xml` | RSS 2.0。`link` は絶対 URL |
 | `/blog/sitemap-index.xml` | サイトマップ |
 | `/blog/404.html` | 404 ページ |
-| `/blog/favicon.svg` | favicon（テーマ追従） |
+| `/blog/favicon.svg` | favicon（不透明。テーマ追従はしない） |
 | `/blog/favicon.ico` | favicon（SVG 非対応ブラウザ向け） |
 | `/blog/apple-touch-icon.png` | ホーム画面用アイコン |
 

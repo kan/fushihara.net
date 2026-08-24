@@ -1,12 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <!-- 旧サイト (kan/www.fushihara.net の dist/img/favicon.png) の "f." をベクタに
-       起こしたもの。ink は shared/tokens.css の text トークンと同値を焼き込んである
-       (favicon の SVG は外部 CSS を解決できない)。tokens.css を変えたらここも直す。
-       ハイフン 2 個をこのコメントに書くと XML ごと壊れるので CSS 変数名は裸で書かない。 -->
-  <style>
-    .ink { fill: #1A1A2E }
-    @media (prefers-color-scheme: dark) { .ink { fill: #EAEAEA } }
-  </style>
-  <path class="ink" d="M25.8 6 L32.9 6 Q34.6 6 36 7.6 L34.7 13.9 L28.9 13.9 C27.4 14.1 26.5 15.6 26.5 18 L26.5 22 L33.1 22 L33.1 29.5 L26.5 29.5 L26.5 58 L17 58 L17 29.5 L12 29.5 L12 22 L17 22 L17 16.2 C17 11.5 21.8 6 25.8 6 Z"/>
+       起こしたもの。丸だけ赤からオレンジに変えてある。
+       配色は .ico / apple-touch-icon.png と同じ (角丸が付くのは .ico までで、
+       apple-touch はベタの正方形)。板は不透明でなければならない。透過 + テーマ追従に
+       すると明るいタブバーで f が消える。詳細は CLAUDE.md の「favicon」節。 -->
+  <rect width="64" height="64" rx="10" fill="#1A1A2E"/>
+  <path fill="#EAEAEA" d="M25.8 6 L32.9 6 Q34.6 6 36 7.6 L34.7 13.9 L28.9 13.9 C27.4 14.1 26.5 15.6 26.5 18 L26.5 22 L33.1 22 L33.1 29.5 L26.5 29.5 L26.5 58 L17 58 L17 29.5 L12 29.5 L12 22 L17 22 L17 16.2 C17 11.5 21.8 6 25.8 6 Z"/>
   <circle cx="45.6" cy="52.4" r="6.2" fill="#FF6B00"/>
 </svg>

@@ -12,12 +12,22 @@ const ICONS = [
   { selector: 'link[rel="apple-touch-icon"]', href: '/apple-touch-icon.png' },
 ];
 
-/** `fill:` は favicon.svg の style ブロックの 2 宣言だけに一致する (丸は属性で書いてある) */
-const INK = /fill:\s*(#[0-9A-Fa-f]{6})/g;
+/** 64x64 の viewBox 上の標本点。角丸を避けた板の上と、f の縦棒の中 */
+const PLATE = { x: 32, y: 4 };
+const INK = { x: 21, y: 45 };
 
-function rgb(hex: string) {
-  const n = Number.parseInt(hex.slice(1), 16);
-  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+/** WCAG の相対輝度。tokens.css のコントラスト比と同じ尺度で見るため */
+function luminance([r, g, b]: number[]) {
+  const f = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+function contrast(a: number[], b: number[]) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -51,22 +61,43 @@ test('link が 3 つとも実体を指している', async ({ page, request }) =
   expect(root).toBe('svg');
 });
 
-// favicon の SVG は外部 CSS を解決できないので、f の色は tokens.css の値を焼き込む
-// しかない。ずれても「タブのアイコンだけ本文と色が違う」でしか現れず、目視でも
-// 気付けないので、実際に描画された本文の色 (var(--text)) と突き合わせる。
-test('ink の色が本文の色と揃っている', async ({ page, request }) => {
+/**
+ * 本番で「オレンジの丸しか見えない」状態になったことがある。背景を透過にして
+ * `f` の色を prefers-color-scheme で切り替えていたが、あれは OS の設定であって
+ * **ブラウザのタブバーの明るさとは別物**なので、OS がダーク・ウィンドウがライトだと
+ * 白い `f` が明るいタブバーに乗って消えた。
+ *
+ * ソースの書き方（メディアクエリ / `light-dark()` / 属性）に依存させないため、実際に
+ * 描画して標本点の画素を見る。OS 設定をどちらに振っても、板が不透明で `f` が板と
+ * 十分なコントラストを持つこと。
+ */
+test('OS 設定をどちらに振っても板が不透明で f が読める', async ({ page, request }) => {
   const svg = await (await request.get('/favicon.svg')).text();
-  const ink = [...svg.matchAll(INK)].map((m) => m[1]);
-  expect(ink, 'style ブロックに light / dark の 2 色').toHaveLength(2);
 
-  for (const [theme, hex] of [
-    ['light', ink[0]],
-    ['dark', ink[1]],
-  ] as const) {
-    await page.evaluate((t) => (document.documentElement.dataset.theme = t), theme);
-    // 色には transition が乗っているので、切り替え直後はまだ遷移前の値が返る。
-    await expect
-      .poll(() => page.evaluate(() => getComputedStyle(document.body).color))
-      .toBe(rgb(hex));
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+
+    const { plate, ink } = await page.evaluate(
+      ([src, plateAt, inkAt]) =>
+        new Promise<{ plate: number[]; ink: number[] }>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 64;
+            const ctx = canvas.getContext('2d')!;
+            ctx.drawImage(img, 0, 0, 64, 64);
+            const at = (p: { x: number; y: number }) => [...ctx.getImageData(p.x, p.y, 1, 1).data];
+            resolve({ plate: at(plateAt), ink: at(inkAt) });
+          };
+          img.onerror = () => reject(new Error('favicon.svg を画像として読めない'));
+          // data: URL にするのは、ページの色スキームを直接反映させるため
+          img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(src)))}`;
+        }),
+      [svg, PLATE, INK] as const,
+    );
+
+    expect(plate[3], `${colorScheme}: 板が不透明`).toBe(255);
+    expect(ink[3], `${colorScheme}: f が不透明`).toBe(255);
+    expect(contrast(plate, ink), `${colorScheme}: f と板のコントラスト`).toBeGreaterThan(4.5);
   }
 });
