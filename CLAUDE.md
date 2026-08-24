@@ -31,7 +31,8 @@ route は Custom Domain より優先されるので、`/blog` 配下がブログ
 ブログは `blog/` に独自の `package.json` / `wrangler.jsonc` を持つ独立プロジェクトで、
 依存は本体と混ざっていない。詳細は「ブログ」節と `blog/CONTRACT.md`。
 
-リポジトリ直下の `shared/` だけが両方から読まれる（色トークンとテーマの保存キー）。
+リポジトリ直下の `shared/` だけが両方から読まれる（色トークン / テーマの保存キー /
+`shared/public/` の favicon 一式）。
 
 ## Commands
 
@@ -125,7 +126,7 @@ main への push で動く。
 
 - `test` は**変更の内容によらず必ず走る**（push / pull_request の両方）
 - `deploy` は `changes` ジョブの判定で、**配信物に影響する変更があるときだけ**走る。
-  対象は `src/` `shared/` `worker/` `public/` `index.html` `package.json`
+  対象は `src/` `shared/` `worker/` `index.html` `package.json`
   `package-lock.json` `vite.config.ts` `wrangler.jsonc`。ドキュメント・テスト・
   tsconfig・CI 設定だけの変更ではデプロイしない
 - 判定の比較元は **`deployed` タグ**（deploy ジョブが成功時に進める軽量タグ）。
@@ -278,6 +279,55 @@ JS は `data-theme` を切り替えるだけで、色を一切持たない。
   stamp する。モジュールスクリプトは defer なので、これが無いとちらつく。
   `STORAGE_KEY` の文字列をここに直書きしているので、変えるときは両方直す
   （ブログ側は `Base.astro` が `shared/theme.ts` から埋め込むので直書きしていない）
+
+### favicon
+
+実体は **`shared/public/`** に置き、本体（`vite.config.ts` の `publicDir`）とブログ
+（`blog/astro.config.mjs` の `publicDir`）の両方がそこを向いている。同じアイコンを
+2 箇所にコピーすると必ず片方だけ古くなるため。ブログ側は出力が `outDir`
+（`dist/blog/`）直下に入るので、参照は `/blog/favicon.svg` のように base 付きになる。
+
+**この配線の代償として、片方のサイトだけの静的ファイルを置く場所が無い。**
+`publicDir` はプロジェクトに 1 つしか持てないので、`shared/public/` に置いたものは
+必ず両サイトに配られる。`robots.txt` や `_headers` のように「本体だけ」「ブログだけ」
+に効かせたいファイルが要るようになったら、**この配線を解いて各プロジェクトに
+`public/` を戻し、favicon 3 点はビルド前のコピーで配ること**。今このやり方なのは、
+共有したいものがアイコン 3 点しか無いあいだは publicDir を向けるのが一番安いから。
+
+| ファイル | 中身 | 用途 |
+|---|---|---|
+| `favicon.svg` | 背景透明。`f` はテーマ追従、丸は `#FF6B00` | SVG に対応するブラウザ |
+| `favicon.ico` | 32x32。紺の角丸に白い `f` | 非対応ブラウザと素の `/favicon.ico` 要求 |
+| `apple-touch-icon.png` | 180x180。紺のベタ塗りに白い `f` | iOS のホーム画面など |
+
+- 元絵は旧サイト（`kan/www.fushihara.net` の `dist/img/favicon.png`）の "f."。
+  145px の PNG からアウトラインを起こしてある。丸だけ赤からオレンジに変えた
+- **link タグは `.ico` を先に書く。** SVG に対応するブラウザはそちらを選ぶ
+- `favicon.svg` の `f` の色は `shared/tokens.css` の `--text` と同じ値を**焼き込んで
+  いる**。favicon として読まれる SVG は外部 CSS を import できず `var()` も解決されない
+  ため、ここだけは重複が避けられない。`--text` を変えたら SVG も直すこと
+- **ラスタは透明にしない。** iOS はホーム画面で透明部分を黒く塗るので、
+  `apple-touch-icon.png` は必ず不透明の板を敷く。`.ico` も同じ扱いに揃えてある
+- **`favicon.svg` が追えるのは OS 設定だけ。** favicon の SVG から `localStorage` は
+  読めないので、テーマトグルで明示的に選んだ側には追従しない（OS がダークなら
+  ライトを選んでもタブのアイコンは白い `f` のまま）。仕様として受け入れている
+- ラスタ 2 つは `favicon.svg` と同じ図形に紺の板を足したものを headless Chrome で
+  書き出し、`sharp` で 16 色パレットに落として作った（実質 2 色の絵なので、
+  フルカラーのままだと 2.4KB、パレット化すると 0.9KB）。`.ico` は 32x32 の PNG を
+  ICO コンテナに 1 枚だけ入れたもの。作り直すときは元の PNG ではなく
+  `favicon.svg` のパスを流用する
+- **`favicon.svg` のコメントにハイフン 2 個を書かないこと。** SVG は XML なので
+  `<!-- ... --text ... -->` は不正になり、ファイル全体がパースエラーになる
+  （CSS 変数名を裸で書いて実際に踏んだ）。壊れていても 200 で配信されるので、
+  ブラウザのタブに何も出なくなるまで気付けない
+- 配線は壊れても画面に出ないので、link タグと実体（200 / 空でないこと / SVG が
+  パースできること）を E2E で突き合わせている
+  （本体は `e2e/favicon.spec.ts`、ブログは `blog/e2e/blog.spec.ts` の「配信物」節）。
+  `favicon.svg` の色が `--text` からずれていないかも、実際に描画された本文の色と
+  突き合わせて見ている（`shared/tokens.css` は `?raw` で読むと workerd プールでは
+  空になるので、ユニットテストにはできない）。
+  実体の検証に `<img>` のデコードを使ってはいけない。`page.route()` を張った状態だと
+  **ICO だけデコードに失敗する**（Playwright の傍受の副作用で、ファイルは壊れていない）
 
 ### wema のサニタイザという制約（重要）
 

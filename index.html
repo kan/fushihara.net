@@ -16,6 +16,12 @@
       } catch (e) {}
     </script>
 
+    <!-- 並び順に意味がある。.ico を先に置くと、SVG に対応するブラウザは後者を選ぶ。
+         実体と使い分けは CLAUDE.md の「favicon」節。 -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
     <!-- OGP -->
     <meta property="og:title" content="kan / fushihara - Portfolio" />
     <meta property="og:description" content="kan (fushihara) のポートフォリオサイト" />

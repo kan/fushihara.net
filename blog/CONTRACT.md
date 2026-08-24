@@ -61,8 +61,13 @@
 | `/blog/rss.xml` | RSS 2.0。`link` は絶対 URL |
 | `/blog/sitemap-index.xml` | サイトマップ |
 | `/blog/404.html` | 404 ページ |
+| `/blog/favicon.svg` | favicon（テーマ追従） |
+| `/blog/favicon.ico` | favicon（SVG 非対応ブラウザ向け） |
+| `/blog/apple-touch-icon.png` | ホーム画面用アイコン |
 
 - **URL は末尾スラッシュありで固定**。無しでのアクセスは 301/307 で有りへ寄せる。
+- favicon 3 点は `/blog/` 直下へそのまま出す。中身を作る必要はなく、
+  リポジトリにあるファイルをコピーするだけ（置き場所は実装側の都合）。
 - 一度公開した URL は変えない。RSS 購読者のリーダーと被リンクが握っているため。
 - ビルド成果物は `dist/blog/` に出す。配信は `dist/` を丸ごと静的アセットとして
   置く形なので、出力パスと URL が 1:1 で対応している必要がある。

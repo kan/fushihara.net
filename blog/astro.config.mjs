@@ -14,6 +14,10 @@ export default defineConfig({
   // Worker には dist/ 全体をそのまま配らせたいので、出力側を base に合わせる。
   // ここを変えたら wrangler.jsonc の assets.directory も一緒に見直すこと。
   outDir: './dist/blog',
+  // favicon 一式はリポジトリ直下の shared/public に置いて本体と共有する
+  // (本体側は vite.config.ts の publicDir)。出力は outDir 直下、つまり
+  // dist/blog/ に入るので、ブログからは base 付きの /blog/favicon.svg で参照する。
+  publicDir: '../shared/public',
   // content layer のストアはこの下に置かれる。E2E のビルドと通常のビルド / dev
   // サーバーで場所を分けないと、同じファイルを奪い合って互いの記事を拾う
   // (実測: dev を実記事で起動したまま E2E を回すと、dev 側に fixture が出る)。

@@ -45,6 +45,12 @@ const themeInit = `try{var t=localStorage.getItem(${JSON.stringify(STORAGE_KEY)}
 
     <script is:inline set:html={themeInit}></script>
 
+    {/* 実体は本体サイトと共有の shared/public。publicDir の出力は outDir (dist/blog)
+        直下なので、参照は base 付きになる。並び順の意味は index.html と同じ。 */}
+    <link rel="icon" href={`${base}favicon.ico`} sizes="32x32" />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <link rel="apple-touch-icon" href={`${base}apple-touch-icon.png`} />
+
     <link rel="alternate" type="application/rss+xml" title={SITE_NAME} href={`${base}rss.xml`} />
 
     <meta property="og:title" content={title} />

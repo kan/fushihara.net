@@ -36,9 +36,10 @@ jobs:
 
           # ビルド成果物と Worker の設定に影響する = 変わればデプロイが要るパス。
           # tsconfig / test / e2e / *.md / .github は成果物を変えないので含めない。
-          # shared/ はブログと共用するトークンとテーマ定数。本体の CSS/JS に入るので要る
+          # shared/ はブログと共用するトークンとテーマ定数、および publicDir の実体
+          # (favicon 一式)。本体の CSS/JS と配信ファイルに入るので要る
           # (同じ変更でブログ側も deploy-blog.yml が拾う)。
-          deploy_paths='^(src/|shared/|worker/|public/|index\.html$|package\.json$|package-lock\.json$|vite\.config\.ts$|wrangler\.jsonc$)'
+          deploy_paths='^(src/|shared/|worker/|index\.html$|package\.json$|package-lock\.json$|vite\.config\.ts$|wrangler\.jsonc$)'
 
           # 比較元は「前回デプロイした地点」。直前の push と比べると、テスト失敗などで
           # デプロイされずに終わった変更が、次の無関係な push で「変更なし」と判定されて

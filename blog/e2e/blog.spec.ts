@@ -14,6 +14,12 @@ import { SITE_NAME, pageTitle } from '../src/lib/site';
 
 const POST = '/blog/rendering-sample/';
 
+const ICONS = [
+  { selector: 'link[rel="icon"][sizes="32x32"]', href: '/blog/favicon.ico' },
+  { selector: 'link[rel="icon"][type="image/svg+xml"]', href: '/blog/favicon.svg' },
+  { selector: 'link[rel="apple-touch-icon"]', href: '/blog/apple-touch-icon.png' },
+];
+
 async function themeState(page: Page) {
   return page.evaluate(() => ({
     attr: document.documentElement.dataset.theme ?? null,
@@ -181,6 +187,37 @@ test.describe('配信物', () => {
   test('sitemap がある', async ({ request }) => {
     const res = await request.get('/blog/sitemap-index.xml');
     expect(res.status()).toBe(200);
+  });
+
+  // favicon の実体はリポジトリ直下の shared/public にあり、astro.config.mjs の
+  // publicDir 経由で dist/blog に入る。本体サイトと 1 つのファイルを共有するための
+  // 配線なので、設定を触ると link タグを残したまま実体だけが消える。
+  test('favicon の link が 3 つとも実体を指している', async ({ page, request }) => {
+    await page.goto('/blog/');
+
+    const bodies = new Map<string, Buffer>();
+    await Promise.all(
+      ICONS.map(async ({ href }) => {
+        const res = await request.get(href);
+        expect(res.status(), href).toBe(200);
+        bodies.set(href, await res.body());
+      }),
+    );
+
+    for (const { selector, href } of ICONS) {
+      await expect(page.locator(selector)).toHaveAttribute('href', href);
+      expect(bodies.get(href)?.byteLength, href).toBeGreaterThan(0);
+    }
+
+    // favicon.svg は XML なので、コメントにハイフン 2 個を書くだけで壊れる (実際に
+    // 踏んだ)。壊れたファイルも 200 で配信されるので、パースが通ることまで見る。
+    // 実体は本体サイトと同じファイルだが、生成器を差し替えた日にここだけで合否を
+    // 出せるよう、この節でも独立に見る。
+    const root = await page.evaluate((src) => {
+      const doc = new DOMParser().parseFromString(src, 'image/svg+xml');
+      return doc.querySelector('parsererror') ? 'parsererror' : doc.documentElement.tagName;
+    }, bodies.get('/blog/favicon.svg')!.toString());
+    expect(root).toBe('svg');
   });
 
   test('一覧が RSS を autodiscovery で指す', async ({ page }) => {
