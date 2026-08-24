@@ -412,7 +412,11 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 - **コードハイライトは `defaultColor: false`。** Shiki に色を直接書かせず
   `--shiki-light` / `--shiki-dark` だけ出させて、`light-dark()` に渡している。
   他の色とまったく同じ扱いになるので、`[data-theme]` とメディアクエリのブロックが
-  要らない（`!important` も要らない）
+  要らない（`!important` も要らない）。
+  代償として RSS 側で変数をベタの色に展開する必要があるが（`blog/src/lib/feed-html.ts`）、
+  それを承知で `false` を選んでいる。**`'light'` に変えないこと。** Shiki が
+  インラインの `color` を書くようになり、`blog.css` の `light-dark()` を殴るので
+  `!important` が要る
 - `base` の正規化は `blog/src/lib/paths.ts` に閉じてある。`import.meta.env.BASE_URL` の
   末尾スラッシュは `trailingSlash` 設定に左右されるので、素で連結しないこと
 - **E2E のポートは 4322。** `astro dev` の既定 4321 と分けてある。`reuseExistingServer:
@@ -449,6 +453,17 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
   ページ・一覧・RSS に出続ける（実測。ビルドエラーにすらならない）。画像を含む記事だと
   `ImageNotFound` でビルドが落ちるので気付けるが、画像が無ければ黙って公開され続ける。
   `clean:build-store` がビルドのたびにストアを捨てているのはこのため
+- **RSS の全文は `astro/container` の `experimental_AstroContainer` で作っている。**
+  記事ページと同じ `<Content />` を文字列にしているので、画像パイプラインの出力も
+  コードハイライトもページと一致する。ただし名前のとおり実験的 API で、`astro` は
+  キャレット指定なので、マイナー更新で消えるとビルドが落ちる（CI の build で止まる
+  のでデプロイはされない）。落ちたら markdown-it 等で変換し直す形に退避できるが、
+  そのときページと本文が食い違うことは受け入れる必要がある
+- **RSS 用の後処理はタグの中の属性だけを書き換える**（`blog/src/lib/feed-html.ts`）。
+  HTML 全体に正規表現を掛けると、記事に書いた `` `<img src="./x.png">` `` のような
+  **本文**まで書き換わる（理由はそのファイルの doc comment）。ダブルクォートの
+  `src` / `href` しか見ていないので、記事に生 HTML を `href='./x'` の形で書くと
+  絶対化されない
 - フィクスチャの見た目を確認したいときは `npm run dev:fixtures`
 - **ヘッダーは `fushihara.net / blog` のパンくず 1 本。** 「どこの」「何か」を示しつつ
   戻り道も兼ねるので、nav にポートフォリオへのリンクは置かない。一覧ではこのパンくずが

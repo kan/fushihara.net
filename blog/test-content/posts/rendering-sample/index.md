@@ -38,6 +38,15 @@ export function displayDate(d: Date): string {
 
 ![サンプル画像](./sample.png)
 
+## 本文の中の HTML
+
+本文に書いた HTML は、**どこにも書き換えられずにそのまま出る**こと。
+インラインの `<img src="./dog.png">` と、言語指定なしのコードブロック:
+
+```
+<img src="./cat.png">
+```
+
 ## 引用と区切り
 
 > 引用も使える。

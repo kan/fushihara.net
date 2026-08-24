@@ -1,6 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { STORAGE_KEY } from '../../shared/theme';
-import { SITE_NAME, pageTitle } from '../src/lib/site';
+import { SITE_NAME, SITE_URL, pageTitle } from '../src/lib/site';
 
 /**
  * このファイルは「Astro のテスト」ではなく「ブログの契約のテスト」。
@@ -13,12 +13,49 @@ import { SITE_NAME, pageTitle } from '../src/lib/site';
  */
 
 const POST = '/blog/rendering-sample/';
+const POST_TITLE = '描画サンプル';
 
 const ICONS = [
   { selector: 'link[rel="icon"][sizes="32x32"]', href: '/blog/favicon.ico' },
   { selector: 'link[rel="icon"][type="image/svg+xml"]', href: '/blog/favicon.svg' },
   { selector: 'link[rel="apple-touch-icon"]', href: '/blog/apple-touch-icon.png' },
 ];
+
+/**
+ * RSS から 1 記事分の本文 (`content:encoded`) を取り出し、検査したいものだけ返す。
+ *
+ * XML も HTML も本物のパーサに通す。手で `<item>` を切って実体参照を戻すと、
+ * CDATA や数値実体を吐く生成器に替わった日に**黙って通る側へ倒れる**。
+ */
+async function feedHtml(page: Page, request: APIRequestContext, title: string) {
+  const xml = await (await request.get('/blog/rss.xml')).text();
+
+  const feed = await page.evaluate(
+    ([source, wanted]) => {
+      const item = [...new DOMParser().parseFromString(source, 'text/xml').querySelectorAll('item')]
+        .find((el) => el.querySelector('title')?.textContent === wanted);
+      const content = item?.getElementsByTagName('content:encoded')[0]?.textContent;
+      if (content == null) return null;
+
+      const doc = new DOMParser().parseFromString(content, 'text/html');
+      const attrs = ['src', 'href', 'srcset'];
+      return {
+        text: doc.body.textContent ?? '',
+        // 属性は要素から取る。生の文字列を走査すると、コードブロックに書いた
+        // HTML (text ノード) まで拾ってしまう。
+        urls: [...doc.querySelectorAll('[src],[href],[srcset]')]
+          .flatMap((el) => attrs.map((a) => el.getAttribute(a)))
+          .filter((v): v is string => !!v),
+        styles: [...doc.querySelectorAll('[style]')].map((el) => el.getAttribute('style') ?? ''),
+        code: [...doc.querySelectorAll('code')].map((el) => el.textContent ?? ''),
+      };
+    },
+    [xml, title] as const,
+  );
+
+  expect(feed, `RSS に「${title}」の本文が無い`).not.toBeNull();
+  return feed!;
+}
 
 async function themeState(page: Page) {
   return page.evaluate(() => ({
@@ -30,7 +67,7 @@ async function themeState(page: Page) {
 test.describe('URL 設計', () => {
   test('一覧が記事へリンクする', async ({ page }) => {
     await page.goto('/blog/');
-    const link = page.getByRole('link', { name: '描画サンプル' });
+    const link = page.getByRole('link', { name: POST_TITLE });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', POST);
   });
@@ -40,9 +77,9 @@ test.describe('URL 設計', () => {
     expect(res?.status()).toBe(200);
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
       'href',
-      `https://fushihara.net${POST}`,
+      `${SITE_URL}${POST}`,
     );
-    await expect(page.getByRole('heading', { level: 1, name: '描画サンプル' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: POST_TITLE })).toBeVisible();
   });
 
   test('末尾スラッシュ無しは付きへ寄せられる', async ({ page }) => {
@@ -79,7 +116,7 @@ test.describe('ナビゲーション', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('blog');
 
     await page.goto(POST);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('描画サンプル');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(POST_TITLE);
   });
 });
 
@@ -170,7 +207,7 @@ test.describe('配信物', () => {
     await expect(page).toHaveTitle(SITE_NAME);
 
     await page.goto(POST);
-    await expect(page).toHaveTitle(pageTitle('描画サンプル'));
+    await expect(page).toHaveTitle(pageTitle(POST_TITLE));
 
     const xml = await (await request.get('/blog/rss.xml')).text();
     expect(xml).toContain(`<title>${SITE_NAME}</title>`);
@@ -180,8 +217,58 @@ test.describe('配信物', () => {
     const res = await request.get('/blog/rss.xml');
     expect(res.status()).toBe(200);
     const xml = await res.text();
-    expect(xml).toContain('<link>https://fushihara.net/blog/rendering-sample/</link>');
-    expect(xml).toContain('<title>描画サンプル</title>');
+    expect(xml).toContain(`<link>${SITE_URL}${POST}</link>`);
+    expect(xml).toContain(`<title>${POST_TITLE}</title>`);
+  });
+
+  // CONTRACT.md の「RSS は全文を配る」。要約だけ配ると購読者がリーダーの中で
+  // 記事を読めない。ページと同じ HTML を載せるので、ページ側では正しくても
+  // リーダーの中では壊れる点を重点的に見る。
+  test('RSS が本文を全文で配る', async ({ page, request }) => {
+    const feed = await feedHtml(page, request, POST_TITLE);
+
+    // description は要約のまま。本文は冒頭から末尾まで content:encoded 側に入る。
+    expect(feed.text).toContain('見出し 2');
+    expect(feed.text).toContain('displayDate');
+    expect(feed.text).toContain('引用も使える');
+  });
+
+  test('RSS の本文に相対 URL が残らない', async ({ page, request }) => {
+    // リーダーは記事の URL を起点に解決してくれないので、画像・記事内リンク・
+    // 脚注のアンカーが相対のままだと全部壊れる。
+    const feed = await feedHtml(page, request, POST_TITLE);
+
+    expect(feed.urls.length, 'フィクスチャに画像とリンクがある').toBeGreaterThan(0);
+    expect(feed.urls.filter((u) => !URL.canParse(u))).toEqual([]);
+
+    // 画像が実際に取得できるところまで見る。ファイル名は生成器の都合なので固定しない。
+    const image = feed.urls.find((u) => /\.(webp|png|jpe?g|svg|gif)$/i.test(u));
+    expect(image, '本文の画像が絶対 URL で入っている').toBeDefined();
+
+    // 絶対 URL は本番のホストを指すので、パスだけ取り出してテストサーバーに投げる
+    // (そのまま request.get すると本番を叩いてしまう)。
+    const url = new URL(image!);
+    expect(url.origin, '絶対化の起点が配信するサイト').toBe(SITE_URL);
+    expect((await request.get(url.pathname)).status()).toBe(200);
+  });
+
+  test('RSS の本文が CSS 変数に頼らない', async ({ page, request }) => {
+    // リーダーはこのブログのスタイルシートを読まないので、カスタムプロパティに
+    // 入れた色はどこにも解決されない。色は要素に直接書けていること。
+    const feed = await feedHtml(page, request, POST_TITLE);
+
+    expect(feed.styles.filter((s) => /(^|;)\s*--/.test(s) || s.includes('var('))).toEqual([]);
+    expect(feed.styles.some((s) => /(^|;)\s*color:/.test(s)), 'コードに色が付く').toBe(true);
+  });
+
+  // 後処理が書き換えてよいのはタグの中の属性だけ。本文に書いた HTML まで書き換えると
+  // 記事とリーダーで中身が食い違う (理由は blog/src/lib/feed-html.ts の doc comment)。
+  test('RSS が本文中の HTML を書き換えない', async ({ page, request }) => {
+    const feed = await feedHtml(page, request, POST_TITLE);
+
+    // インラインコードと、言語指定なしのコードブロック
+    expect(feed.code).toContain('<img src="./dog.png">');
+    expect(feed.code).toContain('<img src="./cat.png">');
   });
 
   test('sitemap がある', async ({ request }) => {

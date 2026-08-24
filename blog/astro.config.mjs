@@ -1,11 +1,12 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
+import { SITE_URL } from './src/lib/site';
 
 // fushihara.net/blog* は Cloudflare の route でこの Worker に届く
 // (route は Custom Domain より優先される)。Astro 側も base を合わせる。
 export default defineConfig({
-  site: 'https://fushihara.net',
+  site: SITE_URL,
   base: '/blog',
   // URL は /blog/<slug>/ で固定する。公開後は変えられないので trailingSlash も固定。
   trailingSlash: 'always',

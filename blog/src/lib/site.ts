@@ -9,6 +9,12 @@
  */
 export const SITE_NAME = 'ふしはらねっとのぶろぐ';
 
+/**
+ * 配信するサイトの origin。`astro.config.mjs` の `site` と E2E がここを読む。
+ * RSS の絶対 URL も canonical もこれを起点にするので、散らすと必ずずれる。
+ */
+export const SITE_URL = 'https://fushihara.net';
+
 export const AUTHOR = 'Kan Fushihara (伏原 幹)';
 
 export const SITE_DESCRIPTION = `${AUTHOR} のブログ`;
