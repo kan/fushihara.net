@@ -12,5 +12,14 @@
     // (Pages の _routes.json 相当)。
     "run_worker_first": ["/api/*"]
   },
+  // ブログ (/blog) を配っている別 Worker を直接呼ぶための binding。
+  //
+  // **同一ゾーンの URL を素の fetch で叩いても、その Worker ルートは再実行されない。**
+  // リクエストは origin へ向かい、fushihara.net に origin は無いので 522 になる
+  // (本番で踏んだ)。ローカル dev は素の外向き fetch なので気付けない。
+  "services": [
+    { "binding": "BLOG", "service": "fushihara-net-blog" }
+  ],
+
   "observability": { "enabled": true }
 }

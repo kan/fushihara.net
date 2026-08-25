@@ -258,9 +258,22 @@ Worker が正規表現で RSS を読めるのは、生成側（`@astrojs/rss` �
 前提が崩れたときは記事が 1 件も取れなくなるが、そのときは 502 を返して**前回の控えで
 凌ぐ**（上の「上流が落ちたときの控え」参照）。
 
-上流 URL は `https://fushihara.net/blog/rss.xml` を直書きしている。相対 URL にすると
-dev（localhost）で解決できないため。同一ゾーンへのサブリクエストだが、宛先は別
-スクリプト（`fushihara-net-blog`）なのでループにはならない。
+##### 取りに行き方（同一ゾーンの罠）
+
+**素の `fetch('https://fushihara.net/blog/rss.xml')` で取ってはいけない。**
+Worker から同一ゾーンの URL へのサブリクエストは、**その Worker ルートを再実行せず
+origin へ向かう**。このゾーンに origin は無いので 522（接続タイムアウト）になる。
+本番で踏んだ。**ローカル dev は素の外向き fetch なので、これを一切再現しない。**
+
+そのため `wrangler.jsonc` の `services`（`BLOG` → `fushihara-net-blog`）でブログ
+Worker を直接呼ぶ。ローカルにはそのセッションが無く binding は 503 しか返さないので、
+`worker/api.ts` の `isLocal()` が `localhost` / `127.0.0.1` のときだけ公開 URL への
+素の fetch に切り替える（同一ゾーンの制限は本番のエッジの話なので、ローカルからは
+普通に読める）。両方の経路は `test/worker.test.ts` で固定してある。
+
+service binding はテストのプールにも存在しないので、`vitest.config.ts` の
+`miniflare.serviceBindings` でスタブに差し替えている（無いと workerd が起動時に
+落ちてテストが 1 つも動かない）。
 
 ### ルーティング設定
 

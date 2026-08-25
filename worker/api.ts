@@ -49,7 +49,7 @@ function positiveInt(url: URL, key: string, fallback: number, max: number): numb
  */
 function forAllowedUser(
   handler: (url: URL, user: string) => Promise<Response>,
-): (url: URL) => Promise<Response> {
+): (url: URL, env: Env) => Promise<Response> {
   return async (url) => {
     const name = url.searchParams.get('username') ?? '';
     if (!ALLOWED_USERS.has(name)) {
@@ -106,8 +106,11 @@ export const githubLanguages = forAllowedUser(async (url, user) => {
 // --- ブログ (/blog) の記事一覧 ---
 
 // ブログは別 Worker (fushihara-net-blog) が fushihara.net/blog* で配っている。
-// 同一ゾーンへのサブリクエストだが宛先が別スクリプトなのでループにはならない。
-// ここを相対 URL にすると dev (localhost) で解決できないので絶対 URL で持つ。
+//
+// **素の fetch で叩いてはいけない。** 同一ゾーンの URL へのサブリクエストは Worker
+// ルートを再実行せず origin へ向かうので、origin を持たないこのゾーンでは 522 に
+// なる (本番で踏んだ)。wrangler.jsonc の service binding 経由で直接呼ぶ。
+// URL はホスト名を見られないが、ブログ Worker のパス解決に /blog/rss.xml が要る。
 const BLOG_RSS_URL = 'https://fushihara.net/blog/rss.xml';
 
 const XML_ENTITIES: Record<string, string> = {
@@ -163,10 +166,17 @@ function parseRssItems(xml: string, limit: number): { title: string; link: strin
   return posts;
 }
 
-export const blog = async (url: URL): Promise<Response> => {
+/** dev / preview には別 Worker のセッションが無く、binding は 503 を返すだけになる */
+const isLocal = (url: URL) => url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+
+export const blog = async (url: URL, env: Env): Promise<Response> => {
   const count = positiveInt(url, 'count', 5, 20);
 
-  const res = await fetch(BLOG_RSS_URL, { headers: { 'User-Agent': USER_AGENT } });
+  // ローカルでは公開 URL をそのまま読む。同一ゾーンで Worker ルートが再実行されない
+  // のは本番 (Cloudflare のエッジ) の話なので、素の fetch で本番の RSS が読める。
+  const res = isLocal(url)
+    ? await fetch(BLOG_RSS_URL, { headers: { 'User-Agent': USER_AGENT } })
+    : await env.BLOG.fetch(BLOG_RSS_URL, { headers: { 'User-Agent': USER_AGENT } });
   if (!res.ok) return jsonError(res.status, { posts: [] });
 
   const posts = parseRssItems(await res.text(), count);

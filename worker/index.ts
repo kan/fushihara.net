@@ -1,7 +1,7 @@
 import { blog, githubLanguages, githubRepos, jsonError } from './api';
 
 interface Route {
-  handler: (url: URL) => Promise<Response>;
+  handler: (url: URL, env: Env) => Promise<Response>;
   /** そのエンドポイントが解釈するクエリ。控えのキーはこれだけで組む */
   keyParams: string[];
 }
@@ -55,9 +55,9 @@ function withHeaders(res: Response, extra: Record<string, string>): Response {
  * ハンドラの例外を非 ok のレスポンスに均す。fetch は DNS / TLS の失敗やサブリクエストの
  * 上限で reject するので、包まないと控えを引く前に Worker ごと落ちる (1101)。
  */
-async function runHandler(handler: Route['handler'], url: URL): Promise<Response> {
+async function runHandler(handler: Route['handler'], url: URL, env: Env): Promise<Response> {
   try {
-    return await handler(url);
+    return await handler(url, env);
   } catch (err) {
     console.error(`${url.pathname} の取得に失敗`, err);
     return jsonError(502, { error: 'upstream unavailable' });
@@ -82,7 +82,7 @@ export default {
     const cached = await cache.match(primary);
     if (cached) return cached;
 
-    const response = await runHandler(route.handler, url);
+    const response = await runHandler(route.handler, url, env);
 
     if (response.ok) {
       // キャッシュ書き込みでレスポンスを待たせない

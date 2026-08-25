@@ -7,6 +7,15 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
+      // wrangler.jsonc の service binding (BLOG → fushihara-net-blog) は、この
+      // プールには存在しないので置き換える。無いままだと workerd が起動時に
+      // 「no such service is defined」で落ちてテストが 1 つも動かない。
+      //
+      // テスト側は worker.fetch(request, env, ctx) に自前の env を渡すので、
+      // ここのスタブが実際に呼ばれることはない。起動を通すためだけのもの。
+      miniflare: {
+        serviceBindings: { BLOG: () => new Response('unused', { status: 501 }) },
+      },
     }),
   ],
   test: {

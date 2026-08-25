@@ -8,6 +8,9 @@ import worker, { cacheKeys } from '../worker/index';
  */
 let upstream: ReturnType<typeof vi.fn>;
 
+/** ブログ Worker への service binding (env.BLOG.fetch)。本番の /api/blog はこちらを通る */
+let blogService: ReturnType<typeof vi.fn>;
+
 /** ASSETS バインディングはテストプールに存在しないので、呼ばれたことだけ観測できる形で差す */
 let assets: ReturnType<typeof vi.fn>;
 let env: Env;
@@ -15,9 +18,12 @@ let env: Env;
 beforeEach(() => {
   upstream = vi.fn();
   vi.stubGlobal('fetch', upstream);
+  blogService = vi.fn();
 
   assets = vi.fn(async () => new Response('Not Found', { status: 404 }));
-  env = { ASSETS: { fetch: assets } } as unknown as Env;
+  // BLOG はブログ Worker への service binding。上流と同じモックに寄せて、
+  // 「RSS を返す上流」としてまとめて観測できるようにする。
+  env = { ASSETS: { fetch: assets }, BLOG: { fetch: blogService } } as unknown as Env;
 });
 
 afterEach(() => {
@@ -288,7 +294,7 @@ describe('上流が落ちたときの控え', () => {
 
   it('別のエンドポイントの控えを取り違えない', async () => {
     replyJson([{ name: 'repo' }]);
-    upstream.mockResolvedValueOnce(new Response('boom', { status: 502 }));
+    blogService.mockResolvedValueOnce(new Response('boom', { status: 502 }));
 
     await call('/api/github?username=kan');
     const failed = await call('/api/blog');
@@ -315,8 +321,9 @@ describe('/api/blog', () => {
     return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>${body}</channel></rss>`;
   }
 
+  /** binding 越しに RSS を 1 回分返す */
   function replyRss(items: Parameters<typeof rss>[0], init: { status?: number } = {}) {
-    upstream.mockResolvedValueOnce(
+    blogService.mockResolvedValueOnce(
       new Response(rss(items), {
         status: init.status ?? 200,
         headers: { 'Content-Type': 'application/rss+xml' },
@@ -326,12 +333,32 @@ describe('/api/blog', () => {
 
   const post = { title: '記事タイトル', link: 'https://fushihara.net/blog/foo/' };
 
-  it('ブログの RSS を読みに行く', async () => {
+  it('ブログ Worker への binding 経由で RSS を読む', async () => {
+    // 同一ゾーンの URL を素の fetch で叩くと Worker ルートが再実行されず、
+    // origin へ向かって 522 になる (本番で踏んだ)。binding を通すこと。
     replyRss([post]);
 
     await call('/api/blog');
 
-    expect(lastUpstreamUrl().href).toBe('https://fushihara.net/blog/rss.xml');
+    expect(blogService).toHaveBeenCalledOnce();
+    expect(new URL(blogService.mock.calls[0][0] as string).href)
+      .toBe('https://fushihara.net/blog/rss.xml');
+  });
+
+  it('ローカル (dev / preview) では公開 URL を直接読む', async () => {
+    // dev には別 Worker のセッションが無く、binding は 503 しか返さない
+    upstream.mockResolvedValueOnce(new Response(rss([post]), { status: 200 }));
+
+    const ctx = createExecutionContext();
+    const request = new Request(
+      'http://localhost:5173/api/blog',
+    ) as unknown as Parameters<typeof worker.fetch>[0];
+    const res = await worker.fetch(request, env, ctx);
+    await waitOnExecutionContext(ctx);
+
+    expect(res.status).toBe(200);
+    expect(blogService).not.toHaveBeenCalled();
+    expect(upstream).toHaveBeenCalledOnce();
   });
 
   it('RSS を title / link / date の JSON に均す', async () => {
@@ -419,7 +446,7 @@ describe('/api/blog', () => {
 
   it('解釈できない RSS は上流の異常として扱う', async () => {
     // 200 でも中身が取れないなら、空の控えを 30 日書かせない
-    upstream.mockResolvedValueOnce(new Response('<html>maintenance</html>', { status: 200 }));
+    blogService.mockResolvedValueOnce(new Response('<html>maintenance</html>', { status: 200 }));
 
     const res = await call('/api/blog');
 
@@ -430,7 +457,7 @@ describe('/api/blog', () => {
 
   it('解釈できない RSS が来ても前回の控えを潰さない', async () => {
     replyRss([post]);
-    upstream.mockResolvedValueOnce(new Response('<html>maintenance</html>', { status: 200 }));
+    blogService.mockResolvedValueOnce(new Response('<html>maintenance</html>', { status: 200 }));
 
     await call('/api/blog');
     await expirePrimary('/api/blog');
@@ -442,7 +469,7 @@ describe('/api/blog', () => {
   });
 
   it('RSS が引けなければ空配列を返す（ボードは静的テキストのまま残る）', async () => {
-    upstream.mockResolvedValueOnce(new Response('boom', { status: 502 }));
+    blogService.mockResolvedValueOnce(new Response('boom', { status: 502 }));
 
     const res = await call('/api/blog');
 
