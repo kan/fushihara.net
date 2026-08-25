@@ -78,7 +78,36 @@ export const githubRepos = forAllowedUser(async (url, user) => {
   return proxy(repoListUrl(user, count), GITHUB_HEADERS);
 });
 
-/** 非 fork リポジトリの language を集計し、頻度順に上位 N 件を返す */
+// GitHub が language として返すが、スキルとして並べても意味の無いもの。
+// 「Dockerfile が書けます」は読み手に何も伝えない。
+const NON_LANGUAGES = new Set([
+  'Dockerfile', 'Shell', 'Makefile', 'HTML', 'CSS', 'Batchfile',
+  'Vim Script', 'Emacs Lisp', 'Roff', 'TeX',
+  // PowerShell は言語ではあるが、スキルとして並べたいものではない（本人の判断）
+  'PowerShell',
+]);
+
+// この年数より古いものは数えない。リポジトリ数の累積は「昔たくさん書いた言語」に
+// 引っ張られるので、直近だけを見て「今書いている言語」に寄せる。
+const SKILL_WINDOW_YEARS = 3;
+
+interface RepoLanguage {
+  language: string | null;
+  fork: boolean;
+  pushed_at: string;
+}
+
+/** 非 fork リポジトリの language を頻度順に数える */
+function countLanguages(repos: RepoLanguage[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const r of repos) {
+    if (r.fork || !r.language || NON_LANGUAGES.has(r.language)) continue;
+    counts.set(r.language, (counts.get(r.language) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** 直近に触った非 fork リポジトリの language を集計し、頻度順に上位 N 件を返す */
 export const githubLanguages = forAllowedUser(async (url, user) => {
   const limit = positiveInt(url, 'limit', 5, 50);
 
@@ -86,14 +115,15 @@ export const githubLanguages = forAllowedUser(async (url, user) => {
   const res = await fetch(repoListUrl(user, 100), { headers: GITHUB_HEADERS });
   if (!res.ok) return jsonError(res.status, { languages: [] });
 
-  const repos = (await res.json()) as { language: string | null; fork: boolean }[];
+  const repos = (await res.json()) as RepoLanguage[];
 
-  const counts = new Map<string, number>();
-  for (const r of repos) {
-    if (!r.fork && r.language) {
-      counts.set(r.language, (counts.get(r.language) ?? 0) + 1);
-    }
-  }
+  const since = new Date();
+  since.setFullYear(since.getFullYear() - SKILL_WINDOW_YEARS);
+  const recent = repos.filter((r) => new Date(r.pushed_at) >= since);
+
+  // 直近に何も触っていなければ全期間で数える。空のカードを出すよりはましで、
+  // 上流は成功しているので「控え」の出番でもない。
+  const counts = countLanguages(recent.length > 0 ? recent : repos);
 
   const languages = [...counts.entries()]
     .sort((a, b) => b[1] - a[1])

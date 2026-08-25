@@ -9,7 +9,6 @@ export interface GitHubRepo {
   name: string;
   description: string | null;
   html_url: string;
-  stargazers_count: number;
   language: string | null;
   fork: boolean;
 }
@@ -42,8 +41,11 @@ export async function fetchGitHubLanguages(username: string, limit = 5): Promise
   return data?.languages ?? [];
 }
 
-export async function fetchGitHubRepos(username: string, limit = 5): Promise<GitHubRepo[]> {
-  // fork を落としてから上位 N 件にするので、多めに要求しておく
-  const repos = await getJson<GitHubRepo[]>(`/api/github?username=${username}&count=${limit * 2}`);
-  return (repos ?? []).filter((r) => !r.fork).slice(0, limit);
+/**
+ * 非 fork のリポジトリ一覧。どれを出すかは呼び出し側（`OSS_REPOS`）が決めるので、
+ * ここでは絞らない。名前で引けるよう、上限いっぱい（100 件）まで取ってくる。
+ */
+export async function fetchGitHubRepos(username: string, count = 100): Promise<GitHubRepo[]> {
+  const repos = await getJson<GitHubRepo[]>(`/api/github?username=${username}&count=${count}`);
+  return (repos ?? []).filter((r) => !r.fork);
 }

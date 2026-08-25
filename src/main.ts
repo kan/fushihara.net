@@ -1,7 +1,7 @@
 import { WemaBoard } from '@kanf/wema';
 import '@kanf/wema/style.css';
 import './style.css';
-import { boardData } from './board-data';
+import { boardData, EXTRA_SKILLS, GITHUB_USER, OSS_REPOS, ossRow } from './board-data';
 import { initTheme } from './theme-toggle';
 import { fetchBlogPosts, fetchGitHubRepos, fetchGitHubLanguages } from './api';
 import { escapeHtml, moreLink } from './note-html';
@@ -116,8 +116,8 @@ function sub(text: string): string {
 async function loadDynamicData() {
   const [posts, repos, languages] = await Promise.allSettled([
     fetchBlogPosts(4),
-    fetchGitHubRepos('kan', 5),
-    fetchGitHubLanguages('kan', 8),
+    fetchGitHubRepos(GITHUB_USER),
+    fetchGitHubLanguages(GITHUB_USER, 8),
   ]);
 
   // ブログの RSS → Blog ノート
@@ -134,24 +134,25 @@ async function loadDynamicData() {
     board.updateNote('blog', { text: `<b>Blog</b><br><br>${items}${moreLink('/blog/')}` });
   }
 
-  // GitHub → OSS Projects
+  // GitHub → OSS Projects（並びは board-data.ts の OSS_REPOS が決める）
   if (repos.status === 'fulfilled' && repos.value.length > 0) {
-    const items = repos.value
-      .map((r) => {
-        const star = r.stargazers_count > 0 ? ` <span class="muted">${r.stargazers_count}</span>` : '';
-        const desc = r.description ? ` ${sub(`- ${escapeHtml(r.description)}`)}` : '';
-        return `<div class="oss-row"><a href="${escapeHtml(r.html_url)}" target="_blank">${escapeHtml(r.name)}</a>${star}${desc}</div>`;
-      })
-      .join('');
+    const byName = new Map(repos.value.map((r) => [r.name, r]));
+    const items = OSS_REPOS.map((name) => {
+      // star は出さない。顔ぶれは手で選んでいるので、数字は並びの根拠にならない。
+      const desc = byName.get(name)?.description;
+      return ossRow(name, desc ? ` ${sub(`- ${escapeHtml(desc)}`)}` : '');
+    }).join('');
     board.updateNote('oss', {
-      text: `<b>OSS Projects</b><br><br>${items}${moreLink('https://github.com/kan?tab=repositories')}`,
+      text: `<b>OSS Projects</b><br><br>${items}` +
+        moreLink(`https://github.com/${GITHUB_USER}?tab=repositories`),
     });
   }
 
-  // GitHub Languages → Skills
+  // GitHub Languages → Skills（集計した言語のあとに、手書きの道具を足す）
   if (languages.status === 'fulfilled' && languages.value.length > 0) {
-    const items = languages.value
-      .map((l) => escapeHtml(l.name))
+    const names = languages.value.map((l) => l.name);
+    const items = [...names, ...EXTRA_SKILLS.filter((s) => !names.includes(s))]
+      .map(escapeHtml)
       .join(' / ');
     board.updateNote('skills', { text: `<b>Skills</b><br><br>${items}` });
   }

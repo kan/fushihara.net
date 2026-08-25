@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
 import { MARGIN, mobileOrder } from '../src/layout';
 
 // 外部 API はモックする。CI を api.github.com の生存とレートリミット、ブログ Worker の
@@ -12,17 +13,21 @@ const BLOG = {
     },
   ],
 };
+// OSS 付箋に出す顔ぶれは board-data.ts が決め、説明だけ API から来る。
+// 1 本目にだけ値を持たせて「補完されること」と「API に無くても消えないこと」を見る。
 const REPOS = [
   {
-    name: 'mock-repo',
+    name: OSS_REPOS[0],
     description: 'モックの説明',
-    html_url: 'https://github.com/kan/mock-repo',
-    stargazers_count: 42,
+    html_url: `https://github.com/kan/${OSS_REPOS[0]}`,
     language: 'TypeScript',
     fork: false,
   },
 ];
-const LANGUAGES = { languages: [{ name: 'MockLang', count: 9 }] };
+// 2 本目は手書きの追加分と重複させ、二重に出ないことを見る
+const LANGUAGES = {
+  languages: [{ name: 'MockLang', count: 9 }, { name: EXTRA_SKILLS[0], count: 1 }],
+};
 
 const NOTE = '.wema-note';
 
@@ -71,10 +76,14 @@ test('取得したデータが対応するノートに反映される', async ({
   await expect(blogNote).toContainText('モック記事タイトル');
   // pubDate は JST で出す (UTC 15:00 は翌日)
   await expect(blogNote).toContainText('2026-08-25');
-  await expect(page.locator(NOTE).filter({ hasText: 'OSS Projects' }))
-    .toContainText('mock-repo');
-  await expect(page.locator(NOTE).filter({ hasText: 'Skills' }))
-    .toContainText('MockLang');
+  const ossNote = page.locator(NOTE).filter({ hasText: 'OSS Projects' });
+  for (const name of OSS_REPOS) await expect(ossNote).toContainText(name);
+  await expect(ossNote).toContainText('モックの説明');
+  const skillsNote = page.locator(NOTE).filter({ hasText: 'Skills' });
+  await expect(skillsNote).toContainText('MockLang');
+  // 集計した言語のあとに手書きの道具が続く。重複は落とす
+  for (const skill of EXTRA_SKILLS) await expect(skillsNote).toContainText(skill);
+  expect((await skillsNote.innerText()).split(EXTRA_SKILLS[0]).length - 1).toBe(1);
 });
 
 test('左上にサイトの見出しが出る', async ({ page }) => {
@@ -149,7 +158,10 @@ test('API が全滅しても静的な内容は残る', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator(NOTE).first()).toBeVisible();
 
-  // board-data.ts のフォールバック文言がそのまま出ている
+  // board-data.ts の静的テキストがそのまま出ている
+  const ossNote = page.locator(NOTE).filter({ hasText: 'OSS Projects' });
+  for (const name of OSS_REPOS) await expect(ossNote).toContainText(name);
+
   const blogNote = page.locator(NOTE).filter({ hasText: 'Blog' });
   await expect(blogNote).toContainText('Loading...');
   // API を 1 つも要らない唯一の行き先なので、全滅時こそ導線を残す

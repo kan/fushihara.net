@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boardData } from '../src/board-data';
+import { boardData, EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
 import { mobileOrder } from '../src/layout';
 
 const noteIds = boardData.notes.map((n) => n.id);
@@ -34,6 +34,26 @@ describe('エッジ定義', () => {
     for (const edge of boardData.edges) {
       expect(edge.from, edge.id).not.toBe(edge.to);
     }
+  });
+});
+
+describe('OSS_REPOS', () => {
+  // 静的テキストと main.ts の補完の両方がこの並びを使う
+  it('空でなく、重複もない', () => {
+    expect(OSS_REPOS.length).toBeGreaterThan(0);
+    expect(new Set(OSS_REPOS).size).toBe(OSS_REPOS.length);
+  });
+
+  it('静的テキストにも全部載っている（API が落ちても消えない）', () => {
+    const oss = boardData.notes.find((n) => n.id === 'oss')!;
+    for (const name of OSS_REPOS) expect(oss.text).toContain(name);
+  });
+});
+
+describe('EXTRA_SKILLS', () => {
+  it('空でなく、重複もない', () => {
+    expect(EXTRA_SKILLS.length).toBeGreaterThan(0);
+    expect(new Set(EXTRA_SKILLS).size).toBe(EXTRA_SKILLS.length);
   });
 });
 

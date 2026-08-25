@@ -9,7 +9,9 @@
   // ビルド設定ファイルもここでまとめて型検査する
   "include": [
     "e2e",
+    "src/board-data.ts",
     "src/layout.ts",
+    "src/note-html.ts",
     "shared/theme.ts",
     "playwright.config.ts",
     "vite.config.ts",

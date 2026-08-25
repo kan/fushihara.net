@@ -25,6 +25,42 @@ const wemaIcon = (href: string) => {
   return `<a href="${href}" target="_blank"><img src="${uri}" width="22" height="22" style="vertical-align:middle"></a>`;
 };
 
+export const GITHUB_USER = 'kan';
+
+/**
+ * OSS 付箋に出すリポジトリ。**順番どおりに出る。**
+ *
+ * 自動で選ばせない理由: `pushed` 順だと star のある古い資産が全部漏れ、star 順だと
+ * 10 年前の Perl ばかりになって「今動いている」ことが伝わらない。star 上位は
+ * 共同開発のものも多く、見せたいものと一致しない。だから手で決める。
+ *
+ * 説明は `main.ts` が `/api/github` から補完する（GitHub 側を直せば追従する）。
+ * API が落ちた日は、下の静的テキスト＝名前とリンクだけが残る。
+ * star は出さない。顔ぶれを手で選んでいる以上、数字は並びの根拠にならない。
+ */
+export const OSS_REPOS = [
+  'roji',
+  'pike',
+  'wema',
+  'musql',
+  'booch',
+  'ratatoskr',
+] as const;
+
+/**
+ * Skills 付箋に手で足すもの。`/api/github-languages` は GitHub の `language`
+ * （リポジトリごとに主要 1 言語）しか見ないので、フレームワークや道具は拾えない。
+ * 全言語を見る API はリポジトリごとに 1 リクエスト要り、Cloudflare の出口 IP 共有で
+ * 未認証レートリミットに当たりやすくなるので、そこは手書きで補う。
+ *
+ * 集計結果と重複したものは `main.ts` が落とす。
+ */
+export const EXTRA_SKILLS = ['Vue', 'Tauri', 'Docker'] as const;
+
+/** OSS 付箋の 1 行。静的テキストと main.ts の補完で同じ形を使う */
+export const ossRow = (name: string, extra = '') =>
+  `<div class="oss-row"><a href="https://github.com/${GITHUB_USER}/${name}" target="_blank">${name}</a>${extra}</div>`;
+
 // Build a data URI from a simple-icons path (monochrome #999)
 const siIcon = (si: { path: string }, href: string) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#999"><path d="${si.path}"/></svg>`;
@@ -76,7 +112,9 @@ export const boardData: WemaBoardData = {
     {
       id: 'skills',
       x: 100, y: 300,
-      width: 240, height: 130,
+      // 高さは言語 + EXTRA_SKILLS の行数で決まる。増やすと縦スクロールが出る
+      // （e2e/render.spec.ts の「付箋の中身がはみ出さない」で検知する）。
+      width: 240, height: 155,
       text: '<b>Skills</b><br><br><span class="muted">Loading...</span>',
       color: C.skills,
       zIndex: 1,
@@ -110,9 +148,13 @@ export const boardData: WemaBoardData = {
     // === OSS (right column, bottom) ===
     {
       id: 'oss',
-      x: 900, y: 420,
-      width: 280, height: 220,
-      text: '<b>OSS Projects</b><br><br><span class="muted">Loading...</span>',
+      x: 900, y: 400,
+      // 高さは OSS_REPOS の件数で決まる。増やすと縦スクロールが出るので、
+      // e2e/render.spec.ts の「付箋の中身がはみ出さない」で検知する。
+      width: 280, height: 250,
+      // star と説明は main.ts が API から足す。落ちた日は名前とリンクだけが残る。
+      text: `<b>OSS Projects</b><br><br>${OSS_REPOS.map((n) => ossRow(n)).join('')}` +
+        moreLink(`https://github.com/${GITHUB_USER}?tab=repositories`),
       color: C.oss,
       zIndex: 1,
     },

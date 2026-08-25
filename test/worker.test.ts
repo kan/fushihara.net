@@ -119,7 +119,7 @@ describe('入力の検証', () => {
   });
 
   it('数値でない limit は既定値に落とす（空配列を返さない）', async () => {
-    replyJson([{ language: 'Go', fork: false }]);
+    replyJson([{ language: 'Go', fork: false, pushed_at: new Date().toISOString() }]);
 
     const res = await call('/api/github-languages?username=kan&limit=abc');
     const { languages } = (await res.json()) as { languages: unknown[] };
@@ -129,7 +129,11 @@ describe('入力の検証', () => {
   });
 
   it('0 以下の limit は既定値に落とす', async () => {
-    replyJson([{ language: 'Go', fork: false }, { language: 'Perl', fork: false }]);
+    const now = new Date().toISOString();
+    replyJson([
+      { language: 'Go', fork: false, pushed_at: now },
+      { language: 'Perl', fork: false, pushed_at: now },
+    ]);
 
     const res = await call('/api/github-languages?username=kan&limit=-1');
     const { languages } = (await res.json()) as { languages: unknown[] };
@@ -259,7 +263,7 @@ describe('上流が落ちたときの控え', () => {
   });
 
   it('集計するエンドポイントでも効く', async () => {
-    replyJson([{ language: 'Go', fork: false }]);
+    replyJson([{ language: 'Go', fork: false, pushed_at: new Date().toISOString() }]);
     replyJson({ message: 'rate limit' }, { status: 403 });
 
     await call('/api/github-languages?username=kan');
@@ -513,16 +517,28 @@ describe('/api/github', () => {
 });
 
 describe('/api/github-languages', () => {
+  /** 直近に触ったリポジトリ。集計対象の既定 */
+  const recently = new Date().toISOString();
+  /** 集計の窓 (3 年) から外れる古いリポジトリ */
+  const longAgo = new Date(Date.now() - 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
+
+  const repo = (language: string | null, extra: Record<string, unknown> = {}) => ({
+    language,
+    fork: false,
+    pushed_at: recently,
+    ...extra,
+  });
+
   const repos = [
-    { language: 'Go', fork: false },
-    { language: 'Go', fork: false },
-    { language: 'Go', fork: false },
-    { language: 'Perl', fork: false },
-    { language: 'Perl', fork: false },
-    { language: 'TypeScript', fork: false },
+    repo('Go'),
+    repo('Go'),
+    repo('Go'),
+    repo('Perl'),
+    repo('Perl'),
+    repo('TypeScript'),
     // 集計から外れるはずのもの
-    { language: 'Java', fork: true },
-    { language: null, fork: false },
+    repo('Java', { fork: true }),
+    repo(null),
   ];
 
   it('非 fork の language を頻度順に集計する', async () => {
@@ -559,7 +575,11 @@ describe('/api/github-languages', () => {
 
   it('limit 未指定なら 5 件に絞る', async () => {
     replyJson(
-      Array.from({ length: 8 }, (_, i) => ({ language: `Lang${i}`, fork: false })),
+      Array.from({ length: 8 }, (_, i) => ({
+        language: `Lang${i}`,
+        fork: false,
+        pushed_at: new Date().toISOString(),
+      })),
     );
 
     const res = await call('/api/github-languages?username=kan');
@@ -574,6 +594,43 @@ describe('/api/github-languages', () => {
     await call('/api/github-languages?username=kan&limit=5');
 
     expect(lastUpstreamUrl().searchParams.get('per_page')).toBe('100');
+  });
+
+  it('スキルとして意味の無い language を除外する', async () => {
+    // 「Dockerfile が書けます」は読み手に何も伝えない
+    replyJson([
+      repo('Go'), repo('Dockerfile'), repo('Shell'), repo('Makefile'),
+      repo('HTML'), repo('PowerShell'),
+    ]);
+
+    const res = await call('/api/github-languages?username=kan');
+    const { languages } = (await res.json()) as { languages: { name: string }[] };
+
+    expect(languages.map((l) => l.name)).toEqual(['Go']);
+  });
+
+  it('古いリポジトリは数えない（今書いている言語に寄せる）', async () => {
+    // リポジトリ数の累積は「昔たくさん書いた言語」に引っ張られる
+    replyJson([
+      repo('Perl', { pushed_at: longAgo }),
+      repo('Perl', { pushed_at: longAgo }),
+      repo('Perl', { pushed_at: longAgo }),
+      repo('Go'),
+    ]);
+
+    const res = await call('/api/github-languages?username=kan');
+    const { languages } = (await res.json()) as { languages: { name: string }[] };
+
+    expect(languages.map((l) => l.name)).toEqual(['Go']);
+  });
+
+  it('直近に何も触っていなければ全期間で数える（空のカードを出さない）', async () => {
+    replyJson([repo('Perl', { pushed_at: longAgo }), repo('Go', { pushed_at: longAgo })]);
+
+    const res = await call('/api/github-languages?username=kan');
+    const { languages } = (await res.json()) as { languages: { name: string }[] };
+
+    expect(languages.map((l) => l.name).sort()).toEqual(['Go', 'Perl']);
   });
 
   it('上流が失敗したら空配列を返す（ボードは静的テキストのまま残る）', async () => {

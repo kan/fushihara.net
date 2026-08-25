@@ -242,6 +242,30 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
 | `/api/github` | GitHub `users/:name/repos` | `oss` ノート（fork は front 側で除外） |
 | `/api/github-languages` | 同上を 100 件取得 | `skills` ノート（Worker 側で言語を集計） |
 
+#### どのリポジトリ・どの言語を見せるか
+
+**OSS 付箋の顔ぶれは `board-data.ts` の `OSS_REPOS` が決める。** 自動で選ぶと、
+`pushed` 順では star のある古い資産が全部漏れ、star 順では 10 年前の Perl ばかりに
+なって「今動いている」ことが伝わらない（star 上位は共同開発のものも多い）。
+API から補完するのは**説明だけ**で、star は出さない（顔ぶれを手で選んでいる以上、
+数字は並びの根拠にならない）。API が落ちた日は静的テキストの名前とリンクが残る
+（`test/board-data.test.ts` が静的テキストにも全部載っていることを見ている）。
+**件数を増やすとカードからはみ出す**ので、`oss` ノートの `height` も一緒に見ること
+（`e2e/render.spec.ts` の「付箋の中身がはみ出さない」が検知する）。
+
+**Skills は「直近 3 年に触ったリポジトリ」だけを数える**（`SKILL_WINDOW_YEARS`）。
+リポジトリ数の累積は「昔たくさん書いた言語」に引っ張られ、今の主戦場と食い違う。
+あわせて `NON_LANGUAGES`（`Dockerfile` / `Shell` / `Makefile` / `HTML` / `PowerShell` 等）
+を除外する。「Dockerfile が書けます」は読み手に何も伝えないため。直近に何も触って
+いなければ全期間で数える（空のカードを出さないため）。
+
+**フレームワークや道具は `board-data.ts` の `EXTRA_SKILLS` に手で書く。** GitHub の
+`language` はリポジトリごとに主要 1 言語しか返さないので、Vue のように混在するものは
+埋もれる。全言語を返す API はリポジトリごとに 1 リクエスト必要で（直近 3 年で 20 本
+＝ 21 リクエスト）、Cloudflare の出口 IP 共有では未認証レートリミットに当たりやすく
+なるため採らなかった（実際に 403 を踏んでいる）。集計結果と重複したものは `main.ts`
+が落とす。**行が増えると `skills` ノートからはみ出す**ので `height` も一緒に見ること。
+
 - `worker/index.ts` — ルータ。`caches.default` の参照と `ctx.waitUntil` での書き込みを
   一箇所に集約しているので、**個々のハンドラはキャッシュを意識しない**
 - `worker/api.ts` — 3 ハンドラ。`githubRepos` は上流をそのまま流すだけなので
