@@ -105,6 +105,16 @@ test('左上にサイトの見出しが出る', async ({ page }) => {
   expect(overlapping).toEqual([]);
 });
 
+test('連絡先はデスクトップでも畳まれていない', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  // 以前は email を折り畳みのデモに使っていて、hover するまでアドレスが出なかった。
+  // 連絡手段はこのサイトの主目的の 1 つなので、初期表示で読めること。
+  const link = page.getByRole('link', { name: 'kan.fushihara@gmail.com' });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute('href', 'mailto:kan.fushihara@gmail.com');
+});
+
 test('付箋の中身がはみ出さない（縦スクロールが出ない）', async ({ page }) => {
   await gotoAndSettle(page);
 
@@ -174,11 +184,28 @@ test.describe('デスクトップ', () => {
     expect(xs.size).toBeGreaterThan(1);
   });
 
+  test('折り畳みバッジから Interests を開ける', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    // wema の折り畳みボタンは辺ごとで、その辺のエッジが全部畳まれているときだけ
+    // 件数バッジになる。他のエッジと同居させるとバッジが出ず、押すと巻き添えで
+    // 畳まれる。board-data.ts が下辺を Interests 専用にしていることの検査。
+    const badge = page.locator('.wema-note-collapse-badge');
+    await expect(badge).toHaveCount(1);
+    await expect(badge).toHaveText('1');
+
+    await badge.click();
+
+    await expect
+      .poll(async () => (await noteBoxes(page)).interests.w, { timeout: 5_000 })
+      .toBeGreaterThan(0);
+  });
+
   test('幅を狭めると 1 カラムに再配置され、畳まれたエッジも開く', async ({ page }) => {
     await gotoAndSettle(page);
 
-    // デスクトップでは email は collapsed のまま幅 0
-    expect((await noteBoxes(page)).email.w).toBe(0);
+    // デスクトップでは interests は collapsed のまま幅 0
+    expect((await noteBoxes(page)).interests.w).toBe(0);
 
     await page.setViewportSize({ width: 390, height: 844 });
 
@@ -217,11 +244,11 @@ test.describe('モバイル', () => {
     expect(ys).toEqual([...ys].sort((a, b) => a - b));
   });
 
-  test('畳まれたエッジが展開され、email ノートも読める', async ({ page }) => {
+  test('畳まれたエッジが展開され、interests ノートも読める', async ({ page }) => {
     await gotoAndSettle(page);
 
     // デスクトップでは collapsed:true で幅 0。モバイルでは hover できないので開く
-    expect((await noteBoxes(page)).email.w).toBeGreaterThan(0);
+    expect((await noteBoxes(page)).interests.w).toBeGreaterThan(0);
   });
 
   test('横スクロールが発生しない', async ({ page }) => {

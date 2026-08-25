@@ -72,7 +72,7 @@ export const boardData: WemaBoardData = {
       zIndex: 1,
     },
 
-    // === Skills (left side, between Social and Interests) ===
+    // === Skills (left column, between Social and Links) ===
     {
       id: 'skills',
       x: 100, y: 300,
@@ -82,7 +82,7 @@ export const boardData: WemaBoardData = {
       zIndex: 1,
     },
 
-    // === Content (right side) ===
+    // === Blog (right column, top) ===
     {
       id: 'blog',
       x: 920, y: 100,
@@ -93,9 +93,10 @@ export const boardData: WemaBoardData = {
       color: C.blog,
       zIndex: 1,
     },
+    // === Links (left column, bottom) ===
     {
       id: 'links',
-      x: 960, y: 440,
+      x: 110, y: 520,
       width: 240, height: 140,
       text: '<b>Links</b><br><br>' + [
         '<a href="https://zenn.dev/kan" target="_blank">Zenn</a>',
@@ -106,20 +107,20 @@ export const boardData: WemaBoardData = {
       zIndex: 1,
     },
 
-    // === OSS (right bottom) ===
+    // === OSS (right column, bottom) ===
     {
       id: 'oss',
-      x: 510, y: 580,
+      x: 900, y: 420,
       width: 280, height: 220,
       text: '<b>OSS Projects</b><br><br><span class="muted">Loading...</span>',
       color: C.oss,
       zIndex: 1,
     },
 
-    // === Interests (bottom) ===
+    // === Interests (bottom center, collapsed by default) ===
     {
       id: 'interests',
-      x: 160, y: 500,
+      x: 430, y: 640,
       width: 240, height: 160,
       text: '<b>Interests</b><br><br><a href="https://idolmaster-official.jp/" target="_blank">THE IDOLM@STER</a><br><a href="https://zombielandsaga.com/" target="_blank">ゾンビランドサガ</a><br><a href="https://anime-precure.com/" target="_blank">プリキュアシリーズ</a><br><a href="https://www.moukotanmen-nakamoto.com/" target="_blank">蒙古タンメン中本</a>',
       color: C.interests,
@@ -147,13 +148,23 @@ export const boardData: WemaBoardData = {
   ],
 
   edges: [
-    { id: 'e-email', from: 'center', to: 'email', fromAnchor: 'auto', toAnchor: 'auto', style: 'dashed', lineStyle: 'dashed', arrowHead: 'none', strokeWidth: 2, routing: 'curve', collapsed: true },
-    { id: 'e-social', from: 'center', to: 'social', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
-    { id: 'e-blog', from: 'center', to: 'blog', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
-    { id: 'e-links', from: 'center', to: 'links', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
-    { id: 'e-skills', from: 'center', to: 'skills', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
-    { id: 'e-oss', from: 'center', to: 'oss', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
-    { id: 'e-interests', from: 'center', to: 'interests', fromAnchor: 'auto', toAnchor: 'auto', style: 'line', arrowHead: 'none', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-email', from: 'center', to: 'email', fromAnchor: 'top', toAnchor: 'auto', style: 'dashed', lineStyle: 'dashed', arrowHead: 'none', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-social', from: 'center', to: 'social', fromAnchor: 'left', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-skills', from: 'center', to: 'skills', fromAnchor: 'left', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-blog', from: 'center', to: 'blog', fromAnchor: 'right', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-links', from: 'center', to: 'links', fromAnchor: 'left', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-oss', from: 'center', to: 'oss', fromAnchor: 'right', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
+
+    // 唯一の折り畳み。wema の機能のデモを兼ねているので 1 本は残す。畳む先を
+    // Interests にしているのは、初見で必要な情報ではなく、開いたときの中身が
+    // 楽しい方が「開けた甲斐」があるため（連絡先を隠すのは本末転倒だった）。
+    //
+    // **下辺は Interests が独占していないといけない。** wema の折り畳みボタンは
+    // 辺ごとで、その辺のエッジが全部畳まれているときだけ件数バッジになる。他の
+    // エッジと同居させると、バッジが出ないうえにボタンを押すと巻き添えで畳まれる。
+    // だから全エッジの fromAnchor を明示してある（auto は座標で決まるので、
+    // ノートを動かした拍子に同居する）。
+    { id: 'e-interests', from: 'center', to: 'interests', fromAnchor: 'bottom', toAnchor: 'auto', style: 'line', arrowHead: 'none', strokeWidth: 2, routing: 'curve', collapsed: true },
   ],
 
   viewport: { x: 0, y: 0, zoom: 1 },

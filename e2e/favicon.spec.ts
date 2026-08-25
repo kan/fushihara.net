@@ -37,6 +37,17 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
 
+test('og:image が実体を指している', async ({ page, request }) => {
+  // favicon と同じ shared/public 配線。画面に出ないので、消えても目視では気付けない。
+  const href = await page.locator('meta[property="og:image"]').getAttribute('content');
+  expect(href).toBe('https://fushihara.net/ogp.png');
+
+  // クローラは絶対 URL しか解決しないが、テストは配信中のサーバーに聞く
+  const res = await request.get(new URL(href!).pathname);
+  expect(res.status()).toBe(200);
+  expect((await res.body()).byteLength).toBeGreaterThan(0);
+});
+
 test('左上の見出しのマークが favicon と同じ形を使っている', async ({ page, request }) => {
   // 形（path の d）は favicon.svg と index.html の 2 箇所にある。`<use>` の外部参照は
   // Safari が読まないので inline にせざるを得ず、共有できない。片方だけ直して

@@ -27,7 +27,12 @@
     <meta property="og:description" content="kan (fushihara) のポートフォリオサイト" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://fushihara.net" />
-    <meta name="twitter:card" content="summary" />
+    <!-- 実体は shared/public。favicon と同じ配線で、ブログにも同じ絵が配られる。
+         og:image は絶対 URL でなければクローラが解決できない。 -->
+    <meta property="og:image" content="https://fushihara.net/ogp.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@__kan" />
 
     <!-- Fonts -->

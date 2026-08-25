@@ -80,7 +80,7 @@ function animateToLayout(targets: Map<string, NoteLayout>, duration = 300) {
 
 // Collapsed edges are opened by hovering, which mobile cannot do, so expand them
 // below the breakpoint. Resizing across the breakpoint has to revisit this too,
-// otherwise a narrowed desktop window leaves the email note stuck at zero width.
+// otherwise a narrowed desktop window leaves the collapsed note stuck at zero width.
 const collapsibleEdges = boardData.edges.filter((e) => e.collapsed);
 let edgesExpanded = false;
 

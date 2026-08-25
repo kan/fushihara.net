@@ -57,7 +57,12 @@ const themeInit = `try{var t=localStorage.getItem(${JSON.stringify(STORAGE_KEY)}
     <meta property="og:description" content={description} />
     <meta property="og:type" content={ogType} />
     {!noindex && <meta property="og:url" content={canonical} />}
-    <meta name="twitter:card" content="summary" />
+    {/* 実体は本体サイトと共有の shared/public。favicon と同じく出力は base 付き。
+        og:image は絶対 URL でなければクローラが解決できない。 */}
+    <meta property="og:image" content={new URL(`${base}ogp.png`, Astro.site)} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@__kan" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />

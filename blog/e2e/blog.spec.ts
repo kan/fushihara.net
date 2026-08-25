@@ -213,6 +213,17 @@ test.describe('配信物', () => {
     expect(xml).toContain(`<title>${SITE_NAME}</title>`);
   });
 
+  test('og:image が実体を指している', async ({ page, request }) => {
+    // 実体は本体サイトと共有の shared/public。画面に出ないので消えても気付けない。
+    await page.goto('/blog/');
+    const href = await page.locator('meta[property="og:image"]').getAttribute('content');
+    expect(href).toBe(`${SITE_URL}/blog/ogp.png`);
+
+    const res = await request.get(new URL(href!).pathname);
+    expect(res.status()).toBe(200);
+    expect((await res.body()).byteLength).toBeGreaterThan(0);
+  });
+
   test('RSS が絶対 URL の記事リンクを持つ', async ({ request }) => {
     const res = await request.get('/blog/rss.xml');
     expect(res.status()).toBe(200);
