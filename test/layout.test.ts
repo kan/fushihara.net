@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { boardData } from '../src/board-data';
 import {
   MARGIN,
+  MOBILE_TOP,
   MOBILE_BP,
   MOBILE_GAP,
   REF_H,
@@ -124,7 +125,8 @@ describe('モバイルレイアウト', () => {
   });
 
   it('先頭は上マージンから始まる', () => {
-    expect(layout.get(mobileOrder[0])!.y).toBe(MARGIN);
+    // 左上の見出しに重ならないよう、1 枚目だけ下げる
+    expect(layout.get(mobileOrder[0])!.y).toBe(MOBILE_TOP);
   });
 
   it('境界値 767px はモバイル扱い', () => {

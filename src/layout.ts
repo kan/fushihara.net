@@ -8,6 +8,12 @@ export const MARGIN = 20;
 export const MOBILE_BP = 768;
 export const MOBILE_GAP = 16;
 
+/**
+ * モバイルで 1 枚目を下げる量。左上のサイト見出し（`.site-brand`）は position: fixed
+ * なので、ここを空けないと 1 枚目のノートに重なる。
+ */
+export const MOBILE_TOP = 56;
+
 /** Display order for mobile vertical layout. Every note id must appear here. */
 export const mobileOrder = [
   'center', 'email', 'social', 'skills',
@@ -41,7 +47,7 @@ export function getTargetLayout(
   if (vw < MOBILE_BP) {
     // Mobile: single column, nearly full-width
     const noteWidth = vw - MARGIN * 2;
-    let y = MARGIN;
+    let y = MOBILE_TOP;
     for (const id of mobileOrder) {
       const base = bases.get(id);
       if (!base) continue;

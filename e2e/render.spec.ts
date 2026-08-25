@@ -77,6 +77,34 @@ test('取得したデータが対応するノートに反映される', async ({
     .toContainText('MockLang');
 });
 
+test('左上にサイトの見出しが出る', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  const brand = page.getByRole('heading', { name: 'fushihara.net' });
+  await expect(brand).toBeVisible();
+
+  // 見出しは position: fixed なので、ノートと重なると読めなくなる
+  const b = (await brand.boundingBox())!;
+  const overlapping = await page.$$eval(
+    NOTE,
+    (els, b) =>
+      els
+        .map((el) => ({ id: el.getAttribute('data-note-id'), r: el.getBoundingClientRect() }))
+        .filter(
+          ({ r }) =>
+            r.width > 0 &&
+            r.left < b.x + b.width &&
+            r.right > b.x &&
+            r.top < b.y + b.height &&
+            r.bottom > b.y,
+        )
+        .map(({ id }) => id),
+    b,
+  );
+
+  expect(overlapping).toEqual([]);
+});
+
 test('付箋の中身がはみ出さない（縦スクロールが出ない）', async ({ page }) => {
   await gotoAndSettle(page);
 

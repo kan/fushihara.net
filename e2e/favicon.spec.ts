@@ -37,6 +37,19 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
 
+test('左上の見出しのマークが favicon と同じ形を使っている', async ({ page, request }) => {
+  // 形（path の d）は favicon.svg と index.html の 2 箇所にある。`<use>` の外部参照は
+  // Safari が読まないので inline にせざるを得ず、共有できない。片方だけ直して
+  // 見た目がずれるのを防ぐため、ここで突き合わせる。
+  const file = (await (await request.get('/favicon.svg')).text());
+  const inFile = /<path[^>]*\sd="([^"]+)"/.exec(file)?.[1];
+
+  const inPage = await page.locator('.site-brand-mark path').getAttribute('d');
+
+  expect(inFile).toBeTruthy();
+  expect(inPage).toBe(inFile);
+});
+
 test('link が 3 つとも実体を指している', async ({ page, request }) => {
   const bodies = new Map<string, Buffer>();
   await Promise.all(
