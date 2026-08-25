@@ -155,12 +155,25 @@ html, body {
   text-decoration: none !important;
 }
 
-/* OSS repo row: single line with ellipsis */
-.wema-note-content .oss-row {
+/* OSS repo / blog post row: single line with ellipsis */
+.wema-note-content .oss-row,
+.wema-note-content .blog-row {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
   margin-bottom: 4px;
+}
+
+/* Secondary text inside a note (dates, descriptions) */
+.wema-note-content .note-sub {
+  font-size: 10px;
+}
+
+/* "more..." at the bottom right of a card */
+.wema-note-content .more-link {
+  margin-top: 6px;
+  text-align: right;
+  font-size: 11px;
 }
 
 /* Edge pulse animation */

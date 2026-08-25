@@ -11,7 +11,7 @@ export const MOBILE_GAP = 16;
 /** Display order for mobile vertical layout. Every note id must appear here. */
 export const mobileOrder = [
   'center', 'email', 'social', 'skills',
-  'zenn', 'oss', 'book', 'talks',
+  'blog', 'oss', 'links',
   'interests', 'poweredby',
 ];
 

@@ -40,9 +40,9 @@ describe('デスクトップレイアウト', () => {
 
   it('ビューポートに比例して座標をスケールする', () => {
     const layout = getTargetLayout(REF_W * 2, REF_H * 2, bases);
-    const base = bases.get('zenn')!;
+    const base = bases.get('blog')!;
 
-    expect(layout.get('zenn')).toEqual({
+    expect(layout.get('blog')).toEqual({
       x: base.x * 2,
       y: base.y * 2,
       width: base.width,

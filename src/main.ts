@@ -3,7 +3,9 @@ import '@kanf/wema/style.css';
 import './style.css';
 import { boardData } from './board-data';
 import { initTheme } from './theme-toggle';
-import { fetchZennArticles, fetchGitHubRepos, fetchGitHubLanguages } from './api';
+import { fetchBlogPosts, fetchGitHubRepos, fetchGitHubLanguages } from './api';
+import { escapeHtml, moreLink } from './note-html';
+import { isoDate } from '../shared/date';
 import { MOBILE_BP, getTargetLayout, noteBases, type NoteLayout } from './layout';
 
 const appEl = document.getElementById('app')!;
@@ -105,19 +107,31 @@ window.addEventListener('resize', () => {
 });
 
 // --- Dynamic data loading ---
+
+/** 二次テキスト（日付・説明）。色もサイズも class に寄せる */
+function sub(text: string): string {
+  return `<span class="muted note-sub">${text}</span>`;
+}
+
 async function loadDynamicData() {
-  const [articles, repos, languages] = await Promise.allSettled([
-    fetchZennArticles('kan', 5),
+  const [posts, repos, languages] = await Promise.allSettled([
+    fetchBlogPosts(4),
     fetchGitHubRepos('kan', 5),
     fetchGitHubLanguages('kan', 8),
   ]);
 
-  // Zenn → Tech log
-  if (articles.status === 'fulfilled' && articles.value.length > 0) {
-    const items = articles.value
-      .map((a) => `${a.emoji} <a href="https://zenn.dev${a.path}" target="_blank">${a.title}</a>`)
-      .join('<br>');
-    board.updateNote('zenn', { text: `<b>Tech log</b><br><br>${items}` });
+  // ブログの RSS → Blog ノート
+  if (posts.status === 'fulfilled' && posts.value.length > 0) {
+    const items = posts.value
+      .map((p) => {
+        // 日付はタイトルより前。.blog-row は 1 行省略なので、後ろに置くと
+        // タイトルが少し長いだけで省略記号に飲まれて見えなくなる。
+        const at = new Date(p.date);
+        const stamp = Number.isNaN(at.getTime()) ? '' : `${sub(isoDate(at))} `;
+        return `<div class="blog-row">${stamp}<a href="${escapeHtml(p.link)}" target="_blank">${escapeHtml(p.title)}</a></div>`;
+      })
+      .join('');
+    board.updateNote('blog', { text: `<b>Blog</b><br><br>${items}${moreLink('/blog/')}` });
   }
 
   // GitHub → OSS Projects
@@ -125,18 +139,19 @@ async function loadDynamicData() {
     const items = repos.value
       .map((r) => {
         const star = r.stargazers_count > 0 ? ` <span class="muted">${r.stargazers_count}</span>` : '';
-        const desc = r.description ? ` <span class="muted" style="font-size:10px">- ${r.description}</span>` : '';
-        return `<div class="oss-row"><a href="${r.html_url}" target="_blank">${r.name}</a>${star}${desc}</div>`;
+        const desc = r.description ? ` ${sub(`- ${escapeHtml(r.description)}`)}` : '';
+        return `<div class="oss-row"><a href="${escapeHtml(r.html_url)}" target="_blank">${escapeHtml(r.name)}</a>${star}${desc}</div>`;
       })
       .join('');
-    const more = '<div style="text-align:right;margin-top:6px"><a href="https://github.com/kan?tab=repositories" target="_blank" style="font-size:11px">more...</a></div>';
-    board.updateNote('oss', { text: `<b>OSS Projects</b><br><br>${items}${more}` });
+    board.updateNote('oss', {
+      text: `<b>OSS Projects</b><br><br>${items}${moreLink('https://github.com/kan?tab=repositories')}`,
+    });
   }
 
   // GitHub Languages → Skills
   if (languages.status === 'fulfilled' && languages.value.length > 0) {
     const items = languages.value
-      .map((l) => l.name)
+      .map((l) => escapeHtml(l.name))
       .join(' / ');
     board.updateNote('skills', { text: `<b>Skills</b><br><br>${items}` });
   }

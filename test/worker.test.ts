@@ -1,10 +1,10 @@
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import worker from '../worker/index';
+import worker, { cacheKeys } from '../worker/index';
 
 /**
  * ハンドラは global fetch を直接呼ぶので、テストでは差し替えて上流を止める。
- * こうしないと CI が zenn.dev / api.github.com に依存して不安定になる。
+ * こうしないと CI が api.github.com / fushihara.net の生存に依存して不安定になる。
  */
 let upstream: ReturnType<typeof vi.fn>;
 
@@ -34,7 +34,7 @@ function replyJson(body: unknown, init: { status?: number } = {}) {
   );
 }
 
-/** Worker を 1 リクエスト分呼ぶ。waitUntil の完了まで待つ */
+/** Worker を 1 リクエスト分呼ぶ。キャッシュには触らない */
 async function callRaw(path: string, init?: RequestInit): Promise<Response> {
   const ctx = createExecutionContext();
   // new Request() は cf プロパティを持たないので、受信リクエストの型に合わせる
@@ -47,13 +47,24 @@ async function callRaw(path: string, init?: RequestInit): Promise<Response> {
   return res;
 }
 
-// Worker は caches.default を使うので、URL が同じだとテスト間でキャッシュヒットして
-// 上流呼び出しが観測できなくなる。既定では毎回ユニークなキーになるようにする
-// (Worker は知らないクエリを無視するので、上流 URL や集計結果には影響しない)。
-let seq = 0;
-function call(path: string, init?: RequestInit): Promise<Response> {
-  const sep = path.includes('?') ? '&' : '?';
-  return callRaw(`${path}${sep}__t=${++seq}`, init);
+const url = (path: string) => new URL(`https://fushihara.net${path}`);
+
+// caches.default はテスト間で生き続けるので、既定では 2 本とも捨ててから呼ぶ。
+// キーの導出は Worker と同じ関数を使う（テストだけ別実装にすると、キーの決め方を
+// 変えた日にテストが「何も検証していない」側へ倒れる）。
+async function call(path: string, init?: RequestInit): Promise<Response> {
+  const { primary, backup } = cacheKeys(url(path));
+  await caches.default.delete(primary);
+  await caches.default.delete(backup);
+  return callRaw(path, init);
+}
+
+/**
+ * 1 時間のキャッシュだけが切れた状態にする。控え (30 日) は残るので、
+ * 「上流が落ちたときに控えで凌ぐ」経路をこの後の呼び出しで通せる。
+ */
+async function expirePrimary(path: string): Promise<void> {
+  await caches.default.delete(cacheKeys(url(path)).primary);
 }
 
 /** 直近の上流リクエスト URL */
@@ -73,7 +84,7 @@ describe('ルーティング', () => {
 
   it('GET 以外は 405 を返し、上流もアセットも触らない', async () => {
     for (const method of ['POST', 'PUT', 'DELETE']) {
-      const res = await call('/api/zenn', { method });
+      const res = await call('/api/blog', { method });
       expect(res.status, method).toBe(405);
     }
     expect(upstream).not.toHaveBeenCalled();
@@ -84,7 +95,6 @@ describe('ルーティング', () => {
 describe('入力の検証', () => {
   it('許可していない username は 400 で拒否し、上流を呼ばない', async () => {
     for (const path of [
-      '/api/zenn?username=someone-else',
       '/api/github?username=someone-else',
       '/api/github-languages?username=someone-else',
     ]) {
@@ -96,7 +106,7 @@ describe('入力の検証', () => {
   });
 
   it('username 未指定も拒否する', async () => {
-    const res = await call('/api/zenn');
+    const res = await call('/api/github');
 
     expect(res.status).toBe(400);
     expect(upstream).not.toHaveBeenCalled();
@@ -130,11 +140,11 @@ describe('入力の検証', () => {
   });
 
   it('数値でない count は既定値に落とす', async () => {
-    replyJson({ articles: [] });
+    replyJson([]);
 
-    await call('/api/zenn?username=kan&count=abc');
+    await call('/api/github?username=kan&count=abc');
 
-    expect(lastUpstreamUrl().searchParams.get('count')).toBe('5');
+    expect(lastUpstreamUrl().searchParams.get('per_page')).toBe('10');
   });
 });
 
@@ -160,67 +170,285 @@ describe('エラー時のキャッシュ制御', () => {
 
 describe('エッジキャッシュ', () => {
   it('同じ URL の 2 回目は上流を叩かずキャッシュから返す', async () => {
-    replyJson({ articles: [{ title: '1 回だけ取得' }] });
+    replyJson([{ name: '1 回だけ取得' }]);
 
-    const first = await callRaw('/api/zenn?username=kan&count=41');
-    const second = await callRaw('/api/zenn?username=kan&count=41');
+    const first = await call('/api/github?username=kan');
+    const second = await callRaw('/api/github?username=kan');
 
     expect(upstream).toHaveBeenCalledOnce();
-    await expect(first.json()).resolves.toEqual({ articles: [{ title: '1 回だけ取得' }] });
-    await expect(second.json()).resolves.toEqual({ articles: [{ title: '1 回だけ取得' }] });
+    await expect(first.json()).resolves.toEqual([{ name: '1 回だけ取得' }]);
+    await expect(second.json()).resolves.toEqual([{ name: '1 回だけ取得' }]);
+  });
+
+  it('未知のクエリが付いてもキャッシュを分裂させない', async () => {
+    replyJson([{ name: '1 回だけ取得' }]);
+
+    await call('/api/github?username=kan');
+    // 共有リンクに付く utm_source などでキーが割れると、中身が同じでも毎回
+    // GitHub を叩くことになり、レートリミットをそこで消費してしまう
+    const second = await callRaw('/api/github?username=kan&utm_source=x');
+
+    expect(upstream).toHaveBeenCalledOnce();
+    await expect(second.json()).resolves.toEqual([{ name: '1 回だけ取得' }]);
+  });
+
+  it('解釈するクエリが違えば別のキャッシュになる', async () => {
+    replyJson([{ name: '10 件' }]);
+    replyJson([{ name: '20 件' }]);
+
+    await call('/api/github?username=kan&count=10');
+    // 2 本目はキャッシュを消さずに投げる。キーが割れていなければヒットしてしまう
+    const other = await callRaw('/api/github?username=kan&count=20');
+
+    expect(upstream).toHaveBeenCalledTimes(2);
+    await expect(other.json()).resolves.toEqual([{ name: '20 件' }]);
   });
 
   it('上流が失敗したレスポンスはキャッシュしない', async () => {
     replyJson({ message: 'boom' }, { status: 500 });
-    replyJson({ articles: [] }, { status: 200 });
+    replyJson([], { status: 200 });
 
-    await callRaw('/api/zenn?username=kan&count=42');
-    await callRaw('/api/zenn?username=kan&count=42');
+    await call('/api/github?username=kan');
+    await callRaw('/api/github?username=kan');
 
     expect(upstream).toHaveBeenCalledTimes(2);
   });
 });
 
-describe('/api/zenn', () => {
-  it('上流のレスポンスを JSON として転送する', async () => {
-    replyJson({ articles: [{ title: 'テスト記事' }] });
+describe('上流が落ちたときの控え', () => {
+  it('前回成功したレスポンスを返す', async () => {
+    replyJson([{ name: '控えに残るリポジトリ' }]);
+    replyJson({ message: 'rate limit' }, { status: 403 });
 
-    const res = await call('/api/zenn?username=kan&count=5');
+    const ok = await call('/api/github?username=kan');
+    await expirePrimary('/api/github?username=kan');
+    const failed = await callRaw('/api/github?username=kan');
+
+    expect(ok.status).toBe(200);
+    expect(upstream).toHaveBeenCalledTimes(2);
+    expect(failed.status).toBe(200);
+    expect(failed.headers.get('X-Backup')).toBe('hit');
+    await expect(failed.json()).resolves.toEqual([{ name: '控えに残るリポジトリ' }]);
+  });
+
+  it('控えを返すときはブラウザに長く持たせない', async () => {
+    replyJson([]);
+    replyJson({ message: 'rate limit' }, { status: 403 });
+
+    await call('/api/github?username=kan');
+    await expirePrimary('/api/github?username=kan');
+    const failed = await callRaw('/api/github?username=kan');
+
+    // 上流が復旧しても古いカードが残らないよう、控えは短命にする
+    expect(failed.headers.get('Cache-Control')).toBe('public, max-age=300');
+  });
+
+  it('控えが無ければ上流のエラーをそのまま返す', async () => {
+    replyJson({ message: 'rate limit' }, { status: 403 });
+
+    const res = await call('/api/github?username=kan');
+
+    expect(res.status).toBe(403);
+    expect(res.headers.get('X-Backup')).toBeNull();
+  });
+
+  it('集計するエンドポイントでも効く', async () => {
+    replyJson([{ language: 'Go', fork: false }]);
+    replyJson({ message: 'rate limit' }, { status: 403 });
+
+    await call('/api/github-languages?username=kan');
+    await expirePrimary('/api/github-languages?username=kan');
+    const failed = await callRaw('/api/github-languages?username=kan');
+
+    expect(failed.status).toBe(200);
+    await expect(failed.json()).resolves.toEqual({ languages: [{ name: 'Go', count: 1 }] });
+  });
+
+  it('ハンドラが例外を投げても控えを引く', async () => {
+    replyJson([{ name: '控えに残るリポジトリ' }]);
+    // fetch は DNS / TLS の失敗やサブリクエストの上限で reject する
+    upstream.mockRejectedValueOnce(new Error('boom'));
+
+    await call('/api/github?username=kan');
+    await expirePrimary('/api/github?username=kan');
+    const failed = await callRaw('/api/github?username=kan');
+
+    expect(failed.status).toBe(200);
+    expect(failed.headers.get('X-Backup')).toBe('hit');
+  });
+
+  it('例外で控えも無ければ 502 を返す（Worker ごと落とさない）', async () => {
+    upstream.mockRejectedValueOnce(new Error('boom'));
+
+    const res = await call('/api/github?username=kan');
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('別のエンドポイントの控えを取り違えない', async () => {
+    replyJson([{ name: 'repo' }]);
+    upstream.mockResolvedValueOnce(new Response('boom', { status: 502 }));
+
+    await call('/api/github?username=kan');
+    const failed = await call('/api/blog');
+
+    expect(failed.status).toBe(502);
+    await expect(failed.json()).resolves.toEqual({ posts: [] });
+  });
+});
+
+describe('/api/blog', () => {
+  /** ブログの RSS を組み立てる。@astrojs/rss と同じく実体参照でエスケープする */
+  function rss(items: { title: string; link: string; pubDate?: string; content?: string }[]) {
+    const escape = (t: string) =>
+      t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const body = items
+      .map(
+        (i) =>
+          `<item><title>${escape(i.title)}</title><link>${i.link}</link>` +
+          `<pubDate>${i.pubDate ?? 'Mon, 24 Aug 2026 00:00:00 GMT'}</pubDate>` +
+          (i.content === undefined ? '' : `<content:encoded>${escape(i.content)}</content:encoded>`) +
+          '</item>',
+      )
+      .join('');
+    return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>${body}</channel></rss>`;
+  }
+
+  function replyRss(items: Parameters<typeof rss>[0], init: { status?: number } = {}) {
+    upstream.mockResolvedValueOnce(
+      new Response(rss(items), {
+        status: init.status ?? 200,
+        headers: { 'Content-Type': 'application/rss+xml' },
+      }),
+    );
+  }
+
+  const post = { title: '記事タイトル', link: 'https://fushihara.net/blog/foo/' };
+
+  it('ブログの RSS を読みに行く', async () => {
+    replyRss([post]);
+
+    await call('/api/blog');
+
+    expect(lastUpstreamUrl().href).toBe('https://fushihara.net/blog/rss.xml');
+  });
+
+  it('RSS を title / link / date の JSON に均す', async () => {
+    replyRss([{ ...post, pubDate: 'Mon, 24 Aug 2026 15:00:00 GMT' }]);
+
+    const res = await call('/api/blog');
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('application/json');
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=3600');
-    await expect(res.json()).resolves.toEqual({ articles: [{ title: 'テスト記事' }] });
+    await expect(res.json()).resolves.toEqual({
+      posts: [
+        {
+          title: '記事タイトル',
+          link: 'https://fushihara.net/blog/foo/',
+          date: '2026-08-24T15:00:00.000Z',
+        },
+      ],
+    });
   });
 
-  it('クエリを上流 URL に引き渡す', async () => {
-    replyJson({ articles: [] });
+  it('タイトルの実体参照を戻す', async () => {
+    replyRss([{ ...post, title: 'A & B <script> 「引用」' }]);
 
-    await call('/api/zenn?username=kan&count=3');
+    const res = await call('/api/blog');
+    const { posts } = (await res.json()) as { posts: { title: string }[] };
 
-    const url = lastUpstreamUrl();
-    expect(url.origin).toBe('https://zenn.dev');
-    expect(url.pathname).toBe('/api/articles');
-    expect(url.searchParams.get('username')).toBe('kan');
-    expect(url.searchParams.get('count')).toBe('3');
-    expect(url.searchParams.get('order')).toBe('latest');
+    expect(posts[0].title).toBe('A & B <script> 「引用」');
   });
 
-  it('count 未指定なら 5 件を要求する', async () => {
-    replyJson({ articles: [] });
+  it('全文 (content:encoded) に item や title があっても記事を取り違えない', async () => {
+    // 本文に生の HTML を書ける (CommonMark) ので、item の切れ目を偽装しうる文字列を入れる
+    replyRss([
+      { ...post, content: '<item><title>本文の中の偽物</title></item> 本文' },
+      { ...post, title: '2 本目', link: 'https://fushihara.net/blog/bar/' },
+    ]);
 
-    await call('/api/zenn?username=kan');
+    const res = await call('/api/blog');
+    const { posts } = (await res.json()) as { posts: { title: string }[] };
 
-    expect(lastUpstreamUrl().searchParams.get('count')).toBe('5');
+    expect(posts.map((p) => p.title)).toEqual(['記事タイトル', '2 本目']);
   });
 
-  it('上流のエラーステータスをそのまま返す', async () => {
-    replyJson({ message: 'not found' }, { status: 404 });
+  it('日付が読めない記事も落とさず、date だけ空にする', async () => {
+    replyRss([{ ...post, pubDate: 'never' }]);
 
-    const res = await call('/api/zenn?username=kan');
+    const res = await call('/api/blog');
+    const { posts } = (await res.json()) as { posts: { date: string }[] };
 
-    expect(res.status).toBe(404);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].date).toBe('');
+  });
+
+  const many = Array.from({ length: 30 }, (_, i) => ({
+    title: `記事 ${i}`,
+    link: `https://fushihara.net/blog/p${i}/`,
+  }));
+
+  it('count 未指定なら 5 件に絞る', async () => {
+    replyRss(many);
+
+    const res = await call('/api/blog');
+    const { posts } = (await res.json()) as { posts: unknown[] };
+
+    expect(posts).toHaveLength(5);
+  });
+
+  it('count で件数を指定できる', async () => {
+    replyRss(many);
+
+    const res = await call('/api/blog?count=3');
+    const { posts } = (await res.json()) as { posts: unknown[] };
+
+    expect(posts).toHaveLength(3);
+  });
+
+  it('count は上限 20 に丸める', async () => {
+    replyRss(many);
+
+    const res = await call('/api/blog?count=999');
+    const { posts } = (await res.json()) as { posts: unknown[] };
+
+    expect(posts).toHaveLength(20);
+  });
+
+  it('解釈できない RSS は上流の異常として扱う', async () => {
+    // 200 でも中身が取れないなら、空の控えを 30 日書かせない
+    upstream.mockResolvedValueOnce(new Response('<html>maintenance</html>', { status: 200 }));
+
+    const res = await call('/api/blog');
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    await expect(res.json()).resolves.toEqual({ posts: [] });
+  });
+
+  it('解釈できない RSS が来ても前回の控えを潰さない', async () => {
+    replyRss([post]);
+    upstream.mockResolvedValueOnce(new Response('<html>maintenance</html>', { status: 200 }));
+
+    await call('/api/blog');
+    await expirePrimary('/api/blog');
+    const res = await callRaw('/api/blog');
+
+    expect(res.headers.get('X-Backup')).toBe('hit');
+    const { posts } = (await res.json()) as { posts: { title: string }[] };
+    expect(posts.map((p) => p.title)).toEqual(['記事タイトル']);
+  });
+
+  it('RSS が引けなければ空配列を返す（ボードは静的テキストのまま残る）', async () => {
+    upstream.mockResolvedValueOnce(new Response('boom', { status: 502 }));
+
+    const res = await call('/api/blog');
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    await expect(res.json()).resolves.toEqual({ posts: [] });
   });
 });
 

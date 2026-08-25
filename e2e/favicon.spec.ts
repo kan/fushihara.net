@@ -32,7 +32,7 @@ function contrast(a: number[], b: number[]) {
 
 test.beforeEach(async ({ page }) => {
   // ボードの中身には用が無い。上流を叩かせないよう API を落としておく
-  // (CI を zenn.dev / api.github.com の生存とレートリミットに依存させないため)。
+  // (CI を api.github.com やブログ Worker の生存に依存させないため)。
   await page.route('**/api/**', (r) => r.abort());
   await page.goto('/');
 });

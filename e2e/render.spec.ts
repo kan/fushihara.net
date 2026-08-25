@@ -1,10 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 import { MARGIN, mobileOrder } from '../src/layout';
 
-// 外部 API はモックする。CI を zenn.dev / api.github.com の生存とレートリミットに
-// 依存させないため。Worker 側のプロキシ挙動は test/worker.test.ts が担当する。
-const ZENN = {
-  articles: [{ title: 'モック記事タイトル', path: '/kan/articles/mock', emoji: '📝' }],
+// 外部 API はモックする。CI を api.github.com の生存とレートリミット、ブログ Worker の
+// 応答に依存させないため。Worker 側のプロキシ挙動は test/worker.test.ts が担当する。
+const BLOG = {
+  posts: [
+    {
+      title: 'モック記事タイトル',
+      link: 'https://fushihara.net/blog/mock/',
+      date: '2026-08-24T15:00:00.000Z',
+    },
+  ],
 };
 const REPOS = [
   {
@@ -21,7 +27,7 @@ const LANGUAGES = { languages: [{ name: 'MockLang', count: 9 }] };
 const NOTE = '.wema-note';
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/zenn*', (r) => r.fulfill({ json: ZENN }));
+  await page.route('**/api/blog*', (r) => r.fulfill({ json: BLOG }));
   await page.route('**/api/github?*', (r) => r.fulfill({ json: REPOS }));
   await page.route('**/api/github-languages*', (r) => r.fulfill({ json: LANGUAGES }));
 });
@@ -53,27 +59,49 @@ test('ボードが描画され、全ノートが表示される', async ({ page 
 
   const boxes = await noteBoxes(page);
   expect(Object.keys(boxes).sort()).toEqual([
-    'book', 'center', 'email', 'interests', 'oss',
-    'poweredby', 'skills', 'social', 'talks', 'zenn',
+    'blog', 'center', 'email', 'interests', 'links',
+    'oss', 'poweredby', 'skills', 'social',
   ]);
 });
 
 test('取得したデータが対応するノートに反映される', async ({ page }) => {
   await gotoAndSettle(page);
 
-  await expect(page.locator(NOTE).filter({ hasText: 'Tech log' }))
-    .toContainText('モック記事タイトル');
+  const blogNote = page.locator(NOTE).filter({ hasText: 'Blog' });
+  await expect(blogNote).toContainText('モック記事タイトル');
+  // pubDate は JST で出す (UTC 15:00 は翌日)
+  await expect(blogNote).toContainText('2026-08-25');
   await expect(page.locator(NOTE).filter({ hasText: 'OSS Projects' }))
     .toContainText('mock-repo');
   await expect(page.locator(NOTE).filter({ hasText: 'Skills' }))
     .toContainText('MockLang');
 });
 
+test('付箋の中身がはみ出さない（縦スクロールが出ない）', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  // 見出しの後の <br> を 1 つ余らせただけで中身がはみ出し、付箋の中に
+  // 縦スクロールが出る（実際に踏んだ）。目では気付きにくいので測る。
+  const overflowing = await page.$$eval('.wema-note', (els) =>
+    els
+      .map((el) => {
+        const content = el.querySelector('.wema-note-content')!;
+        return {
+          id: el.getAttribute('data-note-id'),
+          over: content.scrollHeight - content.clientHeight,
+        };
+      })
+      .filter((r) => r.over > 1),
+  );
+
+  expect(overflowing).toEqual([]);
+});
+
 test('リンクが新しいタブで開く形になっている', async ({ page }) => {
   await gotoAndSettle(page);
 
   const link = page.getByRole('link', { name: 'モック記事タイトル' });
-  await expect(link).toHaveAttribute('href', 'https://zenn.dev/kan/articles/mock');
+  await expect(link).toHaveAttribute('href', 'https://fushihara.net/blog/mock/');
   await expect(link).toHaveAttribute('target', '_blank');
 });
 
@@ -84,8 +112,11 @@ test('API が全滅しても静的な内容は残る', async ({ page }) => {
   await expect(page.locator(NOTE).first()).toBeVisible();
 
   // board-data.ts のフォールバック文言がそのまま出ている
-  await expect(page.locator(NOTE).filter({ hasText: 'Tech log' })).toBeVisible();
-  expect(Object.keys(await noteBoxes(page))).toHaveLength(10);
+  const blogNote = page.locator(NOTE).filter({ hasText: 'Blog' });
+  await expect(blogNote).toContainText('Loading...');
+  // API を 1 つも要らない唯一の行き先なので、全滅時こそ導線を残す
+  await expect(blogNote.getByRole('link', { name: 'more...' })).toHaveAttribute('href', '/blog/');
+  expect(Object.keys(await noteBoxes(page))).toHaveLength(9);
 });
 
 test.describe('デスクトップ', () => {

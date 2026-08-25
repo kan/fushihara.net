@@ -1,7 +1,8 @@
 import type { WemaBoardData } from '@kanf/wema';
+import { moreLink } from './note-html';
 import {
   siBluesky, siX, siGithub, siFacebook, siInstagram,
-  siCloudflareworkers, siVite, siTypescript, siClaude,
+  siCloudflareworkers, siVite, siTypescript, siAstro, siClaude,
 } from 'simple-icons';
 
 // Left-accent stripe colors (card theme uses note.color for the stripe)
@@ -9,9 +10,8 @@ const C = {
   center: '#E94560',   // Coral red
   email: '#00BFA5',    // Teal
   social: '#4FC3F7',   // Light blue
-  zenn: '#3EA8FF',     // Zenn blue
-  book: '#FFB74D',     // Orange
-  talks: '#FF7043',    // Deep orange
+  blog: '#3EA8FF',     // Blue
+  links: '#FF7043',    // Deep orange
   skills: '#5C6BC0',   // Indigo
   oss: '#81C784',      // Green
   interests: '#CE93D8',// Light purple
@@ -32,14 +32,6 @@ const siIcon = (si: { path: string }, href: string) => {
   return `<a href="${href}" target="_blank"><img src="${uri}" width="22" height="22" style="vertical-align:middle"></a>`;
 };
 
-// Note dimensions
-const W = 200;
-const H = 120;
-const CW = 260;
-const CH = 190;
-const OSSW = 240;
-const OSSH = 160;
-
 export const boardData: WemaBoardData = {
   version: 1,
   notes: [
@@ -47,7 +39,7 @@ export const boardData: WemaBoardData = {
     {
       id: 'center',
       x: 500, y: 250,
-      width: CW, height: CH,
+      width: 260, height: 190,
       text: '<b style="font-size:20px">KAN Fushihara</b><br><span class="muted" style="font-size:11px">伏原 幹 / ふしはら かん</span><br><br>Programmer<br><span style="font-size:13px"><a href="https://communitylinks.co.jp/" target="_blank">@ Community Links</a></span><br><span class="muted" style="font-size:11px">Kawagoe, Saitama, Japan</span>',
       color: C.center,
       zIndex: 10,
@@ -57,7 +49,7 @@ export const boardData: WemaBoardData = {
     {
       id: 'email',
       x: 530, y: 20,
-      width: W, height: 80,
+      width: 200, height: 80,
       text: '<b>Email</b><br><a href="mailto:kan.fushihara@gmail.com">kan.fushihara@gmail.com</a>',
       color: C.email,
       zIndex: 1,
@@ -92,27 +84,25 @@ export const boardData: WemaBoardData = {
 
     // === Content (right side) ===
     {
-      id: 'zenn',
+      id: 'blog',
       x: 920, y: 100,
       width: 280, height: 220,
-      text: '<b>Tech log</b><br><br><span class="muted">Loading...</span>',
-      color: C.zenn,
+      // more... は静的なテキストにも置く。/api/blog が落ちた日に、API を要らない
+      // 唯一の行き先（自分のブログ）まで辿れなくなるのは割に合わない。
+      text: `<b>Blog</b><br><br><span class="muted">Loading...</span>${moreLink('/blog/')}`,
+      color: C.blog,
       zIndex: 1,
     },
     {
-      id: 'book',
-      x: 980, y: 400,
-      width: W, height: H,
-      text: '<b>Book</b><br><br><a href="https://amzn.to/4rj8ti5" target="_blank">ふしはらかんのらーめん話</a>',
-      color: C.book,
-      zIndex: 1,
-    },
-    {
-      id: 'talks',
-      x: 960, y: 560,
-      width: W, height: H,
-      text: '<b>Slides</b><br><br><a href="https://speakerdeck.com/kan" target="_blank">Speaker Deck</a>',
-      color: C.talks,
+      id: 'links',
+      x: 960, y: 440,
+      width: 240, height: 140,
+      text: '<b>Links</b><br><br>' + [
+        '<a href="https://zenn.dev/kan" target="_blank">Zenn</a>',
+        '<a href="https://amzn.to/4rj8ti5" target="_blank">ふしはらかんのらーめん話</a>',
+        '<a href="https://speakerdeck.com/kan" target="_blank">Speaker Deck</a>',
+      ].join('<br>'),
+      color: C.links,
       zIndex: 1,
     },
 
@@ -130,7 +120,7 @@ export const boardData: WemaBoardData = {
     {
       id: 'interests',
       x: 160, y: 500,
-      width: OSSW, height: OSSH,
+      width: 240, height: 160,
       text: '<b>Interests</b><br><br><a href="https://idolmaster-official.jp/" target="_blank">THE IDOLM@STER</a><br><a href="https://zombielandsaga.com/" target="_blank">ゾンビランドサガ</a><br><a href="https://anime-precure.com/" target="_blank">プリキュアシリーズ</a><br><a href="https://www.moukotanmen-nakamoto.com/" target="_blank">蒙古タンメン中本</a>',
       color: C.interests,
       zIndex: 1,
@@ -147,6 +137,7 @@ export const boardData: WemaBoardData = {
         siIcon(siVite, 'https://vitejs.dev'),
         siIcon(siTypescript, 'https://www.typescriptlang.org'),
         wemaIcon('https://www.npmjs.com/package/@kanf/wema'),
+        siIcon(siAstro, 'https://astro.build'),
         siIcon(siClaude, 'https://claude.com/product/claude-code'),
         siIcon(siGithub, 'https://github.com/kan/fushihara.net'),
       ].join(''),
@@ -158,9 +149,8 @@ export const boardData: WemaBoardData = {
   edges: [
     { id: 'e-email', from: 'center', to: 'email', fromAnchor: 'auto', toAnchor: 'auto', style: 'dashed', lineStyle: 'dashed', arrowHead: 'none', strokeWidth: 2, routing: 'curve', collapsed: true },
     { id: 'e-social', from: 'center', to: 'social', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
-    { id: 'e-zenn', from: 'center', to: 'zenn', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
-    { id: 'e-book', from: 'center', to: 'book', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
-    { id: 'e-talks', from: 'center', to: 'talks', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-blog', from: 'center', to: 'blog', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
+    { id: 'e-links', from: 'center', to: 'links', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
     { id: 'e-skills', from: 'center', to: 'skills', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
     { id: 'e-oss', from: 'center', to: 'oss', fromAnchor: 'auto', toAnchor: 'auto', style: 'arrow', arrowHead: 'end', strokeWidth: 2, routing: 'curve' },
     { id: 'e-interests', from: 'center', to: 'interests', fromAnchor: 'auto', toAnchor: 'auto', style: 'line', arrowHead: 'none', strokeWidth: 2, routing: 'curve' },

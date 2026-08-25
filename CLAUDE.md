@@ -32,7 +32,7 @@ route は Custom Domain より優先されるので、`/blog` 配下がブログ
 依存は本体と混ざっていない。詳細は「ブログ」節と `blog/CONTRACT.md`。
 
 リポジトリ直下の `shared/` だけが両方から読まれる（色トークン / テーマの保存キー /
-`shared/public/` の favicon 一式）。
+日付の JST 整形 / `shared/public/` の favicon 一式）。
 
 ## Commands
 
@@ -67,13 +67,15 @@ lint の設定はない。型チェックは本体側が `tsc -b` で 4 つの�
 本体の `tsc -b` は `blog/` を含まない。
 
 テストの外部 API は Vitest では `vi.stubGlobal('fetch')`、E2E では
-`page.route()` で止めてある。CI を zenn.dev / api.github.com の生存と
-レートリミットに依存させないため。**逆に言うと上流の仕様変更は CI では
-検知できない**ので、そこは手動確認に委ねている。
+`page.route()` で止めてある。CI を api.github.com のレートリミットや、
+ブログ Worker（`/api/blog` の上流）の生存に依存させないため。**逆に言うと上流の
+仕様変更は CI では検知できない**ので、そこは手動確認に委ねている。
 
-`test/worker.test.ts` の `call()` がクエリに `__t=N` を足しているのは、
-Worker が `caches.default` を使う以上 URL が同じだとテスト間でキャッシュ
-ヒットし、上流呼び出しを観測できなくなるため。
+`caches.default` はテスト間で生き続けるので、`test/worker.test.ts` の `call()` は
+**キャッシュを 2 本とも捨ててから**呼ぶ。キャッシュが効いていることを見たいテストは
+`callRaw()`（捨てない）、控えを見たいテストは `expirePrimary()`（1 時間の方だけ捨てる）
+を使う。キーの導出は Worker の `cacheKeys()` をそのまま import している。テストだけ
+別実装にすると、キーの決め方を変えた日に**テストが「何も検証していない」側へ倒れる**。
 
 E2E で踏みやすい罠が 2 つある。
 
@@ -200,22 +202,65 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
 ### 動的データ（外部 API）
 
 `src/api.ts` がフロント側のフェッチャ、`worker/` が Worker 側のプロキシ。
-ブラウザから外部 API を直接叩かないのは CORS（Zenn）とレートリミット（GitHub）の回避、
-およびエッジキャッシュのため。
+ブラウザから外部 API を直接叩かないのはレートリミット（GitHub）の回避、
+全文入り RSS をブラウザで解析させないため（ブログ）、およびエッジキャッシュのため。
 
 | エンドポイント | 上流 | ボードの反映先 |
 |---|---|---|
-| `/api/zenn` | zenn.dev の articles API | `zenn` ノート |
+| `/api/blog` | `fushihara.net/blog/rss.xml` | `blog` ノート（Worker 側で JSON に均す） |
 | `/api/github` | GitHub `users/:name/repos` | `oss` ノート（fork は front 側で除外） |
 | `/api/github-languages` | 同上を 100 件取得 | `skills` ノート（Worker 側で言語を集計） |
 
 - `worker/index.ts` — ルータ。`caches.default` の参照と `ctx.waitUntil` での書き込みを
   一箇所に集約しているので、**個々のハンドラはキャッシュを意識しない**
-- `worker/api.ts` — 3 ハンドラ。`zenn` と `githubRepos` は上流 URL 以外同一なので
+- `worker/api.ts` — 3 ハンドラ。`githubRepos` は上流をそのまま流すだけなので
   `proxy()` に寄せてある
 
 `loadDynamicData()` は `Promise.allSettled` なので、どれか失敗しても
 `board-data.ts` の静的テキストがそのまま残る。
+
+- `src/note-html.ts` — ノートの text を組み立てる小物（`escapeHtml` / `moreLink`）。
+  `board-data.ts` と `main.ts` の両方から使う。DOM に触れないのでテストから読める
+- Blog 付箋の日付は **`shared/date.ts` の `isoDate()`**。ブログ本体の記事日付と
+  同じ関数なので、`/` と `/blog/` で同じ記事の日付がずれない
+  （JST 固定にしている理由はそのファイルの doc comment）
+
+#### 上流が落ちたときの控え
+
+`worker/index.ts` はキャッシュのキーを 2 本持つ。通常の 1 時間のものと、成功した
+レスポンスだけを 30 日残す `/__backup/<path>`。上流が失敗したら控えを
+`X-Backup: hit` を付けて返し、カードが「Loading...」に戻るのを防ぐ。GitHub の未認証
+レートリミットは Cloudflare の出口 IP 共有で割と簡単に枯れるため。
+
+- **どちらのキーも `cacheKeys()` が組み、そのエンドポイントが解釈するクエリしか
+  見ない**（`ROUTES` の `keyParams`）。`?utm_source=…` でキーが割れると、中身が同じ
+  でも毎回上流を叩き、控えで守りたかったレートリミットをそこで消費する。
+  **ハンドラが読むクエリを増やしたら `keyParams` にも足すこと**（漏れると別々の
+  リクエストが 1 つのキャッシュを共有する）
+- 控えを返すときの `Cache-Control` は 5 分。1 時間持たせると上流が復旧しても
+  ブラウザ側に古いカードが残る
+- 控えが無ければ上流のエラーをそのまま返す（ボードは静的テキストのまま残る）
+- **200 でも中身を取り出せなかったら非 ok を返すこと。** 空のレスポンスを 30 日
+  控えに書くと、上流が直っても付箋が「Loading...」で固定される
+  （`/api/blog` が記事 0 件を 502 にしているのはこのため）
+
+`caches.default` はデータセンター単位で、追い出されることもある。全世界で確実に
+残す必要が出たら KV に移す。
+
+#### `/api/blog` の RSS 解析
+
+Worker が正規表現で RSS を読めるのは、生成側（`@astrojs/rss` → `fast-xml-parser`）が
+本文を CDATA ではなく実体参照で書くため。XML 中に生の `<` はタグしか現れないので、
+全文入りの `<content:encoded>` が item の切れ目を偽装できない。
+**CDATA を吐く生成器に替えたらこの前提は崩れる**（`blog/CONTRACT.md` は RSS を出すことは
+約束しているが、書き方までは縛っていない）。
+
+前提が崩れたときは記事が 1 件も取れなくなるが、そのときは 502 を返して**前回の控えで
+凌ぐ**（上の「上流が落ちたときの控え」参照）。
+
+上流 URL は `https://fushihara.net/blog/rss.xml` を直書きしている。相対 URL にすると
+dev（localhost）で解決できないため。同一ゾーンへのサブリクエストだが、宛先は別
+スクリプト（`fushihara-net-blog`）なのでループにはならない。
 
 ### ルーティング設定
 

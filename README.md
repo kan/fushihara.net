@@ -16,7 +16,7 @@ npm install
 npm run dev     # localhost:5173 (Vite + workerd via @cloudflare/vite-plugin)
 ```
 
-`/api/*` runs on the real Workers runtime in dev, so the Zenn / GitHub proxies work locally.
+`/api/*` runs on the real Workers runtime in dev, so the blog / GitHub proxies work locally.
 
 The blog is an independent project with its own dependencies:
 

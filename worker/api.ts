@@ -1,10 +1,11 @@
 // ブラウザから外部 API を直接叩かず、ここを経由させている。
-// Zenn は CORS、GitHub はレートリミットの回避が理由。
+// GitHub はレートリミット、ブログの RSS は XML を毎回ブラウザで解析させない
+// (全文入りなので重い) のが理由。
 
 const USER_AGENT = 'fushihara-net-portfolio';
 
 // このプロキシはこのポートフォリオ専用。任意の username を通すと第三者が
-// GitHub / Zenn の公開プロキシとして使えてしまい、Worker のリクエスト枠と
+// GitHub の公開プロキシとして使えてしまい、Worker のリクエスト枠と
 // Cloudflare 出口 IP の未認証レートリミットを消費されて、本サイト自身の
 // カードが落ちる。フロントは常にこの 1 人しか要求しないので固定する。
 const ALLOWED_USERS = new Set(['kan']);
@@ -22,6 +23,11 @@ const ERROR_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Cache-Control': 'no-store',
 };
+
+/** 上流の失敗を表す JSON。キャッシュさせないヘッダはここに集約する */
+export function jsonError(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: ERROR_HEADERS });
+}
 
 const GITHUB_HEADERS = {
   'User-Agent': USER_AGENT,
@@ -47,10 +53,7 @@ function forAllowedUser(
   return async (url) => {
     const name = url.searchParams.get('username') ?? '';
     if (!ALLOWED_USERS.has(name)) {
-      return new Response(JSON.stringify({ error: 'unsupported username' }), {
-        status: 400,
-        headers: ERROR_HEADERS,
-      });
+      return jsonError(400, { error: 'unsupported username' });
     }
     return handler(url, name);
   };
@@ -69,16 +72,6 @@ const repoListUrl = (username: string, perPage: number) =>
   `https://api.github.com/users/${encodeURIComponent(username)}/repos` +
   `?sort=pushed&per_page=${perPage}`;
 
-export const zenn = forAllowedUser(async (url, user) => {
-  const count = positiveInt(url, 'count', 5, 100);
-
-  return proxy(
-    `https://zenn.dev/api/articles?username=${encodeURIComponent(user)}` +
-      `&order=latest&count=${count}`,
-    { 'User-Agent': USER_AGENT },
-  );
-});
-
 export const githubRepos = forAllowedUser(async (url, user) => {
   const count = positiveInt(url, 'count', 10, 100);
 
@@ -91,12 +84,7 @@ export const githubLanguages = forAllowedUser(async (url, user) => {
 
   // 言語の傾向を掴むため最大 100 件のリポジトリを見る
   const res = await fetch(repoListUrl(user, 100), { headers: GITHUB_HEADERS });
-  if (!res.ok) {
-    return new Response(JSON.stringify({ languages: [] }), {
-      status: res.status,
-      headers: ERROR_HEADERS,
-    });
-  }
+  if (!res.ok) return jsonError(res.status, { languages: [] });
 
   const repos = (await res.json()) as { language: string | null; fork: boolean }[];
 
@@ -114,3 +102,81 @@ export const githubLanguages = forAllowedUser(async (url, user) => {
 
   return new Response(JSON.stringify({ languages }), { headers: JSON_HEADERS });
 });
+
+// --- ブログ (/blog) の記事一覧 ---
+
+// ブログは別 Worker (fushihara-net-blog) が fushihara.net/blog* で配っている。
+// 同一ゾーンへのサブリクエストだが宛先が別スクリプトなのでループにはならない。
+// ここを相対 URL にすると dev (localhost) で解決できないので絶対 URL で持つ。
+const BLOG_RSS_URL = 'https://fushihara.net/blog/rss.xml';
+
+const XML_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+};
+
+/** XML のテキストノードに現れる実体参照を戻す */
+function decodeXml(text: string): string {
+  return text.replace(/&(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, ref: string) => {
+    if (ref[0] !== '#') return XML_ENTITIES[ref.toLowerCase()] ?? whole;
+    const code = ref[1] === 'x' ? parseInt(ref.slice(2), 16) : Number(ref.slice(1));
+    return Number.isInteger(code) && code > 0 && code <= 0x10ffff
+      ? String.fromCodePoint(code)
+      : whole;
+  });
+}
+
+// item ごとに RegExp を組み直さないよう、使うぶんだけ定数で持つ
+const TAG_RE = {
+  title: /<title>([\s\S]*?)<\/title>/,
+  link: /<link>([\s\S]*?)<\/link>/,
+  pubDate: /<pubDate>([\s\S]*?)<\/pubDate>/,
+};
+
+/** item 内の最初の <name>…</name> をテキストとして取り出す */
+function tagText(item: string, name: keyof typeof TAG_RE): string {
+  const found = TAG_RE[name].exec(item);
+  return found ? decodeXml(found[1]).trim() : '';
+}
+
+/**
+ * RSS 2.0 から記事の見出しだけを抜く。
+ *
+ * 正規表現で足りるのは、生成側 (@astrojs/rss → fast-xml-parser) が本文を CDATA では
+ * なく実体参照で書くため。つまり XML 中に生の `<` はタグしか現れず、全文入りの
+ * `<content:encoded>` の中身が item の切れ目を偽装することがない。
+ * CDATA を吐く生成器に替えたらこの前提は崩れる (`blog/CONTRACT.md` は RSS の
+ * 出力を約束しているが、書き方までは縛っていない)。
+ */
+function parseRssItems(xml: string, limit: number): { title: string; link: string; date: string }[] {
+  const posts: { title: string; link: string; date: string }[] = [];
+  for (const [, item] of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    // RSS は新しい順なので、必要な件数を取れたら残りの全文は読まない
+    if (posts.length === limit) break;
+    const title = tagText(item, 'title');
+    const link = tagText(item, 'link');
+    if (!title || !link) continue;
+
+    // pubDate は RFC 822。表示形式はフロントに任せるので ISO に寄せておく
+    const at = new Date(tagText(item, 'pubDate'));
+    posts.push({ title, link, date: Number.isNaN(at.getTime()) ? '' : at.toISOString() });
+  }
+  return posts;
+}
+
+export const blog = async (url: URL): Promise<Response> => {
+  const count = positiveInt(url, 'count', 5, 20);
+
+  const res = await fetch(BLOG_RSS_URL, { headers: { 'User-Agent': USER_AGENT } });
+  if (!res.ok) return jsonError(res.status, { posts: [] });
+
+  const posts = parseRssItems(await res.text(), count);
+  if (posts.length === 0) {
+    // 200 でも中身を取り出せないなら上流の異常とみなす。ここで 200 を返すと
+    // worker/index.ts が空の控えを 30 日書いてしまい、付箋が「Loading...」で
+    // 固定される。RSS の書き方が変わったとき (CDATA を吐く生成器に替えた等) に
+    // 起きるのは、上流が落ちたときと同じ「前回の控えで凌ぐ」場面。
+    return jsonError(502, { posts: [] });
+  }
+
+  return new Response(JSON.stringify({ posts }), { headers: JSON_HEADERS });
+};

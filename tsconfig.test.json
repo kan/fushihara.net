@@ -13,6 +13,7 @@
     "worker",
     "src/board-data.ts",
     "src/layout.ts",
+    "src/note-html.ts",
     "shared/theme.ts"
   ]
 }

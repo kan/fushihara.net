@@ -3,7 +3,7 @@ import { STORAGE_KEY } from '../shared/theme';
 
 // 外部 API は描画待ちを安定させるためだけにモックする（内容は問わない）。
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/**', (r) => r.fulfill({ json: { articles: [], languages: [] } }));
+  await page.route('**/api/**', (r) => r.fulfill({ json: { posts: [], languages: [] } }));
 });
 
 const toggle = (page: Page) => page.locator('.theme-toggle');
