@@ -86,6 +86,41 @@ describe('作成と取得', () => {
   });
 });
 
+describe('副作用', () => {
+  it('取得は書き込まない', async () => {
+    // GET のたびに body_html を書き直すと、一覧→詳細を開くだけで D1 に書き込む。
+    const post = await createPost();
+    await db.prepare("UPDATE posts SET body_html = '<p>目印</p>'").run();
+
+    await apiJson('GET', `/api/posts/${post.publicId}`);
+    expect((await getPostByPublicId(db, post.publicId))?.body_html).toBe('<p>目印</p>');
+  });
+
+  it('パスを変えても描き直さない (本文は変わらないので)', async () => {
+    const post = await createPost({ path: 'a' });
+    await db.prepare("UPDATE posts SET body_html = '<p>目印</p>'").run();
+
+    await apiJson('PUT', `/api/posts/${post.publicId}/path`, { path: 'b' });
+    expect((await getPostByPublicId(db, post.publicId))?.body_html).toBe('<p>目印</p>');
+  });
+
+  it('タグが不正なら記事を作らない', async () => {
+    // 作ってから弾くと、失敗を返したのに記事だけ残り、同じパスで作り直すと
+    // 409 になって手詰まりになる。
+    const failed = await apiJson('POST', '/api/posts', {
+      title: 'x',
+      path: 'wanted',
+      tags: ['Dev', 'dev'],
+    });
+    expect(failed.status).toBe(409);
+    expect((await apiJson('GET', '/api/posts')).body.posts).toEqual([]);
+
+    // 同じパスでやり直せる
+    const retry = await apiJson('POST', '/api/posts', { title: 'x', path: 'wanted' });
+    expect(retry.status).toBe(201);
+  });
+});
+
 describe('更新', () => {
   it('本文を書き換えると配信用の HTML も描き直す', async () => {
     const post = await createPost();
@@ -260,43 +295,65 @@ describe('添付', () => {
     }
   });
 
-  it('同じ名前は 2 つ置けない', async () => {
-    const post = await createPost();
-    await api(`/api/posts/${post.publicId}/media`, { method: 'POST', body: filePayload() });
-    const again = await api(`/api/posts/${post.publicId}/media`, { method: 'POST', body: filePayload() });
-    expect(again.status).toBe(409);
-    expect((await json(again)).error).toBe('filename-taken');
-  });
-
-  it('消すと R2 からも消える', async () => {
-    const post = await createPost();
+  it('消すと R2 からも消え、本文も描き直す', async () => {
+    const post = await createPost({ bodyMd: '![図](./sample.png)\n' });
     const res = await api(`/api/posts/${post.publicId}/media`, { method: 'POST', body: filePayload() });
     const { media } = await json(res);
+    expect((await getPostByPublicId(db, post.publicId))?.body_html).toContain('lily-media://');
 
-    expect((await apiJson('DELETE', `/api/media/${media.publicId}`)).status).toBe(200);
+    const deleted = await apiJson('DELETE', `/api/media/${media.publicId}`);
+    expect(deleted.status).toBe(200);
     expect(await env.MEDIA.get(`posts/${post.publicId}/sample.png`)).toBeNull();
     expect((await getRoot(media.url)).status).toBe(404);
+
+    // 消えた画像を指す <img> が公開ページに残り続けないこと
+    const row = await getPostByPublicId(db, post.publicId);
+    expect(row?.body_html).not.toContain('lily-media://');
+    expect(deleted.body.unresolvedMedia).toEqual(['./sample.png']);
+  });
+
+  it('同じ名前で 2 回上げても元の実体を壊さない', async () => {
+    // R2 のキーは (記事, ファイル名) から決まるので、置いてから DB を見ると
+    // 「失敗した」と言いながら元の画像が上書きされて消える。
+    const post = await createPost();
+    await api(`/api/posts/${post.publicId}/media`, {
+      method: 'POST',
+      body: filePayload('sample.png', 'image/png', 'もとの中身'),
+    });
+
+    const again = await api(`/api/posts/${post.publicId}/media`, {
+      method: 'POST',
+      body: filePayload('sample.png', 'image/png', 'あとの中身'),
+    });
+    expect(again.status).toBe(409);
+    expect(await (await env.MEDIA.get(`posts/${post.publicId}/sample.png`))!.text()).toBe('もとの中身');
   });
 });
 
+/** renderer を更新した状況を作る (保存済みの HTML を古い形に差し替える)。 */
+async function makeStale(): Promise<void> {
+  await db.prepare("UPDATE posts SET body_html = '<p>古い</p>', renderer_version = '0'").run();
+}
+
 describe('再描画', () => {
-  it('全記事の body_html を作り直す', async () => {
+  it('古い renderer で描かれた記事だけを作り直す', async () => {
     const post = await createPost({ bodyMd: '## もとの見出し\n' });
-    // renderer を更新した状況を作る: 保存済みの HTML を古い形に差し替える
-    await db
-      .prepare("UPDATE posts SET body_html = '<p>古い</p>', renderer_version = '0'")
-      .run();
+    await makeStale();
 
     const result = await apiJson('POST', '/api/rerender');
-    expect(result.body.rendered).toBe(1);
+    expect(result.body).toMatchObject({ rendered: 1, remaining: 0 });
 
     const row = await getPostByPublicId(db, post.publicId);
     expect(row?.body_html).toContain('<h2>もとの見出し</h2>');
     expect(row?.renderer_version).not.toBe('0');
+
+    // 2 回目は何もすることが無い
+    expect((await apiJson('POST', '/api/rerender')).body).toMatchObject({ rendered: 0, remaining: 0 });
   });
 
   it('解決できない参照を記事ごとに返す', async () => {
     await createPost({ bodyMd: '![図](./missing.png)\n' });
+    await makeStale();
     const result = await apiJson('POST', '/api/rerender');
     expect(result.body.warnings[0].unresolvedMedia).toEqual(['./missing.png']);
   });

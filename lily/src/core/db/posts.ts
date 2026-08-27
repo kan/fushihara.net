@@ -208,13 +208,16 @@ export async function listAllPosts(
  * 片方だけ動かすと DB に弾かれる。`body_html` / `renderer_version` を
  * `setRenderedHtml` に分けたのと同じ理由で、公開・取り下げは名前の付いた
  * 操作 (`publishPost` / `unpublishPost`) にする。
+ *
+ * **`preview_token_hash` も入れない。** 読者から見えるものは何も変わらないのに
+ * `updated_at` が動くと、sitemap の lastmod と Atom の <updated> が進み、
+ * 購読者のリーダーに記事が浮き上がる (`setPreviewToken` を使う)。
  */
 const PATCHABLE = [
   'title',
   'description',
   'body_md',
   'published_at',
-  'preview_token_hash',
   'bluesky_uri',
 ] as const;
 
@@ -276,6 +279,56 @@ export async function unpublishPost(db: D1Database, id: number): Promise<PostRow
     .bind(nowIso(), id)
     .run();
   return await getPostById(db, id);
+}
+
+/**
+ * プレビューのトークン (のハッシュ) を入れ替える。`null` で失効。
+ *
+ * **`updated_at` を動かさない。** 読者から見えるものは変わらないので、
+ * フィードや sitemap に「更新された」と伝わってはいけない。
+ */
+export async function setPreviewToken(
+  db: D1Database,
+  id: number,
+  hash: string | null,
+): Promise<void> {
+  await db
+    .prepare('UPDATE posts SET preview_token_hash = ?1 WHERE id = ?2')
+    .bind(hash, id)
+    .run();
+}
+
+/**
+ * `body_html` が古い renderer で作られた記事。再描画の対象を絞るのに使う。
+ */
+export async function listPostsNeedingRender(
+  db: D1Database,
+  rendererVersion: string,
+  limit: number,
+): Promise<PostRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT ${postColumns('p')} FROM posts p
+        WHERE p.renderer_version IS NULL OR p.renderer_version <> ?1
+        ORDER BY p.id ASC LIMIT ?2`,
+    )
+    .bind(rendererVersion, limit)
+    .all<PostRow>();
+  return results;
+}
+
+/** 再描画がまだ要る記事の数。 */
+export async function countPostsNeedingRender(
+  db: D1Database,
+  rendererVersion: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      'SELECT count(*) AS n FROM posts WHERE renderer_version IS NULL OR renderer_version <> ?1',
+    )
+    .bind(rendererVersion)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 /**

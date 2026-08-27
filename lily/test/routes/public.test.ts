@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { lily } from '../../src/config.ts';
 import { addAlias } from '../../src/core/db/post-paths.ts';
-import { updatePost } from '../../src/core/db/posts.ts';
+import { setPreviewToken } from '../../src/core/db/posts.ts';
 import { createMedia } from '../../src/core/db/media.ts';
 import { hashPreviewToken, newPreviewToken } from '../../src/core/tokens.ts';
 import { db, resetDb } from '../db/helpers.ts';
@@ -206,7 +206,7 @@ describe('下書きプレビュー', () => {
   async function withPreviewToken(): Promise<string> {
     const post = await seedPost({ path: 'draft-post', draft: true, title: '下書きの記事' });
     const token = newPreviewToken();
-    await updatePost(db, post.id, { preview_token_hash: await hashPreviewToken(token) });
+    await setPreviewToken(db, post.id, await hashPreviewToken(token));
     return token;
   }
 

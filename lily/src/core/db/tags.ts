@@ -72,12 +72,20 @@ export type SetPostTagsError = {
  * 普通に起こりうる入力なので `Result` で返す。DB の `tags.slug` UNIQUE は
  * 最終防衛線として残っているが、そこまで届く前にここで畳む。
  */
-export async function setPostTags(
+export type ResolvedTag = { readonly name: string; readonly slug: string };
+
+/**
+ * タグ名を slug まで解決し、衝突を洗う。**書き込みはしない。**
+ *
+ * 記事を作る前に呼べるように分けてある。作ってから弾くと、失敗を返したのに
+ * 記事だけ残る (呼び出し側は「作成に失敗した」と見ているのに、一覧には出るし
+ * 同じパスで作り直すと 409 になる)。
+ */
+export async function resolveTags(
   db: D1Database,
-  postId: number,
-  names: string[],
-): Promise<Result<void, SetPostTagsError>> {
-  const tags: { name: string; slug: string }[] = [];
+  names: readonly string[],
+): Promise<Result<ResolvedTag[], SetPostTagsError>> {
+  const tags: ResolvedTag[] = [];
   /** slug → 名前。渡された中での衝突もここで見る。 */
   const bySlug = new Map<string, string>();
 
@@ -100,8 +108,26 @@ export async function setPostTags(
   }
 
   const conflict = await findSlugConflict(db, bySlug);
-  if (conflict) return err(conflict);
+  return conflict ? err(conflict) : ok(tags);
+}
 
+export async function setPostTags(
+  db: D1Database,
+  postId: number,
+  names: string[],
+): Promise<Result<void, SetPostTagsError>> {
+  const resolved = await resolveTags(db, names);
+  if (!resolved.ok) return resolved;
+  await applyTags(db, postId, resolved.value);
+  return ok(undefined);
+}
+
+/** 解決済みのタグを付け替える。付け外しを 1 トランザクションで行う。 */
+export async function applyTags(
+  db: D1Database,
+  postId: number,
+  tags: readonly ResolvedTag[],
+): Promise<void> {
   const statements = [
     db.prepare('DELETE FROM post_tags WHERE post_id = ?1').bind(postId),
     ...tags.map((t) =>
@@ -116,7 +142,6 @@ export async function setPostTags(
     ),
   ];
   await db.batch(statements);
-  return ok(undefined);
 }
 
 /** 同じ slug を別の名前のタグが既に DB に持っていないか。 */

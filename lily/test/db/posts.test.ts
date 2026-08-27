@@ -4,9 +4,11 @@ import {
   createPost,
   deletePost,
   getPostByPreviewTokenHash,
+  getPostById,
   getPublishedPosts,
   listAllPosts,
   publishPost,
+  setPreviewToken,
   setRenderedHtml,
   unpublishPost,
   updatePost,
@@ -177,10 +179,18 @@ describe('更新と削除', () => {
 
   it('プレビューはハッシュで引ける', async () => {
     const post = await create({ title: 'x', bodyMd: 'y' });
-    await updatePost(db, post.id, { preview_token_hash: 'deadbeef' });
+    await setPreviewToken(db, post.id, 'deadbeef');
     expect((await getPostByPreviewTokenHash(db, 'deadbeef'))?.id).toBe(post.id);
-    await updatePost(db, post.id, { preview_token_hash: null });
+    await setPreviewToken(db, post.id, null);
     expect(await getPostByPreviewTokenHash(db, 'deadbeef')).toBeNull();
+  });
+
+  it('プレビューの発行は updated_at を動かさない', async () => {
+    // 読者から見えるものは変わらないのに updated_at が動くと、sitemap の
+    // lastmod と Atom の <updated> が進み、購読者のリーダーに浮き上がる。
+    const post = await create({ title: 'x', bodyMd: 'y', updatedAt: '2020-01-01T00:00:00.000Z' });
+    await setPreviewToken(db, post.id, 'deadbeef');
+    expect((await getPostById(db, post.id))?.updated_at).toBe('2020-01-01T00:00:00.000Z');
   });
 
   it('deletePost は R2 のキーを返し、関連行は CASCADE で消える', async () => {
