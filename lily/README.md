@@ -13,6 +13,7 @@
 - `src/core/paths.ts`（`mountPath` と URL 生成、`normalizePostPath`、予約パス）
 - `src/core/render/`（CommonMark + GFM、Shiki、相対参照 → placeholder）
 - 公開側の SSR（一覧・記事・タグ・404・alias 308・下書きプレビュー）と CSS の移植
+- フィード（RSS 維持 + Atom 追加）、sitemap、favicon / ogp の配信
 
 まだデプロイしていない（route を張っていない）。ローカルでは動く。
 
@@ -40,8 +41,9 @@ src/
     db/       Row 型とクエリ。SQL はここから出さない
     paths.ts  mountPath と URL 生成、normalizePostPath / normalizeSegment
     slug.ts   タグ名 → slug（最後は normalizeSegment を通す）
+    feed/     RSS 2.0 と Atom。どちらも全文
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
-    routes/   fixed.ts がルーティング定義の正本、public.ts が公開側のルータ
+    routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、feeds.ts が機械向け
     theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
   site/       fushihara.net 固有（レイアウト・CSS・文言・OGP・クライアント JS）
   admin/      Vue の管理画面 ※これから
@@ -98,6 +100,21 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 | 「記事は常に public_id で引ける」 | `core/db/post-paths.ts` |
 | 生成済み HTML の後処理を開始タグに限る | `core/render/html.ts` の `mapOpenTags` |
 | 見た目・文言・OGP（差し替え点） | `core/theme.ts` の `Theme` を `site/` が実装 |
+| キャッシュ方針 | `core/routes/cache.ts` |
+| 保存済み HTML と描画の使い分け | `core/delivery.ts` |
+
+## フィード
+
+- **`content:encoded` は CDATA ではなく実体参照で書く。** 本体サイトの
+  `/api/blog` が正規表現で RSS を読んでいて、CDATA を吐いた瞬間に壊れる。
+  本体を `posts.json` へ移すまでは変えないこと
+- 本文の URL はすべて**絶対**にする。リーダーは記事の URL を起点に相対 URL を
+  解決してくれない
+- 色は要素に直接書く。リーダーはこのブログの CSS を読まないので、Shiki の
+  `--shiki-*` はライト側の値に展開する
+- **RSS の `guid` は記事の URL のまま。** `urn:uuid:` に変えると、既存の
+  購読者全員に全記事が「新着」として配り直される。Atom は新設なので
+  `urn:uuid:<public_id>` を使える（パスを変えても同じ記事として扱われる）
 
 ## テストの方針
 

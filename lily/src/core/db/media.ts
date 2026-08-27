@@ -76,6 +76,22 @@ export async function listMediaByPost(db: D1Database, postId: number): Promise<M
   return results;
 }
 
+/** フィードのように複数記事をまとめて描画するときの N+1 回避。 */
+export async function listMediaByPosts(
+  db: D1Database,
+  postIds: number[],
+): Promise<MediaRow[]> {
+  if (postIds.length === 0) return [];
+  const placeholders = postIds.map((_, i) => `?${i + 1}`).join(', ');
+  const { results } = await db
+    .prepare(
+      `SELECT ${MEDIA_SELECT} FROM media WHERE post_id IN (${placeholders}) ORDER BY filename ASC`,
+    )
+    .bind(...postIds)
+    .all<MediaRow>();
+  return results;
+}
+
 /**
  * 記事に紐づく R2 のキー。記事を消す前に控えておくために使う
  * (`media` を読むのはこのファイルだけ、という線を守るために置いている)。

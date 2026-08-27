@@ -33,4 +33,6 @@ export type LilyConfig = {
 export type LilyBindings = {
   readonly DB: D1Database;
   readonly MEDIA: R2Bucket;
+  /** mount root 直下に出す静的アセット (favicon 3 点と ogp.png)。 */
+  readonly ASSETS: Fetcher;
 };

@@ -8,29 +8,19 @@ import type { LilyBindings, LilyConfig } from '../config.ts';
 import { getCanonicalPath, resolvePath } from '../db/post-paths.ts';
 import { getPostByPreviewTokenHash, getPublishedPosts, getPublishedPostsByTagSlug } from '../db/posts.ts';
 import { listMediaByPost } from '../db/media.ts';
+import { storedOrRenderedHtml } from '../delivery.ts';
 import { getTagBySlug, getTagsForPost, getTagsForPosts } from '../db/tags.ts';
-import type { PostRow } from '../db/types.ts';
-import { createUrls, normalizePostPath, type Urls } from '../paths.ts';
+import { createUrls, normalizePostPath } from '../paths.ts';
 import { renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
 import type { PageContext } from '../theme.ts';
 import { hashPreviewToken } from '../tokens.ts';
 import { groupTags, toPostSummary, toPostView, toTagView } from '../view.ts';
+import { NO_STORE, SHORT_EDGE, LONG_EDGE } from './cache.ts';
 import { ROUTE } from './fixed.ts';
+import { createNotFound } from './not-found.ts';
 
 type Env = { Bindings: LilyBindings };
-
-/**
- * HTML のキャッシュ。
- *
- * エッジには 60 秒載せ、ブラウザには毎回確認させる。記事を更新しても他の colo の
- * `caches.default` は消せないので、短い TTL で吸収する方針
- * (purge API は使わない。60 秒の遅れで困るのは書いた本人だけ)。
- */
-const HTML_CACHE = 'public, max-age=0, must-revalidate, s-maxage=60';
-
-/** 下書きプレビューは残さない。 */
-const PREVIEW_CACHE = 'no-store';
 
 export function publicRoutes(config: LilyConfig): Hono<Env> {
   const app = new Hono<Env>();
@@ -46,12 +36,7 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
     canonicalUrl,
   });
 
-  // Context を受け取らないのは、notFound() を app.notFound から素で呼べるようにするため。
-  const notFound = async (): Promise<Response> =>
-    new Response(await theme.notFound(context(null)), {
-      status: 404,
-      headers: { 'Content-Type': 'text/html; charset=UTF-8', 'Cache-Control': HTML_CACHE },
-    });
+  const notFound = createNotFound(config);
 
   // マウント直下のスラッシュ無し。`/blog` → `/blog/`
   if (mount !== '') {
@@ -65,14 +50,14 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
     const views = posts.map((p) => toPostSummary(urls, p, tags.get(p.id) ?? []));
 
     return c.html(await theme.index(context(urls.index({ absolute: true })), views), 200, {
-      'Cache-Control': HTML_CACHE,
+      'Cache-Control': SHORT_EDGE,
     });
   });
 
   app.get(urls.stylesheet(), (c) => {
     return c.body(theme.stylesheet, 200, {
       'Content-Type': 'text/css; charset=utf-8',
-      'Cache-Control': 'public, max-age=0, must-revalidate, s-maxage=3600',
+      'Cache-Control': LONG_EDGE,
       ETag: stylesheetETag,
     });
   });
@@ -93,7 +78,7 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
     const view = toTagView(urls, tag);
 
     return c.html(await theme.tag(context(urls.tag(tag, { absolute: true })), view, views), 200, {
-      'Cache-Control': HTML_CACHE,
+      'Cache-Control': SHORT_EDGE,
     });
   });
 
@@ -105,11 +90,16 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
     if (!post) return await notFound();
 
     const canonical = (await getCanonicalPath(db, post.id)) ?? post.public_id;
-    const html = await deliverableHtml(db, post, urls, { fresh: true });
+    // 保存済みの HTML は使わない。保存直後の姿を見るためのページなので、
+    // 毎回 body_md から描き直す (キャッシュもしない)。
+    const rendered = await renderMarkdown(post.body_md, {
+      media: await listMediaByPost(db, post.id),
+    });
+    const html = resolveMediaUrls(rendered.html, urls);
     const view = toPostView(urls, post, canonical, await getTagsForPost(db, post.id), html);
 
     return c.html(await theme.post(context(null), view), 200, {
-      'Cache-Control': PREVIEW_CACHE,
+      'Cache-Control': NO_STORE,
       'X-Robots-Tag': 'noindex',
     });
   });
@@ -139,7 +129,8 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
       return c.redirect(urls.post(resolved.canonical_path), 308);
     }
 
-    const html = await deliverableHtml(db, resolved, urls);
+    const stored = await storedOrRenderedHtml(resolved, () => listMediaByPost(db, resolved.id));
+    const html = resolveMediaUrls(stored, urls);
     const view = toPostView(
       urls,
       resolved,
@@ -149,33 +140,13 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
     );
 
     return c.html(await theme.post(context(urls.post(resolved.canonical_path, { absolute: true })), view), 200, {
-      'Cache-Control': HTML_CACHE,
+      'Cache-Control': SHORT_EDGE,
     });
   });
 
   app.notFound(() => notFound());
 
   return app;
-}
-
-/**
- * 配信する HTML を作る。
- *
- * `body_html` は派生データ (キャッシュ) なので、あればそれを使う。無いときだけ
- * `body_md` から描画する。**プレビューは常に描き直す** (保存直後の姿を見るため)。
- * どちらの経路も同じ renderer と同じ resolver を通る。
- */
-async function deliverableHtml(
-  db: D1Database,
-  post: PostRow,
-  urls: Urls,
-  options: { fresh?: boolean } = {},
-): Promise<string> {
-  const stored = options.fresh ? null : post.body_html;
-  const html =
-    stored ??
-    (await renderMarkdown(post.body_md, { media: await listMediaByPost(db, post.id) })).html;
-  return resolveMediaUrls(html, urls);
 }
 
 /** ETag 用の軽いハッシュ。衝突しても 304 が減るだけなので暗号強度は要らない。 */

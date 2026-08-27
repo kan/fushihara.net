@@ -19,6 +19,9 @@ export const ROUTE = {
   rss: 'rss.xml',
   atom: 'atom.xml',
   sitemap: 'sitemap-index.xml',
+  // 現行の URL をそのまま維持する。Astro の @astrojs/sitemap が index と
+  // 中身を 2 ファイルに分けて出していたので、こちらも同じ 2 本を配る。
+  sitemapUrls: 'sitemap-0.xml',
   postsJson: 'posts.json',
   notFound: '404',
 } as const;
