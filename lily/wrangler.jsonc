@@ -43,5 +43,13 @@
     { "type": "Text", "globs": ["**/*.css"] }
   ],
 
+  // Cloudflare Access の設定。**秘密ではない**が deployment ごとに違うので、
+  // コードではなくここに置く。Access のアプリケーションを作ったら実際の値を入れる。
+  // 空のままだと認証は必ず失敗する (fail closed) ので、管理画面は開かない。
+  "vars": {
+    "ACCESS_TEAM": "",
+    "ACCESS_AUD": ""
+  },
+
   "observability": { "enabled": true }
 }

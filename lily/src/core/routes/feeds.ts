@@ -5,7 +5,7 @@
  * ため (見た目の差し替えでフィードの形が変わってはいけない)。
  */
 import { Hono } from 'hono';
-import type { LilyBindings, LilyConfig } from '../config.ts';
+import type { LilyBindings, PageConfig } from '../config.ts';
 import { listMediaByPosts } from '../db/media.ts';
 import { getPublishedPosts } from '../db/posts.ts';
 import { listTagsWithCounts } from '../db/tags.ts';
@@ -21,7 +21,7 @@ import { ROUTE, STATIC_ASSETS } from './fixed.ts';
 
 type Env = { Bindings: LilyBindings };
 
-export function feedRoutes(config: LilyConfig): Hono<Env> {
+export function feedRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
   const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
   const mount = urls.mountPath;

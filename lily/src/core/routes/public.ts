@@ -4,7 +4,7 @@
  * ここが持つのは「どのデータをどのテーマ関数に渡すか」と、308 の張り方だけ。
  */
 import { Hono } from 'hono';
-import type { LilyBindings, LilyConfig } from '../config.ts';
+import type { LilyBindings, PageConfig } from '../config.ts';
 import { getCanonicalPath, resolvePath } from '../db/post-paths.ts';
 import { getPostByPreviewTokenHash, getPublishedPosts, getPublishedPostsByTagSlug } from '../db/posts.ts';
 import { listMediaByPost } from '../db/media.ts';
@@ -22,7 +22,7 @@ import { createNotFound } from './not-found.ts';
 
 type Env = { Bindings: LilyBindings };
 
-export function publicRoutes(config: LilyConfig): Hono<Env> {
+export function publicRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
   const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
   const mount = urls.mountPath;

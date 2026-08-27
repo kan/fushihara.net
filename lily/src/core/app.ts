@@ -6,13 +6,19 @@
  */
 import { Hono } from 'hono';
 import type { LilyBindings, LilyConfig } from './config.ts';
+import { apiRoutes, type ApiEnv } from './routes/api.ts';
 import { feedRoutes } from './routes/feeds.ts';
 import { mediaRoutes } from './routes/media.ts';
 import { createNotFound } from './routes/not-found.ts';
 import { publicRoutes } from './routes/public.ts';
 
-export function createLily(config: LilyConfig): Hono<{ Bindings: LilyBindings }> {
-  const app = new Hono<{ Bindings: LilyBindings }>();
+export function createLily<Bindings extends LilyBindings>(
+  config: LilyConfig<Bindings>,
+): Hono<ApiEnv<Bindings>> {
+  const app = new Hono<ApiEnv<Bindings>>();
+  // **保護境界を最初に置く。** api / admin へのミドルウェアが、後から来る
+  // どのルータよりも先に走る。
+  app.route('/', apiRoutes(config));
   app.route('/', feedRoutes(config));
   app.route('/', mediaRoutes(config));
   app.route('/', publicRoutes(config));

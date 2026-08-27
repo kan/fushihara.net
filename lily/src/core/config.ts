@@ -4,6 +4,7 @@
  * `core/` はこの型しか知らない。サイト名・ドメイン・配色・パンくず・認証方式は
  * すべて呼び出し側 (`src/config.ts` と `src/site/`) が決める。
  */
+import type { AuthAdapter } from './auth/index.ts';
 import type { Theme } from './theme.ts';
 
 export type SiteConfig = {
@@ -17,11 +18,26 @@ export type SiteConfig = {
   readonly twitter?: string;
 };
 
-export type LilyConfig = {
+/**
+ * ページを組むのに要る設定。公開側のルータ・フィード・添付はこれしか見ない
+ * (認証を知らずに済むように分けてある)。
+ */
+export type PageConfig = {
   readonly site: SiteConfig;
   /** マウント位置。OSS の標準構成では `'/'`。 */
   readonly mountPath: string;
   readonly theme: Theme;
+};
+
+/**
+ * `createLily()` に渡す設定。
+ *
+ * `auth` を**関数**にしているのは、チーム名や AUD のような deployment 固有の値を
+ * リポジトリに焼き付けず、`env` から取れるようにするため (env はリクエストの
+ * ときにしか無いので、モジュール読み込み時にアダプタを作れない)。
+ */
+export type LilyConfig<Bindings extends LilyBindings = LilyBindings> = PageConfig & {
+  readonly auth: (env: Bindings) => AuthAdapter;
 };
 
 /**

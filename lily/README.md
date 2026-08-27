@@ -15,6 +15,8 @@
 - 公開側の SSR（一覧・記事・タグ・404・alias 308・下書きプレビュー）と CSS の移植
 - フィード（RSS 維持 + Atom 追加）、sitemap、favicon / ogp の配信
 - 添付の配信（R2 の原本をそのまま返す。Cloudflare Images はこれから）
+- `AuthAdapter` と Cloudflare Access アダプタ、`<mount>/api/*` と
+  `<mount>/admin/*` の保護境界
 
 まだデプロイしていない（route を張っていない）。ローカルでは動く。
 
@@ -42,10 +44,11 @@ src/
     db/       Row 型とクエリ。SQL はここから出さない
     paths.ts  mountPath と URL 生成、normalizePostPath / normalizeSegment
     slug.ts   タグ名 → slug（最後は normalizeSegment を通す）
+    auth/     AuthAdapter の型と Cloudflare Access アダプタ
     feed/     RSS 2.0 と Atom。どちらも全文
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
     routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、
-              feeds.ts が機械向け、media.ts が添付
+              feeds.ts が機械向け、media.ts が添付、api.ts が保護境界
     theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
   site/       fushihara.net 固有（レイアウト・CSS・文言・OGP・クライアント JS）
   admin/      Vue の管理画面 ※これから
@@ -119,6 +122,21 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 - **RSS の `guid` は記事の URL のまま。** `urn:uuid:` に変えると、既存の
   購読者全員に全記事が「新着」として配り直される。Atom は新設なので
   `urn:uuid:<public_id>` を使える（パスを変えても同じ記事として扱われる）
+
+## 認証
+
+`<mount>/api/*` と `<mount>/admin/*` は `AuthAdapter` を通らないと届かない。
+**中身が無いうちから掛けてある**ので、route を足したときに保護を忘れる余地がない。
+
+- **core は認証の方式を 1 つも知らない。** fushihara.net は Cloudflare Access
+  アダプタを使うが、Deploy to Cloudflare は Access を自動プロビジョニングできない
+  ので、OSS の標準構成では別のアダプタが既定になる
+- Access は Worker の手前でリクエストを止めるので、**ここでの検証は二重の守り**。
+  Access を経由しない経路（route の設定漏れ・別ドメインからの直接アクセス）で
+  管理画面が開かないようにするためのもの
+- チーム名と AUD は `wrangler.jsonc` の `vars`。秘密ではないが deployment ごとに
+  違うのでコードに焼き付けない。**空のままだと必ず拒否する**（fail closed）
+- 拒否した理由はレスポンスに載せない。どこまで合っていたかは、当てにいく手掛かりになる
 
 ## 増えてから壊れるもの
 

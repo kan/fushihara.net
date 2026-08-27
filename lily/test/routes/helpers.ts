@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:test';
 import { createLily } from '../../src/core/app.ts';
+import type { AuthAdapter, AuthUser } from '../../src/core/auth/index.ts';
 import { createPost, publishPost, setRenderedHtml } from '../../src/core/db/posts.ts';
 import { setPostTags } from '../../src/core/db/tags.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../../src/core/render/index.ts';
@@ -15,6 +16,25 @@ export async function get(path: string): Promise<Response> {
   return await lily.fetch(new Request(`${SITE}${path}`), env);
 }
 
+/**
+ * 認証のスタブ。`stubUser` に値を入れると通り、null なら拒否する。
+ *
+ * 本番の設定 (`src/config.ts`) は Cloudflare Access で、テストでは
+ * ACCESS_TEAM / ACCESS_AUD が空なので必ず拒否になる。通る側を見たいときは
+ * こちらのアプリを使う。
+ */
+export let stubUser: AuthUser | null = null;
+
+export function setStubUser(user: AuthUser | null): void {
+  stubUser = user;
+}
+
+const stubAuth: AuthAdapter = {
+  name: 'stub',
+  authenticate: async () =>
+    stubUser ? { ok: true, user: stubUser } : { ok: false, reason: 'スタブが拒否' },
+};
+
 /** root mount。core に `/blog` が焼き付いていないことを見るために使う。 */
 const rootApp = createLily({
   site: {
@@ -25,6 +45,7 @@ const rootApp = createLily({
   },
   mountPath: '/',
   theme,
+  auth: () => stubAuth,
 });
 
 export async function getRoot(path: string): Promise<Response> {

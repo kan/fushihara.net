@@ -6,7 +6,7 @@
  * ハンドラの内側で振り分ける (今はまだ原本をそのまま返すだけ)。
  */
 import { Hono } from 'hono';
-import type { LilyBindings, LilyConfig } from '../config.ts';
+import type { LilyBindings, PageConfig } from '../config.ts';
 import { getMediaByPublicId } from '../db/media.ts';
 import { createUrls } from '../paths.ts';
 import { ROUTE } from './fixed.ts';
@@ -22,7 +22,7 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
 /** 画像が無いときに HTML の 404 ページを返しても仕方がないので、素で返す。 */
 const missing = (): Response => new Response('Not Found', { status: 404 });
 
-export function mediaRoutes(config: LilyConfig): Hono<Env> {
+export function mediaRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
   const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
   const mount = urls.mountPath;

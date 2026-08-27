@@ -192,9 +192,9 @@ describe('404', () => {
     expect(body).not.toContain('og:url');
   });
 
-  it('予約パスに記事は無いので 404', async () => {
-    expect((await get('/blog/admin/')).status).toBe(404);
-    expect((await get('/blog/api/posts')).status).toBe(404);
+  it('保護された予約パスは 404 ではなく 403 (存在の有無を漏らさない)', async () => {
+    expect((await get('/blog/admin/')).status).toBe(403);
+    expect((await get('/blog/api/posts')).status).toBe(403);
   });
 
   it('マウントの外も 404', async () => {
