@@ -56,8 +56,64 @@ describe('取りに行かないもの', () => {
     await skipped('http://[::1]/');
   });
 
+  it('ローカル向けの名前', async () => {
+    // IP リテラルを弾くだけでは、名前で同じところへ行ける。
+    await skipped('http://localhost:8787/blog/api/posts');
+    await skipped('http://foo.localhost/');
+    await skipped('http://printer.local/');
+    await skipped('http://db.internal/');
+  });
+
   it('URL として読めないもの', async () => {
     await skipped('とりあえずメモ');
+  });
+});
+
+describe('リダイレクト', () => {
+  /** `from` に来たら `to` へ飛ばし、それ以外は普通の HTML を返す。 */
+  function redirectingFetch(from: string, to: string): void {
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = String(input instanceof Request ? input.url : input);
+      requested.push(url);
+      if (url === from) {
+        return new Response(null, { status: 302, headers: { Location: to } });
+      }
+      return html('<title>飛んだ先の題</title>');
+    });
+  }
+
+  it('公開 URL から内側へ飛ばされても取りに行かない', async () => {
+    // `redirect: 'follow'` に任せると、最初の 1 回しか検査されないので素通りする。
+    redirectingFetch('https://example.com/go', 'http://169.254.169.254/latest/meta-data/');
+    expect(await fetchLinkTitle('https://example.com/go')).toEqual({ title: null });
+    // 1 ホップ目だけ叩いて、飛び先は叩いていない
+    expect(requested).toEqual(['https://example.com/go']);
+  });
+
+  it('外向きのリダイレクトなら追う', async () => {
+    redirectingFetch('https://example.com/go', 'https://example.org/dest');
+    expect(await fetchLinkTitle('https://example.com/go')).toEqual({ title: '飛んだ先の題' });
+    expect(requested).toEqual(['https://example.com/go', 'https://example.org/dest']);
+  });
+
+  it('相対の Location も元の URL を起点に解決する', async () => {
+    redirectingFetch('https://example.com/go', '/dest');
+    expect(await fetchLinkTitle('https://example.com/go')).toEqual({ title: '飛んだ先の題' });
+    expect(requested[1]).toBe('https://example.com/dest');
+  });
+
+  it('回り続けるものは打ち切る', async () => {
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return new Response(null, { status: 302, headers: { Location: 'https://example.com/loop' } });
+    });
+    expect(await fetchLinkTitle('https://example.com/loop')).toEqual({ title: null });
+    expect(requested.length).toBeLessThanOrEqual(4);
+  });
+
+  it('Location が無ければ諦める', async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 302 }));
+    expect(await fetchLinkTitle('https://example.com/')).toEqual({ title: null });
   });
 });
 
