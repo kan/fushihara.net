@@ -76,16 +76,28 @@ export async function setPostTags(
   names: string[],
 ): Promise<Result<void, SetPostTagsError>> {
   const tags: { name: string; slug: string }[] = [];
+  /** slug → 名前。渡された中での衝突もここで見る。 */
+  const bySlug = new Map<string, string>();
+
   for (const raw of names) {
     const name = raw.normalize('NFC').trim();
     if (name === '') continue;
     if (tags.some((t) => t.name === name)) continue;
+
     const slug = slugifyTag(name);
     if (!slug.ok) return err({ code: 'invalid-slug', name });
+
+    // `['Dev', 'dev']` のように、1 回の呼び出しの中で slug が衝突する組。
+    // ON CONFLICT (name) は名前の衝突しか吸収しないので、ここで止めないと
+    // tags.slug の UNIQUE 違反が batch ごと生の例外になって漏れる。
+    const owner = bySlug.get(slug.value);
+    if (owner !== undefined) return err({ code: 'slug-taken', name, existingName: owner });
+
+    bySlug.set(slug.value, name);
     tags.push({ name, slug: slug.value });
   }
 
-  const conflict = await findSlugConflict(db, tags);
+  const conflict = await findSlugConflict(db, bySlug);
   if (conflict) return err(conflict);
 
   const statements = [
@@ -105,13 +117,13 @@ export async function setPostTags(
   return ok(undefined);
 }
 
-/** 同じ slug を別の名前のタグが既に持っていないか。 */
+/** 同じ slug を別の名前のタグが既に DB に持っていないか。 */
 async function findSlugConflict(
   db: D1Database,
-  tags: { name: string; slug: string }[],
+  bySlug: ReadonlyMap<string, string>,
 ): Promise<SetPostTagsError | null> {
-  if (tags.length === 0) return null;
-  const slugs = tags.map((t) => t.slug);
+  if (bySlug.size === 0) return null;
+  const slugs = [...bySlug.keys()];
   const placeholders = slugs.map((_, i) => `?${i + 1}`).join(', ');
   const { results } = await db
     .prepare(`SELECT name, slug FROM tags WHERE slug IN (${placeholders})`)
@@ -119,9 +131,9 @@ async function findSlugConflict(
     .all<{ name: string; slug: string }>();
 
   for (const row of results) {
-    const wanted = tags.find((t) => t.slug === row.slug);
-    if (wanted && wanted.name !== row.name) {
-      return { code: 'slug-taken', name: wanted.name, existingName: row.name };
+    const wanted = bySlug.get(row.slug);
+    if (wanted !== undefined && wanted !== row.name) {
+      return { code: 'slug-taken', name: wanted, existingName: row.name };
     }
   }
   return null;

@@ -96,6 +96,29 @@ describe('setPostTags', () => {
     if (!result.ok) expect(result.error.code).toBe('invalid-slug');
   });
 
+  it('1 回の呼び出しの中で slug が衝突しても Result で返す', async () => {
+    // ON CONFLICT (name) は名前の衝突しか吸収しないので、ここを通すと
+    // tags.slug の UNIQUE 違反が batch ごと生の例外になって漏れる。
+    const post = await create('a');
+    const result = await setPostTags(db, post.id, ['Dev', 'dev']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('slug-taken');
+      expect(result.error.existingName).toBe('Dev');
+    }
+    expect(await getTagsForPost(db, post.id)).toEqual([]);
+  });
+
+  it('既存タグとの衝突は、先頭以外の位置でも見つかる', async () => {
+    const first = await create('a');
+    await setPostTags(db, first.id, ['Dev']);
+
+    const second = await create('b');
+    const result = await setPostTags(db, second.id, ['life', 'dev']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.existingName).toBe('Dev');
+  });
+
   it('名前が違うのに slug が同じタグは Result で返す (500 にしない)', async () => {
     const post = await create('a');
     await setPostTags(db, post.id, ['Dev']);
