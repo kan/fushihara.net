@@ -17,6 +17,9 @@ type Env = { Bindings: LilyBindings };
  */
 const PRIVATE = 'private, max-age=0, must-revalidate';
 
+/** vite が出す成果物の置き場所 (`build.outDir` の中)。 */
+const ASSET_DIR = 'assets';
+
 export function adminRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
   const mount = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath }).mountPath;
@@ -31,8 +34,12 @@ export function adminRoutes(config: PageConfig): Hono<Env> {
 
     // 見つからないパスは SPA の入口に寄せる。画面の切り替えはハッシュで行うので
     // 普通は来ないが、リロードやブックマークで直接叩かれたときに 404 にしない。
+    //
+    // **ビルド成果物は寄せない。** デプロイをまたいで開いていたタブが古い
+    // ハッシュ付きの JS を取りに来たとき、HTML を 200 で返すと MIME の不一致で
+    // 白い画面になる（404 なら原因が分かる）。
     const response =
-      asset.status === 404
+      asset.status === 404 && !rest.startsWith(`${ASSET_DIR}/`)
         ? await c.env.ASSETS.fetch(new URL('/admin/index.html', c.req.url))
         : asset;
 

@@ -34,6 +34,13 @@ const previewUrl = ref('');
 /** 公開日時。`YYYY-MM-DDTHH:mm`（JST の裸の日時）。空は「指定なし」。 */
 const publishedAt = ref('');
 
+/** 読み込んだときの値。触ったかどうかの判定に使う。 */
+const loadedPublishedAt = ref('');
+
+function publishedAtChanged(): boolean {
+  return publishedAt.value !== loadedPublishedAt.value;
+}
+
 const html = ref('');
 const unresolved = ref<readonly string[]>([]);
 const error = ref('');
@@ -50,6 +57,7 @@ function fill(detail: Detail): void {
   newPath.value = detail.canonicalPath;
   publishedAt.value =
     detail.publishedAt === null ? '' : toDateTimeInput(new Date(detail.publishedAt));
+  loadedPublishedAt.value = publishedAt.value;
 }
 
 /**
@@ -92,9 +100,11 @@ async function save(): Promise<void> {
     tags: tags.value,
     // 下書きでも設定できる。公開のときに coalesce でこの日時が使われるので、
     // 「公開日を先に決めておく」「昔の記事を移す」がそのまま通る。
-    // 空なら送らない (= 変えない)。公開中の記事から日付を消すのは
-    // 「取り下げる」の仕事。
-    ...(publishedAt.value === ''
+    //
+    // **触っていなければ送らない。** 欄は分までしか持たないので、送り返すと
+    // 秒が落ちる。並びは published_at 順なので、無関係な編集で同じ分に公開した
+    // 記事の順序が入れ替わる。空のときも送らない (日付を消すのは「取り下げる」)。
+    ...(publishedAt.value === '' || !publishedAtChanged()
       ? {}
       : { publishedAt: fromDateTimeInput(publishedAt.value) ?? undefined }),
   };

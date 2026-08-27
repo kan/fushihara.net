@@ -65,10 +65,19 @@ function pick(date: string): void {
   model.value = `${date}T${timePart.value || '00:00'}`;
 }
 
-/** `9:5` のような入力を `09:05` に均す。読めなければ元に戻す。 */
+/**
+ * `9:5` `930` `9` のような入力を `09:05` の形に均す。読めなければ元に戻す。
+ *
+ * 分から先に形を決める。時を貪欲に取ると `930` が「93 時 0 分」になり、
+ * 時刻としてよくある打ち方が黙って捨てられる。
+ */
 function normalizeTime(event: Event): void {
   const input = event.target as HTMLInputElement;
-  const matched = /^(\d{1,2})\D?(\d{1,2})?$/.exec(input.value.trim());
+  const value = input.value.trim();
+  const matched =
+    /^(\d{1,2})\D(\d{1,2})$/.exec(value) ??
+    /^(\d{1,2})(\d{2})$/.exec(value) ??
+    /^(\d{1,2})$/.exec(value);
   const hour = Number(matched?.[1] ?? NaN);
   const minute = Number(matched?.[2] ?? 0);
 

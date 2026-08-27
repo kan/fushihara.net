@@ -196,7 +196,14 @@ async function onPaste(event: ClipboardEvent): Promise<void> {
   const selected = props.modelValue.slice(start, end);
 
   // 取りに行くあいだも書き続けられるよう、まず URL のままの形で入れておく。
-  surround(`[${selected || text}](${text})`, '', '');
+  // **surround には通さない。** あれは選択範囲を読み直して包むので、完成形を
+  // 渡すと選んだ文字が後ろに二重で残る。
+  const inserted = `[${selected || text}](${text})`;
+  const pasted = props.modelValue.slice(0, start) + inserted + props.modelValue.slice(end);
+  emit('update:modelValue', pasted);
+  reselect(start + inserted.length, start + inserted.length);
+
+  // 選んだ文字が題なら、取りに行く必要がない。
   if (selected !== '') return;
 
   const res = await client['link-title'].$post({ json: { url: text } });
@@ -204,12 +211,17 @@ async function onPaste(event: ClipboardEvent): Promise<void> {
   const { title } = await res.json();
   if (title === null) return;
 
-  // 取れたら題を差し替える。書いている途中の場所は動かさない。
-  // 置換は関数で渡す。文字列で渡すと、題に `$&` が入っていたときに化ける。
+  // **入れた場所を覚えておいて、そこだけ差し替える。** 本文から探して置き換えると、
+  // 同じ URL を前にも貼っていたときに古い方が書き変わる。
+  const current = props.modelValue;
+  if (current.slice(start, start + inserted.length) !== inserted) return;
+
+  const replaced = `[${title}](${text})`;
   emit(
     'update:modelValue',
-    props.modelValue.replace(`[${text}](${text})`, () => `[${title}](${text})`),
+    current.slice(0, start) + replaced + current.slice(start + inserted.length),
   );
+  reselect(start + replaced.length, start + replaced.length);
 }
 
 function isHttpUrl(text: string): boolean {

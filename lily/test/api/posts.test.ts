@@ -221,6 +221,14 @@ describe('公開日時', () => {
     expect(rss).toContain('<pubDate>Tue, 05 May 2020 04:45:00 GMT</pubDate>');
   });
 
+  it('publishedAt を送らなければ秒まで保たれる', async () => {
+    // 管理画面の欄は分までしか持たないので、触っていないのに送り返すと秒が落ちる。
+    // 並びは published_at 順なので、同じ分に公開した記事の順序が入れ替わる。
+    const post = await createPost({ path: 'a', publishedAt: '2026-08-01T00:00:42.500Z' });
+    const updated = await apiJson('PATCH', `/api/posts/${post.publicId}`, { title: '題だけ直す' });
+    expect(updated.body.post.publishedAt).toBe('2026-08-01T00:00:42.500Z');
+  });
+
   it('日時として読めないものは 400', async () => {
     const post = await createPost();
     expect(

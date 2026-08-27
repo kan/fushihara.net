@@ -58,8 +58,14 @@ function remove(name: string): void {
   model.value = model.value.filter((tag) => tag !== name);
 }
 
-/** 空欄で Backspace なら直前のタグを消す。打ち直しの手数を減らす。 */
-function onBackspace(): void {
+/**
+ * 空欄で Backspace なら直前のタグを消す。打ち直しの手数を減らす。
+ *
+ * `@keydown.delete` は Backspace と Delete の**両方**に当たるので、ここで
+ * 見分ける（前を消すつもりのキーだけを拾う）。
+ */
+function onBackspace(event: KeyboardEvent): void {
+  if (event.key !== 'Backspace') return;
   if (draft.value === '' && model.value.length > 0) {
     model.value = model.value.slice(0, -1);
   }
