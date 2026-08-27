@@ -36,12 +36,18 @@ export function mediaRoutes(config: PageConfig): Hono<Env> {
     const object = await c.env.MEDIA.get(media.r2_key);
     if (!object) return missing();
 
+    // Content-Length は付けない。D1 の `bytes` と R2 の実体がずれたときに嘘を
+    // 返すことになるし、固定長のストリームなのでランタイムが正しく付ける。
     return new Response(object.body, {
       headers: {
         'Content-Type': media.mime,
-        'Content-Length': String(media.bytes),
         'Cache-Control': IMMUTABLE,
         ETag: object.httpEtag,
+        // 記事に貼る SVG も配るので、**直接開かれたとき**にスクリプトが走らない
+        // ようにする (<img> での埋め込みには影響しない)。同一オリジンで
+        // 自分が上げたものを配る以上、置いておくのが安い。
+        'Content-Security-Policy': 'sandbox',
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   });

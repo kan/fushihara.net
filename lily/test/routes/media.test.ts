@@ -28,6 +28,30 @@ describe('添付', () => {
     expect(res.headers.get('etag')).toBeTruthy();
   });
 
+  it('直接開かれてもスクリプトが走らないようにする (SVG も配るので)', async () => {
+    const media = await seedMedia();
+    const res = await get(`/blog/media/${media.public_id}/sample.png`);
+    expect(res.headers.get('content-security-policy')).toBe('sandbox');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('D1 の bytes ではなく実体の長さを返す', async () => {
+    // bytes と R2 の実体がずれたときに嘘の Content-Length を返さない。
+    const post = await seedPost({ path: 'p' });
+    const media = await createMedia(db, {
+      postId: post.id,
+      filename: 'sample.png',
+      r2Key: 'posts/p/sample.png',
+      mime: 'image/png',
+      bytes: 9999,
+    });
+    await env.MEDIA.put(media.r2_key, 'png');
+
+    const res = await get(`/blog/media/${media.public_id}/sample.png`);
+    expect(res.headers.get('content-length')).not.toBe('9999');
+    expect(await res.text()).toBe('png');
+  });
+
   it('ファイル名が違えば返さない (URL と中身を食い違わせない)', async () => {
     const media = await seedMedia();
     expect((await get(`/blog/media/${media.public_id}/other.png`)).status).toBe(404);
