@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:test';
 import { afterEach, describe, expect, it } from 'vitest';
-import { lily } from '../../src/config.ts';
+import { authMode, lily } from '../../src/config.ts';
 import { get, getRoot, getRootRequest, ROOT_SITE, setStubUser, SITE } from './helpers.ts';
 
 afterEach(() => setStubUser(null));
@@ -74,6 +74,15 @@ describe('本番の設定 (Cloudflare Access)', () => {
     expect(env.ACCESS_TEAM).toBe('');
     expect((await get('/blog/api/me')).status).toBe(403);
     expect((await get('/blog/admin/')).status).toBe(403);
+  });
+
+  it('ACCESS の設定が片方でも欠けたら Access にはしない', () => {
+    // 片方だけ設定して「Access で守られているつもり」になるのが一番危ない。
+    // 実際に選ばれたアダプタは起動時に 1 度だけログへ出る。
+    expect(authMode({ ACCESS_TEAM: 'team', ACCESS_AUD: 'aud' })).toBe('access');
+    expect(authMode({ ACCESS_TEAM: 'team', ACCESS_AUD: '' })).toBe('localhost');
+    expect(authMode({ ACCESS_TEAM: '', ACCESS_AUD: 'aud' })).toBe('localhost');
+    expect(authMode({})).toBe('localhost');
   });
 
   it('スタブではなく実物のアダプタが掛かっている', async () => {

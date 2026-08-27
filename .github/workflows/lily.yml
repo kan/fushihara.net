@@ -8,10 +8,15 @@ on:
     branches: [main]
     paths:
       - 'lily/**'
+      # shared/ も見る。lily は shared/date.ts（公開日時の JST 変換）を読み、
+      # ビルドが shared/public を配信物にコピーする。ここを外すと、shared だけの
+      # 変更で壊れても気付けない。
+      - 'shared/**'
       - '.github/workflows/lily.yml'
   pull_request:
     paths:
       - 'lily/**'
+      - 'shared/**'
       - '.github/workflows/lily.yml'
   workflow_dispatch:
 

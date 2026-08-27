@@ -98,12 +98,16 @@ async function readHead(response: Response): Promise<string> {
 
   const decoder = new TextDecoder();
   let text = '';
+  // **読んだバイト数で数える。** 文字数で数えると、1 文字 3 バイトの
+  // ページで上限の 3 倍まで読むことになる。
+  let bytes = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      bytes += value.byteLength;
       text += decoder.decode(value, { stream: true });
-      if (text.includes('</title>') || text.length >= MAX_BYTES) break;
+      if (text.includes('</title>') || bytes >= MAX_BYTES) break;
     }
   } finally {
     await reader.cancel().catch(() => {});

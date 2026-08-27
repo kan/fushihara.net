@@ -32,8 +32,36 @@ export const lily = createLily({
   // host が localhost 以外なら必ず拒否するので、設定を入れ忘れたまま公開しても
   // 管理画面には入れない（fail closed のまま）。Access を手元で再現できないので、
   // これが無いと管理画面をローカルで一度も開けない。
-  auth: (env: Env) =>
-    env.ACCESS_TEAM && env.ACCESS_AUD
-      ? cloudflareAccess({ team: env.ACCESS_TEAM, aud: env.ACCESS_AUD })
-      : localhostOnly(),
+  auth: (env: Env) => selectAuth(env),
 });
+
+/**
+ * どちらのアダプタを使うか。**両方揃っているときだけ** Access。
+ *
+ * 片方だけ設定した状態で「Access が効いているつもり」になるのが一番危ないので、
+ * 判定は 1 箇所に置き、テストから直接読めるようにしてある。
+ */
+export function authMode(env: {
+  ACCESS_TEAM?: string;
+  ACCESS_AUD?: string;
+}): 'access' | 'localhost' {
+  return env.ACCESS_TEAM && env.ACCESS_AUD ? 'access' : 'localhost';
+}
+
+/** isolate ごとに 1 度だけ出す。リクエストごとに出しても読めないため。 */
+let announced = false;
+
+function selectAuth(env: Env) {
+  const mode = authMode(env);
+  if (!announced) {
+    announced = true;
+    console.info(
+      mode === 'access'
+        ? 'lily auth: Cloudflare Access'
+        : 'lily auth: localhostOnly（ACCESS_TEAM / ACCESS_AUD が未設定。本番では管理画面が開かない）',
+    );
+  }
+  return mode === 'access'
+    ? cloudflareAccess({ team: env.ACCESS_TEAM, aud: env.ACCESS_AUD })
+    : localhostOnly();
+}

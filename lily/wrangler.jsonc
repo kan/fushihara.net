@@ -50,7 +50,11 @@
 
   // Cloudflare Access の設定。**秘密ではない**が deployment ごとに違うので、
   // コードではなくここに置く。Access のアプリケーションを作ったら実際の値を入れる。
-  // 空のままだと認証は必ず失敗する (fail closed) ので、管理画面は開かない。
+  //
+  // 空のままだと src/config.ts が localhostOnly アダプタに落ちる。**本番は
+  // 開かない** (host が localhost 以外なら必ず拒否する) が、Access で守られて
+  // いる状態とは別物なので、公開する前にここを埋めること。
+  // どちらが選ばれたかは起動時にログへ出る。
   "vars": {
     "ACCESS_TEAM": "",
     "ACCESS_AUD": ""
