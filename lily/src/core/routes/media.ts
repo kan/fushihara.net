@@ -8,6 +8,7 @@
 import { Hono } from 'hono';
 import type { LilyBindings, PageConfig } from '../config.ts';
 import { getMediaByPublicId } from '../db/media.ts';
+import { optimize, pickFormat } from '../media/optimize.ts';
 import { createUrls } from '../paths.ts';
 import { ROUTE } from './fixed.ts';
 
@@ -36,20 +37,42 @@ export function mediaRoutes(config: PageConfig): Hono<Env> {
     const object = await c.env.MEDIA.get(media.r2_key);
     if (!object) return missing();
 
-    // Content-Length は付けない。D1 の `bytes` と R2 の実体がずれたときに嘘を
-    // 返すことになるし、固定長のストリームなのでランタイムが正しく付ける。
-    return new Response(object.body, {
-      headers: {
-        'Content-Type': media.mime,
-        'Cache-Control': IMMUTABLE,
-        ETag: object.httpEtag,
-        // 記事に貼る SVG も配るので、**直接開かれたとき**にスクリプトが走らない
-        // ようにする (<img> での埋め込みには影響しない)。同一オリジンで
-        // 自分が上げたものを配る以上、置いておくのが安い。
-        'Content-Security-Policy': 'sandbox',
-        'X-Content-Type-Options': 'nosniff',
-      },
+    /**
+     * 共通のヘッダ。
+     *
+     * Content-Length は付けない。D1 の `bytes` と R2 の実体がずれたときに嘘を
+     * 返すことになるし、固定長のストリームなのでランタイムが正しく付ける。
+     */
+    const headers = (contentType: string, vary = false): Record<string, string> => ({
+      'Content-Type': contentType,
+      'Cache-Control': IMMUTABLE,
+      ETag: object.httpEtag,
+      // 記事に貼る SVG も配るので、**直接開かれたとき**にスクリプトが走らない
+      // ようにする (<img> での埋め込みには影響しない)。同一オリジンで
+      // 自分が上げたものを配る以上、置いておくのが安い。
+      'Content-Security-Policy': 'sandbox',
+      'X-Content-Type-Options': 'nosniff',
+      // 同じ URL が相手によって違う形式で返るので、そのことを明示する。
+      ...(vary ? { Vary: 'Accept' } : {}),
     });
+
+    const images = c.env.IMAGES;
+    const format =
+      config.media?.images === true && images
+        ? pickFormat(c.req.header('Accept') ?? null, media.mime)
+        : null;
+
+    if (format !== null && images) {
+      const converted = await optimize(images, object.body, format);
+      // 変換できなければ原本。**ストリームは使い切っているので取り直す。**
+      if (converted) return new Response(converted.body, { headers: headers(format, true) });
+
+      const original = await c.env.MEDIA.get(media.r2_key);
+      if (!original) return missing();
+      return new Response(original.body, { headers: headers(media.mime, true) });
+    }
+
+    return new Response(object.body, { headers: headers(media.mime) });
   });
 
   return app;

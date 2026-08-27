@@ -14,7 +14,7 @@
 - `src/core/render/`（CommonMark + GFM、Shiki、相対参照 → placeholder）
 - 公開側の SSR（一覧・記事・タグ・404・alias 308・下書きプレビュー）と CSS の移植
 - フィード（RSS 維持 + Atom 追加）、sitemap、favicon / ogp の配信
-- 添付の配信（R2 の原本をそのまま返す。Cloudflare Images はこれから）
+- 添付の配信（R2 が原本、Cloudflare Images は任意の最適化層）
 - `AuthAdapter` と Cloudflare Access アダプタ、`<mount>/api/*` と
   `<mount>/admin/*` の保護境界
 - 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
@@ -58,6 +58,7 @@ src/
     api/      管理 API。mount を知らない形で <mount>/api にマウントされる
     auth/     AuthAdapter の型と Cloudflare Access アダプタ
     feed/     RSS 2.0 と Atom。どちらも全文
+    media/    画像の最適化（任意。無くても原本で配れる）
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
     routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、
               feeds.ts が機械向け、media.ts が添付、api.ts が保護境界
@@ -194,8 +195,10 @@ const { post } = await res.json();  // 型は handler から
 - 添付は形式とファイル名を検査する。ファイル名は記事のパスと同じ
   `normalizeSegment` を通す（export でそのままディレクトリに書き出すため）
 - `POST /api/link-title` は**外から来た URL をそのまま fetch する口**。
-  http/https だけ・IP リテラル宛てを弾く・5 秒で打ち切る・先頭 64KB だけ読む、
-  の 4 つで狭めてある
+  http/https だけ・IP リテラルとローカル向けの名前を弾く・**リダイレクトを自分で
+  追って飛び先も毎回検査する**・5 秒で打ち切る・先頭 64KB だけ読む、で狭めてある
+  （`redirect: 'follow'` に任せると最初の 1 回しか検査されず、公開 URL から
+  内側へ飛ばされる）
 
 ## 管理画面
 
@@ -217,6 +220,23 @@ const { post } = await res.json();  // 型は handler から
   まま出る。環境によって出方が変わるものを画面に置くと、崩れても手が出せない
 - **アップロードのあとに記事を読み直さない。** textarea の value を代入し直すと
   カーソルが末尾へ飛び、画像がそこに入る（増えたのは添付だけなので 1 件足す）
+
+## 画像の最適化
+
+Cloudflare Images は**任意の層**。「後から有効にすると配信が良くなる追加機能」
+として扱い、次の 3 つを守る。
+
+- **配信 URL は Images の有無に関わらず同じ。** Images 固有の URL を Markdown にも
+  `body_html` にも保存しない（ON/OFF・プラン差・quota 到達・将来の乗り換えの
+  いずれでも、記事データを書き換えずに済む）
+- **失敗したら原本を返す。** 未設定・利用不可・quota 到達・変換失敗のどれでも、
+  記事の画像が表示不能にならない。**fallback は正式仕様**であって手抜きではない
+- SVG は触らない（ベクタ）。GIF も触らない（動くものを潰さない）
+
+相手の `Accept` を見て AVIF / WebP を選び、`Vary: Accept` を返す。エッジの
+キャッシュは効きにくくなるが、ブラウザ側は `immutable` で効く。**アクセスが
+増えて問題になったら `caches.default` に形式込みのキーで載せる**（それまでは
+入れない）。
 
 ## 増えてから壊れるもの
 

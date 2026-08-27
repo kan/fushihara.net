@@ -2,9 +2,39 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createMedia } from '../../src/core/db/media.ts';
 import { db, resetDb } from '../db/helpers.ts';
-import { get, seedPost } from './helpers.ts';
+import { lily } from '../../src/config.ts';
+import { get, getRootWith, seedPost, SITE } from './helpers.ts';
 
 beforeEach(resetDb);
+
+/** 1x1 の PNG。Images に食わせられる本物の画像。 */
+const PNG = Uint8Array.from(
+  atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),
+  (c) => c.charCodeAt(0),
+);
+
+/** 実体つきの添付を作る。`bytes` は R2 に置く中身。 */
+async function seedImage(
+  mime = 'image/png',
+  bytes: Uint8Array | string = PNG,
+  filename = 'sample.png',
+) {
+  const post = await seedPost({ path: `p-${filename}` });
+  const media = await createMedia(db, {
+    postId: post.id,
+    filename,
+    r2Key: `posts/${filename}`,
+    mime,
+    bytes: 1,
+  });
+  await env.MEDIA.put(media.r2_key, bytes);
+  return media;
+}
+
+/** 受け入れる形式を伝えて取りに行く。 */
+async function fetchWith(path: string, accept: string): Promise<Response> {
+  return await lily.fetch(new Request(`${SITE}${path}`, { headers: { Accept: accept } }), env);
+}
 
 describe('添付', () => {
   async function seedMedia(filename = 'sample.png') {
@@ -68,5 +98,55 @@ describe('添付', () => {
     });
     expect((await get('/blog/media/nope/x.png')).status).toBe(404);
     expect((await get(`/blog/media/${orphan.public_id}/missing.png`)).status).toBe(404);
+  });
+});
+
+/**
+ * Cloudflare Images は**任意の層**。有効でも無効でも URL は同じで、変換できない
+ * ときは原本が出る。記事の画像が表示不能にならないことが、この節の要。
+ */
+describe('画像の最適化', () => {
+  it('相手が読めるなら小さい形式にして返す', async () => {
+    const media = await seedImage();
+    const path = `/blog/media/${media.public_id}/sample.png`;
+
+    const webp = await fetchWith(path, 'image/webp,image/*');
+    expect(webp.headers.get('content-type')).toBe('image/webp');
+    // 同じ URL が相手によって違う形式で返ることを明示する
+    expect(webp.headers.get('vary')).toBe('Accept');
+
+    const avif = await fetchWith(path, 'image/avif,image/webp,image/*');
+    expect(avif.headers.get('content-type')).toBe('image/avif');
+  });
+
+  it('読めない相手には原本を返す', async () => {
+    const media = await seedImage();
+    const res = await fetchWith(`/blog/media/${media.public_id}/sample.png`, 'image/*');
+    expect(res.headers.get('content-type')).toBe('image/png');
+  });
+
+  it('SVG は触らない (ベクタなので潰す意味がない)', async () => {
+    const media = await seedImage('image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg"/>', 'a.svg');
+    const res = await fetchWith(`/blog/media/${media.public_id}/a.svg`, 'image/avif,image/webp');
+    expect(res.headers.get('content-type')).toBe('image/svg+xml');
+    expect(res.headers.get('vary')).toBeNull();
+  });
+
+  it('変換に失敗しても原本を返す (画像が表示不能にならない)', async () => {
+    // quota 到達も壊れたファイルもここに来る。**fallback は正式仕様。**
+    const media = await seedImage('image/png', 'これは画像ではない');
+    const res = await fetchWith(`/blog/media/${media.public_id}/sample.png`, 'image/avif,image/webp');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(await res.text()).toBe('これは画像ではない');
+  });
+
+  it('設定で切ってあれば、読める相手にも原本を返す (URL は同じまま)', async () => {
+    // root mount のアプリは media.images を渡していない。**変換できる相手でも**
+    // 原本が出ることを見る（Accept を送らないと、設定を見ていなくても通る）。
+    const media = await seedImage();
+    const res = await getRootWith(`/media/${media.public_id}/sample.png`, 'image/avif,image/webp');
+    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(res.headers.get('vary')).toBeNull();
   });
 });

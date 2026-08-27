@@ -27,6 +27,15 @@ export type PageConfig = {
   /** マウント位置。OSS の標準構成では `'/'`。 */
   readonly mountPath: string;
   readonly theme: Theme;
+  readonly media?: MediaConfig;
+};
+
+export type MediaConfig = {
+  /**
+   * Cloudflare Images で配信時に変換するか。**無くても添付は R2 の原本で配れる。**
+   * `IMAGES` バインディングが無いときは、true でも原本のまま。
+   */
+  readonly images?: boolean;
 };
 
 /**
@@ -51,4 +60,6 @@ export type LilyBindings = {
   readonly MEDIA: R2Bucket;
   /** mount root 直下に出す静的アセット (favicon 3 点と ogp.png)。 */
   readonly ASSETS: Fetcher;
+  /** 画像の最適化。**無い前提を保つ**（Deploy to Cloudflare が用意しない）。 */
+  readonly IMAGES?: ImagesBinding;
 };

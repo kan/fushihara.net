@@ -35,6 +35,9 @@
     "directory": "./dist",
     "run_worker_first": true
   },
+  // 画像の最適化。**任意の層**で、無くても添付は R2 の原本で配れる
+  // (Deploy to Cloudflare が Images を自動で用意しないので、無い前提を保つ)。
+  "images": { "binding": "IMAGES" },
   "r2_buckets": [
     { "binding": "MEDIA", "bucket_name": "fushihara-net-lily-media" }
   ],

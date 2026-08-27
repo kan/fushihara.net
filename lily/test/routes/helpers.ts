@@ -53,6 +53,14 @@ export async function getRoot(path: string): Promise<Response> {
   return await rootApp.fetch(new Request(`https://blog.example.com${path}`), env);
 }
 
+/** root mount のアプリに、受け入れる形式を伝えて取りに行く。 */
+export async function getRootWith(path: string, accept: string): Promise<Response> {
+  return await rootApp.fetch(
+    new Request(`${ROOT_SITE}${path}`, { headers: { Accept: accept } }),
+    env,
+  );
+}
+
 export async function getRootRequest(request: Request): Promise<Response> {
   return await rootApp.fetch(request, env);
 }

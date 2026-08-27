@@ -21,6 +21,9 @@ export const lily = createLily({
   // route (wrangler.jsonc) と必ずセットで見ること。
   mountPath: '/blog',
   theme,
+  // 画像は配信時に WebP / AVIF へ変換する。**無効にしても URL は変わらず、
+  // 原本がそのまま出る**（Images の設定・quota・障害に記事を巻き込まない）。
+  media: { images: true },
   // 管理画面と管理 API は Cloudflare Access の手前で止まる。ここでの検証は
   // 二重の守りで、Access を経由しない経路で開かないようにするためのもの。
   // チーム名と AUD は wrangler.jsonc の vars（deployment 固有の値）。
