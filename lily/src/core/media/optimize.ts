@@ -26,8 +26,13 @@ const CONVERTIBLE = new Set(['image/png', 'image/jpeg', 'image/webp']);
  * 相手が読める形式のうち、いちばん小さくなるものを選ぶ。
  * 選べなければ null（原本を返す）。
  */
+/** 変換の対象になりうる形式か。内容交渉をするかどうかの判断に使う。 */
+export function isNegotiable(mime: string): boolean {
+  return CONVERTIBLE.has(mime);
+}
+
 export function pickFormat(accept: string | null, mime: string): ImageFormat | null {
-  if (!CONVERTIBLE.has(mime)) return null;
+  if (!isNegotiable(mime)) return null;
   const wanted = accept ?? '';
 
   if (wanted.includes('image/avif')) return 'image/avif';

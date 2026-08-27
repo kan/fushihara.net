@@ -119,10 +119,40 @@ describe('画像の最適化', () => {
     expect(avif.headers.get('content-type')).toBe('image/avif');
   });
 
-  it('読めない相手には原本を返す', async () => {
+  it('変換した方は共有キャッシュに置かせない', async () => {
+    // Cloudflare のエッジは Accept-Encoding 以外の Vary を見ない。public のまま
+    // だと最初に入った表現が居座り、AVIF を読めない相手にも AVIF が配られる。
+    const media = await seedImage();
+    const path = `/blog/media/${media.public_id}/sample.png`;
+
+    const converted = await fetchWith(path, 'image/avif,image/webp');
+    expect(converted.headers.get('cache-control')).toBe('private, max-age=86400');
+
+    // 原本は誰でも読めるので、共有キャッシュに入ってよい
+    const original = await fetchWith(path, 'image/*');
+    expect(original.headers.get('cache-control')).toContain('public');
+  });
+
+  it('形式ごとに別の ETag を返す', async () => {
+    // 同じ検証子だと、キャッシュが「変わっていない」と判断して頼んでいない
+    // 形式を返しうる。
+    const media = await seedImage();
+    const path = `/blog/media/${media.public_id}/sample.png`;
+
+    const etags = await Promise.all(
+      ['image/avif,image/webp', 'image/webp', 'image/*'].map(async (accept) =>
+        (await fetchWith(path, accept)).headers.get('etag'),
+      ),
+    );
+    expect(new Set(etags).size).toBe(3);
+  });
+
+  it('読めない相手には原本を返す。ただし交渉していることは伝える', async () => {
     const media = await seedImage();
     const res = await fetchWith(`/blog/media/${media.public_id}/sample.png`, 'image/*');
     expect(res.headers.get('content-type')).toBe('image/png');
+    // 付けたり付けなかったりすると、交渉していない応答として共有キャッシュに収まる
+    expect(res.headers.get('vary')).toBe('Accept');
   });
 
   it('SVG は触らない (ベクタなので潰す意味がない)', async () => {
