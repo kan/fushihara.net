@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "dev": "wrangler dev -c ./wrangler.jsonc",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "wrangler types -c ./wrangler.jsonc && tsc --noEmit",

@@ -26,6 +26,15 @@
     "noUncheckedIndexedAccess": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src", "test", "vitest.config.ts", "worker-configuration.d.ts"],
+  // shared/ はプロジェクト外 (リポジトリ直下) にあるので、参照するファイルを
+  // 明示的に足す必要がある。core/ からは読まない (サイト固有を知らないため)。
+  "include": [
+    "src",
+    "test",
+    "vitest.config.ts",
+    "worker-configuration.d.ts",
+    "../shared/theme.ts",
+    "../shared/tokens.css"
+  ],
   "exclude": ["src/admin"]
 }

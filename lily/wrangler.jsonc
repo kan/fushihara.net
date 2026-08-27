@@ -28,5 +28,11 @@
     { "binding": "MEDIA", "bucket_name": "fushihara-net-lily-media" }
   ],
 
+  // CSS は Worker がバンドルした文字列として配る。site/ が @import ではなく
+  // 連結して 1 本にするので、ブラウザから見えるのは <mount>/styles.css だけ。
+  "rules": [
+    { "type": "Text", "globs": ["**/*.css"] }
+  ],
+
   "observability": { "enabled": true }
 }

@@ -12,8 +12,9 @@
 - `src/core/db/` の query layer（記事・パス・添付・タグ）
 - `src/core/paths.ts`（`mountPath` と URL 生成、`normalizePostPath`、予約パス）
 - `src/core/render/`（CommonMark + GFM、Shiki、相対参照 → placeholder）
+- 公開側の SSR（一覧・記事・タグ・404・alias 308・下書きプレビュー）と CSS の移植
 
-まだ何も配信していない。`src/index.ts` は 404 を返すだけの入口。
+まだデプロイしていない（route を張っていない）。ローカルでは動く。
 
 ## コマンド
 
@@ -23,6 +24,7 @@ npm test                 # Vitest。実 workerd + 実 D1 で動く
 npm run typecheck        # wrangler types → tsc
 npm run db:migrate:local # ローカル D1 にマイグレーションを当てる
 npm run db:seed:local    # 開発用の記事を入れる（seeds/dev.sql）
+npm run dev              # localhost:8787。上の 2 つを先に流しておくこと
 ```
 
 `wrangler` には必ず `-c ./wrangler.jsonc` を付ける。リポジトリ直下に本体の
@@ -39,9 +41,11 @@ src/
     paths.ts  mountPath と URL 生成、normalizePostPath / normalizeSegment
     slug.ts   タグ名 → slug（最後は normalizeSegment を通す）
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
-    routes/   ルーティング定義。fixed.ts が「予約パス」と「URL のセグメント名」の正本
-  site/       fushihara.net 固有（レイアウト・CSS・文言）※これから
+    routes/   fixed.ts がルーティング定義の正本、public.ts が公開側のルータ
+    theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
+  site/       fushihara.net 固有（レイアウト・CSS・文言・OGP・クライアント JS）
   admin/      Vue の管理画面 ※これから
+  config.ts   サイト設定。createLily() に渡す
 test/         Vitest
 ```
 
@@ -93,6 +97,7 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 | SELECT する列 | `core/db/types.ts`（Row 型から導出） |
 | 「記事は常に public_id で引ける」 | `core/db/post-paths.ts` |
 | 生成済み HTML の後処理を開始タグに限る | `core/render/html.ts` の `mapOpenTags` |
+| 見た目・文言・OGP（差し替え点） | `core/theme.ts` の `Theme` を `site/` が実装 |
 
 ## テストの方針
 

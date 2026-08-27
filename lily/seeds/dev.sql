@@ -13,7 +13,16 @@ DELETE FROM posts;
 
 INSERT INTO posts (public_id, title, description, body_md, status, published_at, updated_at, created_at) VALUES
   ('11111111-1111-4111-8111-111111111111', 'ブログを始めた', 'まずは 1 本目。',
-   '## はじめに' || char(10) || char(10) || '書くところを自分で持つ。' || char(10),
+   -- 見た目を目で確かめるための一通り (見出し / コード / 引用 / 表 / リスト)。
+   '## はじめに' || char(10) || char(10) || '書くところを自分で持つ。`inline code` も入れておく。' || char(10) || char(10) ||
+   '```ts' || char(10) ||
+   'export function isoDate(d: Date): string {' || char(10) ||
+   '  return d.toISOString().slice(0, 10);' || char(10) ||
+   '}' || char(10) ||
+   '```' || char(10) || char(10) ||
+   '> 引用も使える。' || char(10) || char(10) ||
+   '- 箇条書き' || char(10) || '- の 2 行目' || char(10) || char(10) ||
+   '| 表 | も |' || char(10) || '|---|---|' || char(10) || '| 使 | える |' || char(10),
    'published', '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z'),
   ('22222222-2222-4222-8222-222222222222', '画像つきの記事', '相対参照のサンプル。',
    '本文の画像は相対参照のまま置く。' || char(10) || char(10) || '![サンプル](./sample.png)' || char(10),

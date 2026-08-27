@@ -15,6 +15,7 @@ export const ROUTE = {
   media: 'media',
   preview: 'preview',
   tags: 'tags',
+  styles: 'styles.css',
   rss: 'rss.xml',
   atom: 'atom.xml',
   sitemap: 'sitemap-index.xml',

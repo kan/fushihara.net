@@ -147,6 +147,8 @@ export interface Urls {
   admin(sub?: string, options?: UrlOptions): string;
   postsJson(options?: UrlOptions): string;
   sitemap(options?: UrlOptions): string;
+  /** テーマが配る 1 本のスタイルシート。 */
+  stylesheet(options?: UrlOptions): string;
   /** mount root 直下に置く静的アセット (favicon 3 点と ogp.png)。 */
   asset(filename: string, options?: UrlOptions): string;
 }
@@ -175,6 +177,7 @@ export function createUrls(config: UrlsConfig): Urls {
     admin: (sub, o) => build(sub === undefined ? `/${ROUTE.admin}/` : `/${ROUTE.admin}/${sub}`, o),
     postsJson: (o) => build(`/${ROUTE.postsJson}`, o),
     sitemap: (o) => build(`/${ROUTE.sitemap}`, o),
+    stylesheet: (o) => build(`/${ROUTE.styles}`, o),
     asset: (filename, o) => build(`/${encodeURIComponent(filename)}`, o),
   };
 }
