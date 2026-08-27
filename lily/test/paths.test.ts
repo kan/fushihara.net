@@ -112,6 +112,7 @@ describe('normalizePostPath', () => {
     expect(code('404')).toBe('reserved-path');
     expect(code('favicon.svg')).toBe('reserved-path');
     expect(code('ogp.png')).toBe('reserved-path');
+    expect(code('page')).toBe('reserved-path');
     expect(code('_next')).toBe('reserved-path');
     // パスの一意性も解決も lower() なので、予約判定もそろえる
     expect(code('Admin')).toBe('reserved-path');
@@ -153,6 +154,16 @@ describe('createUrls', () => {
     expect(urls.admin()).toBe('/blog/admin/');
     expect(urls.admin('posts')).toBe('/blog/admin/posts');
     expect(urls.asset('favicon.svg')).toBe('/blog/favicon.svg');
+  });
+
+  it('一覧のページ番号は 2 ページ目から付く', () => {
+    // `/blog/` と `/blog/page/1/` が両方あると、同じ中身が 2 つの URL で出る。
+    const urls = createUrls(site);
+    expect(urls.index()).toBe('/blog/');
+    expect(urls.index({ page: 1 })).toBe('/blog/');
+    expect(urls.index({ page: 2 })).toBe('/blog/page/2/');
+    expect(urls.tag({ slug: 'dev' }, { page: 3 })).toBe('/blog/tags/dev/page/3/');
+    expect(urls.index({ page: 2, absolute: true })).toBe('https://fushihara.net/blog/page/2/');
   });
 
   it('absolute でサイトの絶対 URL になる', () => {

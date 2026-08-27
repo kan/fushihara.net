@@ -53,7 +53,13 @@ export async function renderMarkdown(
     // mdast-util-to-hast が表の中に入れた改行が foster parenting で表の外へ
     // 追い出され、`</pre>` と `<table>` の間に空行が 14 行並ぶ (実測)。
     // parse5 のぶんバンドルも大きい。
-    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(remarkRehype, {
+      allowDangerousHtml: true,
+      // 脚注の見出しと戻りリンクの読み上げ文。既定は英語で、**画面には出ない
+      // (sr-only) が読み上げには出る**ので日本語にしておく。
+      footnoteLabel: '脚注',
+      footnoteBackLabel: (index: number) => `本文の ${index + 1} に戻る`,
+    })
     .use(rehypeShikiFromHighlighter, highlighter, {
       themes: THEMES,
       defaultColor: false,

@@ -118,6 +118,12 @@ function encodePath(path: string): string {
 
 export type UrlOptions = { readonly absolute?: boolean };
 
+/**
+ * 一覧の URL。**1 ページ目にはページ番号を付けない。**
+ * `/blog/` と `/blog/page/1/` が両方あると、同じ中身が 2 つの URL で出る。
+ */
+export type PageOptions = UrlOptions & { readonly page?: number };
+
 export type UrlsConfig = {
   /** サイトの絶対 URL (`https://fushihara.net`)。末尾スラッシュは無視する。 */
   readonly siteUrl: string;
@@ -138,15 +144,17 @@ export type FeedKind = 'rss' | 'atom';
  */
 export interface Urls {
   readonly mountPath: string;
-  index(options?: UrlOptions): string;
+  index(options?: PageOptions): string;
   post(canonicalPath: string, options?: UrlOptions): string;
-  tag(tag: TagRef, options?: UrlOptions): string;
+  tag(tag: TagRef, options?: PageOptions): string;
   media(media: MediaRef, options?: UrlOptions): string;
   feed(kind: FeedKind, options?: UrlOptions): string;
   preview(token: string, options?: UrlOptions): string;
   admin(sub?: string, options?: UrlOptions): string;
   postsJson(options?: UrlOptions): string;
   sitemap(options?: UrlOptions): string;
+  /** サイトマップの中身。index から指す 1 本。 */
+  sitemapUrls(options?: UrlOptions): string;
   /** テーマが配る 1 本のスタイルシート。 */
   stylesheet(options?: UrlOptions): string;
   /** mount root 直下に置く静的アセット (favicon 3 点と ogp.png)。 */
@@ -162,11 +170,15 @@ export function createUrls(config: UrlsConfig): Urls {
     return options?.absolute ? `${origin}${path}` : path;
   };
 
+  /** 2 ページ目以降だけ `/page/<n>` を足す。 */
+  const paged = (base: string, page: number | undefined): string =>
+    page === undefined || page <= 1 ? `${base}/` : `${base}/${ROUTE.page}/${page}/`;
+
   return {
     mountPath,
-    index: (o) => build('/', o),
+    index: (o) => build(paged('', o?.page), o),
     post: (canonicalPath, o) => build(`/${encodePath(canonicalPath)}/`, o),
-    tag: (tag, o) => build(`/${ROUTE.tags}/${encodeURIComponent(tag.slug)}/`, o),
+    tag: (tag, o) => build(paged(`/${ROUTE.tags}/${encodeURIComponent(tag.slug)}`, o?.page), o),
     media: (media, o) =>
       build(
         `/${ROUTE.media}/${encodeURIComponent(media.public_id)}/${encodeURIComponent(media.filename)}`,
@@ -177,6 +189,7 @@ export function createUrls(config: UrlsConfig): Urls {
     admin: (sub, o) => build(sub === undefined ? `/${ROUTE.admin}/` : `/${ROUTE.admin}/${sub}`, o),
     postsJson: (o) => build(`/${ROUTE.postsJson}`, o),
     sitemap: (o) => build(`/${ROUTE.sitemap}`, o),
+    sitemapUrls: (o) => build(`/${ROUTE.sitemapUrls}`, o),
     stylesheet: (o) => build(`/${ROUTE.styles}`, o),
     asset: (filename, o) => build(`/${encodeURIComponent(filename)}`, o),
   };

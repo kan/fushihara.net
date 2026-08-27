@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown } from '../../src/core/render/index.ts';
+import { imageMarkdown } from '../../src/core/render/markdown.ts';
 
 const MEDIA = [{ public_id: 'MEDIA-ID', filename: 'sample.png' }];
 
@@ -35,6 +36,29 @@ describe('CommonMark + GFM', () => {
   });
 });
 
+describe('脚注', () => {
+  it('参照と定義が繋がり、定義は末尾にまとまる', async () => {
+    const out = await html(['本文[^1]。', '', '[^1]: 脚注の中身。'].join('\n'));
+    expect(out).toContain('<sup>');
+    expect(out).toContain('data-footnote-ref');
+    expect(out).toContain('<section data-footnotes');
+    expect(out).toContain('脚注の中身。');
+  });
+
+  it('見出しと戻りリンクの文言が日本語', async () => {
+    // 画面には出ない (sr-only) が読み上げには出るので、英語のままにしない。
+    const out = await html(['本文[^1]。', '', '[^1]: 中身。'].join('\n'));
+    expect(out).toContain('>脚注</h2>');
+    expect(out).toContain('aria-label="本文の 1 に戻る"');
+    expect(out).not.toContain('>Footnotes</h2>');
+  });
+
+  it('見出しは sr-only で出す (CSS が無いと本文に見えてしまう)', async () => {
+    const out = await html(['本文[^1]。', '', '[^1]: 中身。'].join('\n'));
+    expect(out).toContain('class="sr-only"');
+  });
+});
+
 describe('コードハイライト', () => {
   it('色は CSS 変数で出す (defaultColor: false を維持する)', async () => {
     const out = await html(['```ts', 'export const a = 1;', '```'].join('\n'));
@@ -58,6 +82,36 @@ describe('コードハイライト', () => {
   it('折り返しは CSS に任せる (保存する HTML に見せ方を焼き込まない)', async () => {
     const out = await html(['```ts', 'const a = 1;', '```'].join('\n'));
     expect(out).not.toContain('white-space');
+  });
+});
+
+describe('画像記法の組み立て', () => {
+  /**
+   * **組み立てと解析を対で見る。** 管理画面が入れた記法が renderer で解決
+   * されなければ、上げたのに出ない画像になる (空白入りのファイル名で実際に踏んだ)。
+   */
+  async function insertAndResolve(filename: string): Promise<string> {
+    const media = [{ public_id: 'MEDIA-ID', filename }];
+    return (await renderMarkdown(imageMarkdown(filename), { media })).html;
+  }
+
+  it('素で書けるファイル名はそのまま', () => {
+    expect(imageMarkdown('sample.png')).toBe('![](./sample.png)');
+    expect(imageMarkdown('日本語.png')).toBe('![](./日本語.png)');
+  });
+
+  it('空白と括弧を含むときは <…> で囲む', () => {
+    // `![](./my photo.png)` は CommonMark ではリンク先として解析されない。
+    expect(imageMarkdown('my photo.png')).toBe('![](<./my photo.png>)');
+    expect(imageMarkdown('図 (1).png')).toBe('![](<./図 (1).png>)');
+  });
+
+  it('組み立てた記法は必ず解決される', async () => {
+    for (const filename of ['sample.png', '日本語.png', 'my photo.png', '図 (1).png', "don't.png"]) {
+      const html = await insertAndResolve(filename);
+      expect(html, filename).toContain('lily-media://MEDIA-ID/');
+      expect(html, filename).not.toContain('./');
+    }
   });
 });
 

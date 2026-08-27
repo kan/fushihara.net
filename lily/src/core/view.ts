@@ -38,12 +38,16 @@ export function toPostView(
   return { ...toPostSummary(urls, { ...row, canonical_path: canonicalPath }, tags), html };
 }
 
-/** 一覧で N+1 を避けるための、記事 id → タグの割り当て。 */
-export function groupTags(
-  rows: readonly (TagRow & { post_id: number })[],
-): Map<number, TagRow[]> {
-  const byPost = new Map<number, TagRow[]>();
+/**
+ * まとめ取得した行を記事ごとに束ねる。一覧やフィードで N+1 を避けるための道具で、
+ * タグにも添付にも同じものを使う (`post_id` が null の行は落とす)。
+ */
+export function groupByPost<T extends { post_id: number | null }>(
+  rows: readonly T[],
+): Map<number, T[]> {
+  const byPost = new Map<number, T[]>();
   for (const row of rows) {
+    if (row.post_id === null) continue;
     const list = byPost.get(row.post_id);
     if (list) list.push(row);
     else byPost.set(row.post_id, [row]);

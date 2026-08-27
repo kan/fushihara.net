@@ -10,7 +10,13 @@ import type { HtmlEscapedString } from 'hono/utils/html';
  */
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 import { displayDate, isoDate } from '../../../shared/date.ts';
-import type { PageContext, PostSummaryView, PostView, TagView } from '../core/theme.ts';
+import type {
+  PageContext,
+  Pagination,
+  PostSummaryView,
+  PostView,
+  TagView,
+} from '../core/theme.ts';
 import { layout } from './layout.ts';
 
 /**
@@ -58,15 +64,31 @@ function postList(posts: readonly PostSummaryView[]): Html {
   </ul>`;
 }
 
+/** ページ送り。1 ページしか無ければ何も出さない。 */
+function pager(pagination: Pagination): Html | '' {
+  if (pagination.totalPages <= 1) return '';
+  return html`<nav class="pager">
+    ${pagination.prevUrl ? html`<a rel="prev" href="${pagination.prevUrl}">← 新しい</a>` : ''}
+    <span class="muted">${pagination.page} / ${pagination.totalPages}</span>
+    ${pagination.nextUrl ? html`<a rel="next" href="${pagination.nextUrl}">古い →</a>` : ''}
+  </nav>`;
+}
+
 export function indexPage(
   context: PageContext,
   posts: readonly PostSummaryView[],
+  pagination: Pagination,
 ): Promise<string> {
   return layout(
     context,
-    { brandIsHeading: true },
+    {
+      // 2 ページ目以降はページ番号を題に入れる。同じ題が並ぶと検索結果で見分けが付かない。
+      page: pagination.page > 1 ? `${pagination.page} ページ目` : undefined,
+      brandIsHeading: pagination.page === 1,
+      pagination,
+    },
     html`${posts.length === 0 ? html`<p class="post-summary">まだ記事がありません。</p>` : ''}
-    ${postList(posts)}`,
+    ${postList(posts)} ${pager(pagination)}`,
   );
 }
 
@@ -87,14 +109,17 @@ export function tagPage(
   context: PageContext,
   tag: TagView,
   posts: readonly PostSummaryView[],
+  pagination: Pagination,
 ): Promise<string> {
+  const page = pagination.page > 1 ? `${tag.name} の記事 ${pagination.page} ページ目` : `${tag.name} の記事`;
   return layout(
     context,
-    { page: `${tag.name} の記事` },
+    { page, pagination },
     html`<h1 class="post-title">${tag.name}</h1>
       ${posts.length === 0
         ? html`<p class="post-summary">このタグの記事はまだありません。</p>`
-        : postList(posts)}`,
+        : postList(posts)}
+      ${pager(pagination)}`,
   );
 }
 

@@ -34,9 +34,32 @@ describe('保護境界', () => {
     expect(await res.json()).toEqual({ user: { id: 'user-1', email: 'kan@example.com' } });
   });
 
-  it('認証が通っても、まだ無い管理画面は 404', async () => {
+  it('認証が通れば管理画面が出る', async () => {
     setStubUser({ id: 'user-1' });
-    expect((await getRoot('/admin/')).status).toBe(404);
+    const res = await getRoot('/admin/');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('<div id="app">');
+  });
+
+  it('管理画面は共有キャッシュに残さず、検索にも載せない', async () => {
+    setStubUser({ id: 'user-1' });
+    const res = await getRoot('/admin/');
+    expect(res.headers.get('cache-control')).toContain('private');
+    expect(res.headers.get('x-robots-tag')).toBe('noindex');
+  });
+
+  it('知らないパスは入口に寄せる (リロードで 404 にしない)', async () => {
+    setStubUser({ id: 'user-1' });
+    const res = await getRoot('/admin/posts/anything');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('<div id="app">');
+  });
+
+  it('末尾スラッシュ無しは 308', async () => {
+    setStubUser({ id: 'user-1' });
+    const res = await getRoot('/admin');
+    expect(res.status).toBe(308);
+    expect(res.headers.get('location')).toBe('/admin/');
   });
 
   it('公開側は認証を要らない', async () => {

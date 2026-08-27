@@ -6,16 +6,22 @@
 import { Hono } from 'hono';
 import type { LilyBindings, PageConfig } from '../config.ts';
 import { getCanonicalPath, resolvePath } from '../db/post-paths.ts';
-import { getPostByPreviewTokenHash, getPublishedPosts, getPublishedPostsByTagSlug } from '../db/posts.ts';
+import {
+  countPublishedPosts,
+  countPublishedPostsByTagSlug,
+  getPostByPreviewTokenHash,
+  getPublishedPosts,
+  getPublishedPostsByTagSlug,
+} from '../db/posts.ts';
 import { listMediaByPost } from '../db/media.ts';
 import { storedOrRenderedHtml } from '../delivery.ts';
 import { getTagBySlug, getTagsForPost, getTagsForPosts } from '../db/tags.ts';
 import { createUrls, normalizePostPath } from '../paths.ts';
 import { renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
-import type { PageContext } from '../theme.ts';
+import type { PageContext, Pagination } from '../theme.ts';
 import { hashPreviewToken } from '../tokens.ts';
-import { groupTags, toPostSummary, toPostView, toTagView } from '../view.ts';
+import { groupByPost, toPostSummary, toPostView, toTagView } from '../view.ts';
 import { NO_STORE, SHORT_EDGE, LONG_EDGE } from './cache.ts';
 import { ROUTE } from './fixed.ts';
 import { createNotFound } from './not-found.ts';
@@ -40,6 +46,11 @@ export function publicRoutes(config: PageConfig): Hono<Env> {
   const redirectTo = (path: string, requestUrl: string): string =>
     `${path}${new URL(requestUrl).search}`;
 
+  const html = (body: string): Response =>
+    new Response(body, {
+      headers: { 'Content-Type': 'text/html; charset=UTF-8', 'Cache-Control': SHORT_EDGE },
+    });
+
   const context = (canonicalUrl: string | null): PageContext => ({
     site: config.site,
     urls,
@@ -53,16 +64,32 @@ export function publicRoutes(config: PageConfig): Hono<Env> {
     app.get(mount, (c) => c.redirect(redirectTo(urls.index(), c.req.url), 308));
   }
 
-  app.get(urls.index(), async (c) => {
-    const db = c.env.DB;
-    const posts = await getPublishedPosts(db);
-    const tags = groupTags(await getTagsForPosts(db, posts.map((p) => p.id)));
+  /** 一覧を組む。`page` は 2 ページ目以降だけ URL に出る。 */
+  const indexPage = async (db: D1Database, page: number): Promise<Response> => {
+    const pages = await paginate(page, await countPublishedPosts(db), (n) => urls.index({ page: n }));
+    if (pages === null) return await notFound();
+
+    const posts = await getPublishedPosts(db, { limit: PER_PAGE, offset: (page - 1) * PER_PAGE });
+    const tags = groupByPost(await getTagsForPosts(db, posts.map((p) => p.id)));
     const views = posts.map((p) => toPostSummary(urls, p, tags.get(p.id) ?? []));
 
-    return c.html(await theme.index(context(urls.index({ absolute: true })), views), 200, {
-      'Cache-Control': SHORT_EDGE,
-    });
+    return html(await theme.index(context(urls.index({ page, absolute: true })), views, pages));
+  };
+
+  app.get(urls.index(), (c) => indexPage(c.env.DB, 1));
+
+  // **`/page/1/` は用意しない。** 1 ページ目は `/` なので、両方あると同じ中身が
+  // 2 つの URL で出る。来たら canonical へ寄せる。
+  app.get(`${mount}/${ROUTE.page}/:page/`, async (c) => {
+    const page = pageNumber(c.req.param('page'));
+    if (page === null) return await notFound();
+    if (page === 1) return c.redirect(redirectTo(urls.index(), c.req.url), 308);
+    return await indexPage(c.env.DB, page);
   });
+
+  app.get(`${mount}/${ROUTE.page}/:page`, (c) =>
+    c.redirect(redirectTo(`${mount}/${ROUTE.page}/${c.req.param('page')}/`, c.req.url), 308),
+  );
 
   app.get(urls.stylesheet(), (c) => {
     // 中身が変わるのはデプロイのときだけ。返すだけで見ないと ETag は飾りになる。
@@ -83,20 +110,39 @@ export function publicRoutes(config: PageConfig): Hono<Env> {
     c.redirect(redirectTo(urls.tag({ slug: c.req.param('slug') }), c.req.url), 308),
   );
 
-  app.get(`${mount}/${ROUTE.tags}/:slug/`, async (c) => {
-    const db = c.env.DB;
-    const slug = c.req.param('slug');
+  const tagPage = async (db: D1Database, slug: string, page: number): Promise<Response> => {
     const tag = await getTagBySlug(db, slug);
     if (!tag) return await notFound();
 
-    const posts = await getPublishedPostsByTagSlug(db, slug);
-    const tags = groupTags(await getTagsForPosts(db, posts.map((p) => p.id)));
-    const views = posts.map((p) => toPostSummary(urls, p, tags.get(p.id) ?? []));
-    const view = toTagView(urls, tag);
+    const total = await countPublishedPostsByTagSlug(db, slug);
+    const pages = await paginate(page, total, (n) => urls.tag(tag, { page: n }));
+    if (pages === null) return await notFound();
 
-    return c.html(await theme.tag(context(urls.tag(tag, { absolute: true })), view, views), 200, {
-      'Cache-Control': SHORT_EDGE,
+    const posts = await getPublishedPostsByTagSlug(db, slug, {
+      limit: PER_PAGE,
+      offset: (page - 1) * PER_PAGE,
     });
+    const tags = groupByPost(await getTagsForPosts(db, posts.map((p) => p.id)));
+    const views = posts.map((p) => toPostSummary(urls, p, tags.get(p.id) ?? []));
+
+    return html(
+      await theme.tag(
+        context(urls.tag(tag, { page, absolute: true })),
+        toTagView(urls, tag),
+        views,
+        pages,
+      ),
+    );
+  };
+
+  app.get(`${mount}/${ROUTE.tags}/:slug/`, (c) => tagPage(c.env.DB, c.req.param('slug'), 1));
+
+  app.get(`${mount}/${ROUTE.tags}/:slug/${ROUTE.page}/:page/`, async (c) => {
+    const slug = c.req.param('slug');
+    const page = pageNumber(c.req.param('page'));
+    if (page === null) return await notFound();
+    if (page === 1) return c.redirect(redirectTo(urls.tag({ slug }), c.req.url), 308);
+    return await tagPage(c.env.DB, slug, page);
   });
 
   // 下書きプレビュー。**公開ページと同じ renderer を通す**が、毎回 body_md から
@@ -165,6 +211,36 @@ export function publicRoutes(config: PageConfig): Hono<Env> {
   });
 
   return app;
+}
+
+/** 一覧 1 ページの件数。 */
+const PER_PAGE = 20;
+
+/** `/page/<n>/` の n。数字でなければ null。 */
+function pageNumber(raw: string | undefined): number | null {
+  if (raw === undefined || !/^[1-9]\d*$/.test(raw)) return null;
+  return Number(raw);
+}
+
+/**
+ * ページ送りを組む。**範囲の外なら null**（呼び出し側が 404 にする）。
+ *
+ * 記事が 0 件でも 1 ページ目は有効。空の一覧は出したいが `/page/2/` は無い、
+ * という形にする。
+ */
+async function paginate(
+  page: number,
+  total: number,
+  urlFor: (page: number) => string,
+): Promise<Pagination | null> {
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  if (page > totalPages) return null;
+  return {
+    page,
+    totalPages,
+    prevUrl: page > 1 ? urlFor(page - 1) : null,
+    nextUrl: page < totalPages ? urlFor(page + 1) : null,
+  };
 }
 
 /** ETag 用の軽いハッシュ。衝突しても 304 が減るだけなので暗号強度は要らない。 */

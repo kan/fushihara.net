@@ -16,10 +16,17 @@ import { toFeedHtml } from '../feed/html.ts';
 import { createUrls, type MediaRef, type Urls } from '../paths.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
 import { buildSitemap, buildSitemapIndex } from '../sitemap.ts';
+import { groupByPost } from '../view.ts';
 import { LONG_EDGE, SHORT_EDGE } from './cache.ts';
-import { ROUTE, STATIC_ASSETS } from './fixed.ts';
+import { STATIC_ASSETS } from './fixed.ts';
 
 type Env = { Bindings: LilyBindings };
+
+/**
+ * フィードに載せる件数。**全文を配るので、全件だと際限なく重くなる。**
+ * 購読者のリーダーが持つのは新しいものだけでよい。
+ */
+const FEED_LIMIT = 50;
 
 export function feedRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
@@ -40,10 +47,10 @@ export function feedRoutes(config: PageConfig): Hono<Env> {
   );
 
   app.get(urls.sitemap(), () =>
-    xml(buildSitemapIndex(`${urls.index({ absolute: true })}${ROUTE.sitemapUrls}`), LONG_EDGE),
+    xml(buildSitemapIndex(urls.sitemapUrls({ absolute: true })), LONG_EDGE),
   );
 
-  app.get(`${mount}/${ROUTE.sitemapUrls}`, async (c) => {
+  app.get(urls.sitemapUrls(), async (c) => {
     const db = c.env.DB;
     const [posts, tags] = await Promise.all([getPublishedPosts(db), listTagsWithCounts(db)]);
 
@@ -80,7 +87,7 @@ export function feedRoutes(config: PageConfig): Hono<Env> {
  * 解決してくれない)。
  */
 async function feedEntries(db: D1Database, urls: Urls): Promise<FeedEntry[]> {
-  const posts = await getPublishedPosts(db);
+  const posts = await getPublishedPosts(db, { limit: FEED_LIMIT });
   const mediaByPost = await loadMediaFor(db, posts);
 
   return await Promise.all(
@@ -110,12 +117,5 @@ async function loadMediaFor(
   posts: readonly PostWithPathRow[],
 ): Promise<Map<number, MediaRef[]>> {
   const needsRender = posts.filter((post) => post.body_html === null).map((post) => post.id);
-  const byPost = new Map<number, MediaRef[]>();
-  for (const media of await listMediaByPosts(db, needsRender)) {
-    if (media.post_id === null) continue;
-    const list = byPost.get(media.post_id);
-    if (list) list.push(media);
-    else byPost.set(media.post_id, [media]);
-  }
-  return byPost;
+  return groupByPost(await listMediaByPosts(db, needsRender));
 }

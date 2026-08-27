@@ -193,6 +193,16 @@ a.tag:hover {
   text-decoration: none;
 }
 
+/* ページ送り。1 ページしか無いときは出ない。 */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-top: 3rem;
+  font-size: 0.9rem;
+}
+
 /* === Article === */
 .post-title {
   margin-top: 1rem;
@@ -282,6 +292,31 @@ a.tag:hover {
   color: light-dark(var(--shiki-light), var(--shiki-dark));
   background-color: light-dark(var(--shiki-light-bg), var(--shiki-dark-bg));
 }
+
+/* === 脚注 ===
+ * remark が付ける見出しは sr-only。**このクラスの CSS を書かないと、本文の
+ * 途中に「脚注」という h2 が見えてしまう**（読み上げには要るので消さない）。 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.footnotes {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.footnotes ol { padding-left: 1.5rem; }
+.footnotes p { margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   body, a, .theme-toggle { transition: none; }

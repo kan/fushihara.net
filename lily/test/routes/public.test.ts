@@ -38,6 +38,55 @@ describe('一覧', () => {
     expect(await res.text()).toContain('まだ記事がありません');
   });
 
+  it('20 件ごとに分かれ、前後のページへ辿れる', async () => {
+    for (let i = 0; i < 25; i++) {
+      await seedPost({
+        path: `p${i}`,
+        title: `記事 ${i}`,
+        publishedAt: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`,
+      });
+    }
+
+    const first = await get('/blog/');
+    const firstBody = await first.text();
+    expect(firstBody.match(/class="post-list"/g)).toHaveLength(1);
+    expect(countPosts(firstBody)).toBe(20);
+    expect(firstBody).toContain('href="/blog/page/2/"');
+    expect(firstBody).toContain('<link rel="next" href="/blog/page/2/" />');
+    expect(firstBody).not.toContain('rel="prev"');
+
+    const second = await get('/blog/page/2/');
+    const secondBody = await second.text();
+    expect(second.status).toBe(200);
+    expect(countPosts(secondBody)).toBe(5);
+    expect(secondBody).toContain('<link rel="prev" href="/blog/" />');
+    expect(secondBody).not.toContain('rel="next"');
+  });
+
+  it('1 ページ目には /page/1/ を作らない (同じ中身が 2 つの URL で出ないように)', async () => {
+    await seedPost({ path: 'a' });
+    const res = await get('/blog/page/1/');
+    expect(res.status).toBe(308);
+    expect(res.headers.get('location')).toBe('/blog/');
+  });
+
+  it('範囲の外のページは 404', async () => {
+    await seedPost({ path: 'a' });
+    expect((await get('/blog/page/2/')).status).toBe(404);
+    expect((await get('/blog/page/0/')).status).toBe(404);
+    expect((await get('/blog/page/abc/')).status).toBe(404);
+  });
+
+  it('記事が無くても 1 ページ目は出る', async () => {
+    expect((await get('/blog/')).status).toBe(200);
+    expect((await get('/blog/page/2/')).status).toBe(404);
+  });
+
+  it('1 ページで収まるならページ送りを出さない', async () => {
+    await seedPost({ path: 'a' });
+    expect(await (await get('/blog/')).text()).not.toContain('class="pager"');
+  });
+
   it('マウント直下のスラッシュ無しは 308 で寄せる', async () => {
     const res = await get('/blog');
     expect(res.status).toBe(308);
@@ -157,6 +206,11 @@ describe('記事', () => {
   });
 });
 
+/** 一覧に並んだ記事の数。 */
+function countPosts(html: string): number {
+  return (html.match(/<li>\s*<div class="post-meta">/g) ?? []).length;
+}
+
 describe('タグ', () => {
   it('そのタグの公開記事だけが出る', async () => {
     await seedPost({ title: '開発の記事', path: 'a', tags: ['dev'] });
@@ -171,6 +225,28 @@ describe('タグ', () => {
     const res = await get('/blog/tags/dev');
     expect(res.status).toBe(308);
     expect(res.headers.get('location')).toBe('/blog/tags/dev/');
+  });
+
+  it('タグの一覧もページで分かれる', async () => {
+    for (let i = 0; i < 22; i++) {
+      await seedPost({
+        path: `t${i}`,
+        title: `記事 ${i}`,
+        tags: ['dev'],
+        publishedAt: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`,
+      });
+    }
+
+    expect(countPosts(await (await get('/blog/tags/dev/')).text())).toBe(20);
+
+    const second = await get('/blog/tags/dev/page/2/');
+    expect(second.status).toBe(200);
+    expect(countPosts(await second.text())).toBe(2);
+
+    const first = await get('/blog/tags/dev/page/1/');
+    expect(first.status).toBe(308);
+    expect(first.headers.get('location')).toBe('/blog/tags/dev/');
+    expect((await get('/blog/tags/dev/page/9/')).status).toBe(404);
   });
 
   it('知らないタグは 404', async () => {
@@ -239,6 +315,8 @@ describe('スタイルシート', () => {
     expect(body).toContain('--bg:');
     // blog.css 側
     expect(body).toContain('.prose pre.shiki');
+    // 脚注の見出しは sr-only で出るので、隠す CSS が無いと本文に「脚注」が見える
+    expect(body).toContain('.sr-only');
   });
 
   it('If-None-Match が一致したら 304 を返す', async () => {

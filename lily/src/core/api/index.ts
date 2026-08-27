@@ -16,9 +16,11 @@ import {
   deleteMedia,
   findByPostAndFilename,
   getMediaByPublicId,
+  listMediaByPost,
 } from '../db/media.ts';
 import { addAlias, changeCanonicalPath, removePath } from '../db/post-paths.ts';
 import {
+  countPosts,
   countPostsNeedingRender,
   createPost,
   deletePost,
@@ -31,18 +33,22 @@ import {
   unpublishPost,
   updatePost,
 } from '../db/posts.ts';
-import { applyTags, resolveTags } from '../db/tags.ts';
+import { applyTags, listTagsWithCounts, resolveTags } from '../db/tags.ts';
 import type { PostRow } from '../db/types.ts';
+import { fetchLinkTitle } from '../link-title.ts';
 import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
-import { RENDERER_VERSION } from '../render/index.ts';
+import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
+import { resolveMediaUrls } from '../render/placeholder.ts';
 import { hashPreviewToken, newPreviewToken } from '../tokens.ts';
 import { uniqueViolationTarget } from '../db/errors.ts';
 import { apiError } from './errors.ts';
 import {
   createPostSchema,
+  linkTitleSchema,
   listPostsSchema,
   pathSchema,
   publishSchema,
+  renderSchema,
   updatePostSchema,
 } from './schema.ts';
 import { toMediaView, toPostView } from './view.ts';
@@ -83,10 +89,52 @@ export function createApi(config: PageConfig) {
   return api
     .get('/me', (c) => c.json({ user: c.get('user') }))
 
-    .get('/posts', zValidator('query', listPostsSchema), async (c) => {
-      const { status, limit, offset } = c.req.valid('query');
-      const posts = await listAllPosts(c.env.DB, { status, limit, offset });
+    /**
+     * 編集中のプレビュー。**保存しない。**
+     *
+     * 公開ページと同じ renderer と同じ resolver を通すので、書きながら見ている
+     * ものと出るものが食い違わない。管理画面に Markdown のパーサを 2 本目として
+     * 持ち込まずに済む、という意味でもある。
+     */
+    .post('/render', zValidator('json', renderSchema), async (c) => {
+      const db = c.env.DB;
+      const { bodyMd, publicId } = c.req.valid('json');
+      const post = publicId ? await getPostByPublicId(db, publicId) : null;
+      const media = post ? await listMediaByPost(db, post.id) : [];
+
+      const rendered = await renderMarkdown(bodyMd, { media });
       return c.json({
+        html: resolveMediaUrls(rendered.html, urls),
+        unresolvedMedia: rendered.unresolvedMedia,
+      });
+    })
+
+    /** タグの補完に使う。件数の多い順。 */
+    .get('/tags', async (c) => {
+      const tags = await listTagsWithCounts(c.env.DB);
+      return c.json({ tags: tags.map((tag) => ({ name: tag.name, count: tag.post_count })) });
+    })
+
+    /**
+     * 貼り付けた URL のタイトル。ブラウザからは CORS で読めないので代わりに取る。
+     * 取れなくても書くのを止めないよう、失敗は `title: null` で返す。
+     */
+    .post('/link-title', zValidator('json', linkTitleSchema), async (c) => {
+      return c.json(await fetchLinkTitle(c.req.valid('json').url));
+    })
+
+    .get('/posts', zValidator('query', listPostsSchema), async (c) => {
+      const db = c.env.DB;
+      const { status, limit, offset } = c.req.valid('query');
+      // 総件数も返す。無いと管理画面が「次のページがあるか」を出せない。
+      const [posts, total] = await Promise.all([
+        listAllPosts(db, { status, limit, offset }),
+        countPosts(db, status),
+      ]);
+      return c.json({
+        total,
+        limit,
+        offset,
         posts: posts.map((post) => ({
           publicId: post.public_id,
           title: post.title,
@@ -114,6 +162,7 @@ export function createApi(config: PageConfig) {
         bodyMd: input.bodyMd,
         description: input.description,
         path: input.path,
+        publishedAt: input.publishedAt,
       });
       if (!created.ok) return c.json(...apiError(created.error.code, created.error.segment));
 
@@ -144,6 +193,7 @@ export function createApi(config: PageConfig) {
         title: input.title,
         description: input.description,
         body_md: input.bodyMd,
+        published_at: input.publishedAt,
       });
       if (!updated) return c.json(...apiError('post-not-found'));
       return c.json(await save(db, urls, updated));
@@ -226,7 +276,10 @@ export function createApi(config: PageConfig) {
 
       const token = newPreviewToken();
       await setPreviewToken(db, post.id, await hashPreviewToken(token));
-      return c.json({ url: urls.preview(token, { absolute: true }) });
+      // **絶対 URL にはしない。** 設定の site.url を使うと、ローカルで発行した
+      // リンクが本番のホストを指して開けなくなる。管理画面は必ず配信元と同じ
+      // オリジンで動いているので、そちらで `location.origin` と繋ぐ方が正しい。
+      return c.json({ path: urls.preview(token) });
     })
 
     .delete('/posts/:publicId/preview', async (c) => {

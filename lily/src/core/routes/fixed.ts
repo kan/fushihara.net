@@ -15,6 +15,8 @@ export const ROUTE = {
   media: 'media',
   preview: 'preview',
   tags: 'tags',
+  // 一覧の 2 ページ目以降 (`/page/2/`)。1 ページ目は付けない。
+  page: 'page',
   styles: 'styles.css',
   rss: 'rss.xml',
   atom: 'atom.xml',

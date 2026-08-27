@@ -158,6 +158,25 @@ describe('RSS', () => {
     expect(xml.indexOf('新しい')).toBeLessThan(xml.indexOf('古い'));
   });
 
+  it('直近 50 件までにする', async () => {
+    // 全文を配るので、全件だと際限なく重くなる。
+    for (let i = 0; i < 55; i++) {
+      await seedPost({
+        path: `p${i}`,
+        title: `記事 ${i}`,
+        publishedAt: `2026-01-01T00:00:${String(i).padStart(2, '0')}.000Z`,
+      });
+    }
+    const xml = await (await get('/blog/rss.xml')).text();
+    expect((xml.match(/<item>/g) ?? []).length).toBe(50);
+    // 新しい方から 50 件。いちばん古い記事は落ちる
+    expect(xml).toContain('記事 54');
+    expect(xml).not.toContain('<title>記事 0</title>');
+
+    const atom = await (await get('/blog/atom.xml')).text();
+    expect((atom.match(/<entry>/g) ?? []).length).toBe(50);
+  });
+
   it('一覧が autodiscovery で指す', async () => {
     const html = await (await get('/blog/')).text();
     expect(html).toContain('<link rel="alternate" type="application/rss+xml"');

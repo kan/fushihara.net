@@ -6,6 +6,7 @@
  */
 import { Hono } from 'hono';
 import type { LilyBindings, LilyConfig } from './config.ts';
+import { adminRoutes } from './routes/admin.ts';
 import { apiRoutes, type AppEnv } from './routes/api.ts';
 import { feedRoutes } from './routes/feeds.ts';
 import { mediaRoutes } from './routes/media.ts';
@@ -19,6 +20,9 @@ export function createLily<Bindings extends LilyBindings>(
   // **保護境界を最初に置く。** api / admin へのミドルウェアが、後から来る
   // どのルータよりも先に走る。
   app.route('/', apiRoutes(config));
+  // 管理画面の配信は保護のうしろ。api より後に置くのは、api の use が
+  // <mount>/admin/* にも掛かっているのを先に走らせるため。
+  app.route('/', adminRoutes(config));
   app.route('/', feedRoutes(config));
   app.route('/', mediaRoutes(config));
   app.route('/', publicRoutes(config));

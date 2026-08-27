@@ -45,11 +45,32 @@ export type PageContext = {
  * 値に Promise が混ざると Promise を返すので、同期に固定すると呼び出し側で
  * 静かに `[object Promise]` を出す事故が起きうる。
  */
+/**
+ * 一覧のページ送り。**1 ページ目でも渡す**（総ページ数が 1 なら出さないのは
+ * テーマの判断）。
+ */
+export type Pagination = {
+  readonly page: number;
+  readonly totalPages: number;
+  /** 前後のページ。無ければ null。 */
+  readonly prevUrl: string | null;
+  readonly nextUrl: string | null;
+};
+
 export interface Theme {
   /** 配信する 1 本のスタイルシート。 */
   readonly stylesheet: string;
-  index(context: PageContext, posts: readonly PostSummaryView[]): Promise<string>;
+  index(
+    context: PageContext,
+    posts: readonly PostSummaryView[],
+    pagination: Pagination,
+  ): Promise<string>;
   post(context: PageContext, post: PostView): Promise<string>;
-  tag(context: PageContext, tag: TagView, posts: readonly PostSummaryView[]): Promise<string>;
+  tag(
+    context: PageContext,
+    tag: TagView,
+    posts: readonly PostSummaryView[],
+    pagination: Pagination,
+  ): Promise<string>;
   notFound(context: PageContext): Promise<string>;
 }

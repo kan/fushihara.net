@@ -4,7 +4,7 @@
 import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import { STATIC_ASSETS } from '../core/routes/fixed.ts';
-import type { PageContext } from '../core/theme.ts';
+import type { PageContext, Pagination } from '../core/theme.ts';
 import { THEME_INIT, THEME_TOGGLE } from './client.ts';
 
 /**
@@ -30,6 +30,8 @@ export type LayoutOptions = {
    * 記事ページでは `h1` は記事タイトルのものなので段落に落とす。
    */
   readonly brandIsHeading?: boolean;
+  /** 一覧のページ送り。前後のページを `<link rel>` で示すのに使う。 */
+  readonly pagination?: Pagination;
 };
 
 /** トップはサイト名だけ、下層は「ページ名 | サイト名」。 */
@@ -72,6 +74,14 @@ export async function layout(
     <link rel="icon" href="${urls.asset(ASSET.favicon)}" sizes="32x32" />
     <link rel="icon" href="${urls.asset(ASSET.faviconSvg)}" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="${urls.asset(ASSET.appleTouchIcon)}" />
+
+    <!-- 前後のページを示す。一覧が分かれていることをクローラに伝えるため。 -->
+    ${options.pagination?.prevUrl
+      ? html`<link rel="prev" href="${options.pagination.prevUrl}" />`
+      : ''}
+    ${options.pagination?.nextUrl
+      ? html`<link rel="next" href="${options.pagination.nextUrl}" />`
+      : ''}
 
     <link rel="alternate" type="application/rss+xml" title="${site.name}" href="${urls.feed('rss')}" />
 

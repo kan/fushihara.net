@@ -24,13 +24,15 @@
       "migrations_dir": "./migrations"
     }
   ],
-  // favicon 3 点と ogp.png の実体は本体サイトと共有の shared/public。
+  // 静的アセットの合流点。`npm run build` が作る (shared/public のコピー +
+  // 管理画面のビルド成果物)。**ビルドしていないと wrangler も vitest も動かない。**
+  //
   // 静的アセットの URL はディレクトリ直下からの相対 (`/favicon.svg`) になるので、
-  // `<mount>/favicon.svg` へは Worker が binding 経由で読み替えて出す。
-  // そのため run_worker_first: true で全部いったん Worker に通す。
+  // `<mount>/favicon.svg` や `<mount>/admin/…` へは Worker が binding 経由で
+  // 読み替えて出す。そのため run_worker_first: true で全部いったん Worker に通す。
   "assets": {
     "binding": "ASSETS",
-    "directory": "../shared/public",
+    "directory": "./dist",
     "run_worker_first": true
   },
   "r2_buckets": [

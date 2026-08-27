@@ -29,6 +29,11 @@ export const createPostSchema = z.object({
   /** 省略すると public_id がそのまま URL になる。 */
   path: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  /**
+   * 公開日時。下書きのうちから決めておける (公開のときにこの日時が使われる)。
+   * 省略すると、公開したときの時刻になる。
+   */
+  publishedAt: isoDateTime.optional(),
 });
 
 export const updatePostSchema = z.object({
@@ -36,6 +41,11 @@ export const updatePostSchema = z.object({
   bodyMd: z.string().optional(),
   description: optionalText.optional(),
   tags: z.array(z.string()).optional(),
+  /**
+   * 公開日時。**null にはできない。** 公開中の記事から日付を消すと DB の CHECK に
+   * 弾かれるし、下げたいなら「取り下げる」の方が意図が伝わる。
+   */
+  publishedAt: isoDateTime.optional(),
 });
 
 export const publishSchema = z.object({
@@ -51,6 +61,16 @@ export const listPostsSchema = z.object({
   status: z.enum(['draft', 'published']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const renderSchema = z.object({
+  bodyMd: z.string(),
+  /** 添付を解決するための記事。新規作成中は省略する。 */
+  publicId: z.string().optional(),
+});
+
+export const linkTitleSchema = z.object({
+  url: z.string().url(),
 });
 
 export type CreatePostInput = z.infer<typeof createPostSchema>;

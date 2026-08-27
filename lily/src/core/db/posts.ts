@@ -181,6 +181,30 @@ export async function countPublishedPosts(db: D1Database): Promise<number> {
   return row?.n ?? 0;
 }
 
+/** タグで絞った公開記事の件数。ページ送りに使う。 */
+export async function countPublishedPostsByTagSlug(db: D1Database, slug: string): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT count(*) AS n
+         FROM posts p
+         JOIN post_tags pt ON pt.post_id = p.id
+         JOIN tags t ON t.id = pt.tag_id
+        WHERE ${PUBLISHED_WHERE('p')} AND t.slug = ?1`,
+    )
+    .bind(slug)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** 管理画面のページャ用。status で絞ったときはその件数。 */
+export async function countPosts(db: D1Database, status?: PostStatus): Promise<number> {
+  const row = await db
+    .prepare('SELECT count(*) AS n FROM posts WHERE (?1 IS NULL OR status = ?1)')
+    .bind(status ?? null)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 /** 管理画面と export 用。下書きも含めて全部返す。 */
 export async function listAllPosts(
   db: D1Database,

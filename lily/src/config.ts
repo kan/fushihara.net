@@ -3,6 +3,7 @@
  */
 import { createLily } from './core/app.ts';
 import { cloudflareAccess } from './core/auth/access.ts';
+import { localhostOnly } from './core/auth/localhost.ts';
 import { theme } from './site/theme.ts';
 
 const AUTHOR = 'KAN Fushihara (伏原 幹)';
@@ -23,5 +24,13 @@ export const lily = createLily({
   // 管理画面と管理 API は Cloudflare Access の手前で止まる。ここでの検証は
   // 二重の守りで、Access を経由しない経路で開かないようにするためのもの。
   // チーム名と AUD は wrangler.jsonc の vars（deployment 固有の値）。
-  auth: (env: Env) => cloudflareAccess({ team: env.ACCESS_TEAM, aud: env.ACCESS_AUD }),
+  //
+  // 設定が無いときは localhostOnly に落ちる。**これは本番を開けない**:
+  // host が localhost 以外なら必ず拒否するので、設定を入れ忘れたまま公開しても
+  // 管理画面には入れない（fail closed のまま）。Access を手元で再現できないので、
+  // これが無いと管理画面をローカルで一度も開けない。
+  auth: (env: Env) =>
+    env.ACCESS_TEAM && env.ACCESS_AUD
+      ? cloudflareAccess({ team: env.ACCESS_TEAM, aud: env.ACCESS_AUD })
+      : localhostOnly(),
 });

@@ -18,6 +18,8 @@
 - `AuthAdapter` と Cloudflare Access アダプタ、`<mount>/api/*` と
   `<mount>/admin/*` の保護境界
 - 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
+- Vue の管理画面（一覧・編集・プレビュー・画像 D&D・パス変更・プレビュー URL・
+  公開日時・タグ補完・ページング）
 
 まだデプロイしていない（route を張っていない）。ローカルでは動く。
 
@@ -29,8 +31,16 @@ npm test                 # Vitest。実 workerd + 実 D1 で動く
 npm run typecheck        # wrangler types → tsc
 npm run db:migrate:local # ローカル D1 にマイグレーションを当てる
 npm run db:seed:local    # 開発用の記事を入れる（seeds/dev.sql）
-npm run dev              # localhost:8787。上の 2 つを先に流しておくこと
+npm run build            # 静的アセット（shared/public のコピー + 管理画面）
+npm run dev              # localhost:8787。上の 3 つを先に流しておくこと
 ```
+
+`wrangler.jsonc` の `assets.directory` が `dist/` を指すので、**ビルドしていないと
+`wrangler` も `vitest` も動かない**（`npm test` は `pretest` で自動的に走る。
+`npx vitest run` を直に叩くときは先に `npm run build`）。
+
+管理画面は `http://localhost:8787/blog/admin/`。ローカルでは
+`ACCESS_TEAM` が空なので `localhostOnly` アダプタに落ちて開ける。
 
 `wrangler` には必ず `-c ./wrangler.jsonc` を付ける。リポジトリ直下に本体の
 `.wrangler/deploy/config.json` があると、wrangler が両方を見つけて落ちるため。
@@ -53,7 +63,7 @@ src/
               feeds.ts が機械向け、media.ts が添付、api.ts が保護境界
     theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
   site/       fushihara.net 固有（レイアウト・CSS・文言・OGP・クライアント JS）
-  admin/      Vue の管理画面 ※これから
+  admin/      Vue の管理画面。別ビルド（vite）で dist/admin に出る
   config.ts   サイト設定。createLily() に渡す
 test/         Vitest
 ```
@@ -106,6 +116,8 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 | SELECT する列 | `core/db/types.ts`（Row 型から導出） |
 | 「記事は常に public_id で引ける」 | `core/db/post-paths.ts` |
 | 生成済み HTML の後処理を開始タグに限る | `core/render/html.ts` の `mapOpenTags` |
+| 画像記法の組み立て（空白を含む名前の `<…>`） | `core/render/markdown.ts` |
+| 日時の JST 変換 | `shared/date.ts` |
 | 見た目・文言・OGP（差し替え点） | `core/theme.ts` の `Theme` を `site/` が実装 |
 | キャッシュ方針 | `core/routes/cache.ts` |
 | 保存済み HTML と描画の使い分け | `core/delivery.ts` |
@@ -130,6 +142,9 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 `<mount>/api/*` と `<mount>/admin/*` は `AuthAdapter` を通らないと届かない。
 **中身が無いうちから掛けてある**ので、route を足したときに保護を忘れる余地がない。
 
+- ローカルでは `localhostOnly` に落ちる。**本番は開けない**（host が
+  `localhost` / `127.0.0.1` 以外なら必ず拒否する。Cloudflare は host で
+  ルーティングするので、実ドメインに来た要求がこの条件を満たすことはない）
 - **core は認証の方式を 1 つも知らない。** fushihara.net は Cloudflare Access
   アダプタを使うが、Deploy to Cloudflare は Access を自動プロビジョニングできない
   ので、OSS の標準構成では別のアダプタが既定になる
@@ -178,6 +193,30 @@ const { post } = await res.json();  // 型は handler から
   ハッシュで、記事の詳細には `hasPreview` しか出ない
 - 添付は形式とファイル名を検査する。ファイル名は記事のパスと同じ
   `normalizeSegment` を通す（export でそのままディレクトリに書き出すため）
+- `POST /api/link-title` は**外から来た URL をそのまま fetch する口**。
+  http/https だけ・IP リテラル宛てを弾く・5 秒で打ち切る・先頭 64KB だけ読む、
+  の 4 つで狭めてある
+
+## 管理画面
+
+`<mount>/admin/`。Vue の SPA で、Worker とは別のビルド（`vite build`）。
+
+- **`base: './'` と、mount をパスから割り出す。** 同じ成果物が `/blog` でも
+  `/blog-next` でも動く（deployment の設定をビルドに焼き付けない）
+- **プレビューは `POST /api/render`。** 公開ページと同じ renderer を通すので、
+  書きながら見ているものと出るものが食い違わない。管理画面に Markdown の
+  パーサを 2 本目として持ち込まずに済む
+- 画像は D&D か貼り付けで上がり、本文に入るのは `./<filename>` の相対参照。
+  配信 URL は描画時に解決する
+- `hc` の戻り値は成功・API のエラー・zod の検証失敗の union なので、
+  **絞り込みをまたぐ汎用ヘルパーを作らない**（型が消える）
+- クライアントの base は**絶対 URL**。`$url()` が URL を組むのに要る
+  （相対だと画像のアップロードが `Invalid URL` で落ちる）
+- **日時の入力はネイティブの `datetime-local` / `date` を使わない。** 日本語の
+  Chrome では曜日の欄が付いた形（`2026/08/28(金) 00:25`）で描かれ、そこが空の
+  まま出る。環境によって出方が変わるものを画面に置くと、崩れても手が出せない
+- **アップロードのあとに記事を読み直さない。** textarea の value を代入し直すと
+  カーソルが末尾へ飛び、画像がそこに入る（増えたのは添付だけなので 1 件足す）
 
 ## 増えてから壊れるもの
 
@@ -185,9 +224,10 @@ const { post } = await res.json();  // 型は handler から
 
 - **D1 のバインドパラメータは 1 クエリ 100 個まで。** `IN (?1, ?2, …)` を id の
   数だけ並べるクエリは `core/db/chunk.ts` を通す
-- **一覧とフィードは今のところ全件を返す。** 記事が増えたらページングと
-  フィードの件数上限が要る（レスポンスサイズと、`body_html` が無い記事の
-  描画コストが効いてくる）
+- 一覧は **20 件ごと**（`/blog/page/2/`）、フィードは**直近 50 件**、管理画面は
+  30 件ごと。全件返していると、記事が増えたぶんだけ重くなる（フィードは全文を
+  配るので特に）
+- **sitemap は今も全件。** 50,000 URL / 50MB の上限に当たったら分割が要る
 
 ## テストの方針
 

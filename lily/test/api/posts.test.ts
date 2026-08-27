@@ -67,6 +67,30 @@ describe('作成と取得', () => {
     expect((await apiJson('GET', '/api/posts/nope')).status).toBe(404);
   });
 
+  it('一覧は総件数を返す (ページャに要る)', async () => {
+    for (const path of ['a', 'b', 'c']) await createPost({ path, title: path });
+
+    const page = await apiJson('GET', '/api/posts?limit=2&offset=0');
+    expect(page.body).toMatchObject({ total: 3, limit: 2, offset: 0 });
+    expect(page.body.posts).toHaveLength(2);
+
+    const next = await apiJson('GET', '/api/posts?limit=2&offset=2');
+    expect(next.body.posts).toHaveLength(1);
+    // 同じ記事が 2 ページに出ない
+    const seen = [...page.body.posts, ...next.body.posts].map((p: { publicId: string }) => p.publicId);
+    expect(new Set(seen).size).toBe(3);
+  });
+
+  it('絞り込むと総件数もその分になる', async () => {
+    const published = await createPost({ path: 'a' });
+    await apiJson('POST', `/api/posts/${published.publicId}/publish`, {});
+    await createPost({ path: 'b' });
+
+    expect((await apiJson('GET', '/api/posts?status=published')).body.total).toBe(1);
+    expect((await apiJson('GET', '/api/posts?status=draft')).body.total).toBe(1);
+    expect((await apiJson('GET', '/api/posts')).body.total).toBe(2);
+  });
+
   it('形が違う入力は 400', async () => {
     expect((await apiJson('POST', '/api/posts', { title: '' })).status).toBe(400);
     expect((await apiJson('POST', '/api/posts', {})).status).toBe(400);
@@ -121,6 +145,34 @@ describe('副作用', () => {
   });
 });
 
+describe('タグの補完', () => {
+  it('既存のタグを、公開記事の件数つきで返す', async () => {
+    const published = await createPost({ path: 'a', tags: ['dev', '日記'] });
+    await apiJson('POST', `/api/posts/${published.publicId}/publish`, {});
+    // 下書きにしか付いていないタグも候補には出す (件数は 0)
+    await createPost({ path: 'b', tags: ['まだ下書き'] });
+
+    const res = await apiJson('GET', '/api/tags');
+    expect(res.body.tags).toEqual([
+      { name: 'dev', count: 1 },
+      { name: '日記', count: 1 },
+      { name: 'まだ下書き', count: 0 },
+    ]);
+  });
+});
+
+describe('貼り付けた URL のタイトル', () => {
+  it('認証が要る', async () => {
+    setStubUser(null);
+    const res = await getRoot('/api/link-title');
+    expect(res.status).toBe(403);
+  });
+
+  it('URL として読めないものは 400', async () => {
+    expect((await apiJson('POST', '/api/link-title', { url: 'ただのメモ' })).status).toBe(400);
+  });
+});
+
 describe('更新', () => {
   it('本文を書き換えると配信用の HTML も描き直す', async () => {
     const post = await createPost();
@@ -142,6 +194,38 @@ describe('更新', () => {
     const conflict = await apiJson('PATCH', `/api/posts/${post.publicId}`, { tags: ['Dev', 'dev'] });
     expect(conflict.status).toBe(409);
     expect(conflict.body.error).toBe('slug-taken');
+  });
+});
+
+describe('公開日時', () => {
+  it('下書きのうちから決めておける (公開のときにその日時になる)', async () => {
+    const post = await createPost({ publishedAt: '2026-09-01T01:00:00.000Z' });
+    expect(post.status).toBe('draft');
+    expect(post.publishedAt).toBe('2026-09-01T01:00:00.000Z');
+
+    const published = await apiJson('POST', `/api/posts/${post.publicId}/publish`, {});
+    expect(published.body.post.publishedAt).toBe('2026-09-01T01:00:00.000Z');
+  });
+
+  it('公開したあとから変えられる', async () => {
+    const post = await createPost({ path: 'a' });
+    await apiJson('POST', `/api/posts/${post.publicId}/publish`, {});
+
+    const updated = await apiJson('PATCH', `/api/posts/${post.publicId}`, {
+      publishedAt: '2020-05-05T04:45:00.000Z',
+    });
+    expect(updated.body.post.publishedAt).toBe('2020-05-05T04:45:00.000Z');
+
+    // 並びに効く: フィードの pubDate も変わる
+    const rss = await (await getRoot('/rss.xml')).text();
+    expect(rss).toContain('<pubDate>Tue, 05 May 2020 04:45:00 GMT</pubDate>');
+  });
+
+  it('日時として読めないものは 400', async () => {
+    const post = await createPost();
+    expect(
+      (await apiJson('PATCH', `/api/posts/${post.publicId}`, { publishedAt: 'きのう' })).status,
+    ).toBe(400);
   });
 });
 
@@ -209,22 +293,23 @@ describe('下書きプレビュー', () => {
   it('発行した URL で下書きが読め、失効させると 404', async () => {
     const post = await createPost({ title: '下書きの記事' });
     const issued = await apiJson('POST', `/api/posts/${post.publicId}/preview`);
-    const path = new URL(issued.body.url).pathname;
+    // mount 相対で返す。絶対にすると、手元で発行したリンクが本番のホストを指す。
+    expect(issued.body.path).toMatch(/^\/preview\//);
 
-    const preview = await getRoot(path);
+    const preview = await getRoot(issued.body.path);
     expect(preview.status).toBe(200);
     expect(await preview.text()).toContain('下書きの記事');
 
     expect((await apiJson('GET', `/api/posts/${post.publicId}`)).body.post.hasPreview).toBe(true);
 
     await apiJson('DELETE', `/api/posts/${post.publicId}/preview`);
-    expect((await getRoot(path)).status).toBe(404);
+    expect((await getRoot(issued.body.path)).status).toBe(404);
   });
 
   it('生のトークンを返すのは発行のときだけ', async () => {
     const post = await createPost();
     const issued = await apiJson('POST', `/api/posts/${post.publicId}/preview`);
-    const token = new URL(issued.body.url).pathname.split('/').pop();
+    const token = issued.body.path.split('/').pop();
 
     const detail = await apiJson('GET', `/api/posts/${post.publicId}`);
     expect(JSON.stringify(detail.body)).not.toContain(token);
