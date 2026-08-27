@@ -14,6 +14,7 @@
     "db:seed:local": "wrangler d1 execute DB --local -c ./wrangler.jsonc --file ./seeds/dev.sql"
   },
   "dependencies": {
+    "@hono/zod-validator": "^0.9.0",
     "@shikijs/langs": "^4.4.3",
     "@shikijs/rehype": "^4.4.3",
     "@shikijs/themes": "^4.4.3",

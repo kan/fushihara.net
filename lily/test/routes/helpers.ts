@@ -52,6 +52,10 @@ export async function getRoot(path: string): Promise<Response> {
   return await rootApp.fetch(new Request(`https://blog.example.com${path}`), env);
 }
 
+export async function getRootRequest(request: Request): Promise<Response> {
+  return await rootApp.fetch(request, env);
+}
+
 export type SeedOptions = {
   title?: string;
   bodyMd?: string;
@@ -84,4 +88,37 @@ export async function seedPost(options: SeedOptions = {}): Promise<PostRow> {
     return (await publishPost(db, post.id, options.publishedAt ?? '2026-08-01T00:00:00.000Z'))!;
   }
   return post;
+}
+
+/**
+ * 管理 API を認証済みで叩く。root mount のアプリなので、パスは `/api/...`。
+ *
+ * 本番の設定 (`src/config.ts`) は Cloudflare Access で、テストでは
+ * ACCESS_TEAM / ACCESS_AUD が空なので必ず拒否になる。通る側を見たいときは
+ * こちらを使う。
+ */
+export async function api(path: string, init?: RequestInit): Promise<Response> {
+  setStubUser({ id: 'admin', email: 'kan@example.com' });
+  return await getRootRequest(new Request(`https://blog.example.com${path}`, init));
+}
+
+/** レスポンスの JSON。テストでは形を都度書かずに読む。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function json(res: Response): Promise<any> {
+  return await res.json();
+}
+
+/** JSON を送って JSON を受け取る。 */
+export async function apiJson(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; body: any }> {
+  const res = await api(path, {
+    method,
+    ...(body === undefined
+      ? {}
+      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+  return { status: res.status, body: await json(res) };
 }

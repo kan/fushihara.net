@@ -17,6 +17,7 @@
 - 添付の配信（R2 の原本をそのまま返す。Cloudflare Images はこれから）
 - `AuthAdapter` と Cloudflare Access アダプタ、`<mount>/api/*` と
   `<mount>/admin/*` の保護境界
+- 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
 
 まだデプロイしていない（route を張っていない）。ローカルでは動く。
 
@@ -44,6 +45,7 @@ src/
     db/       Row 型とクエリ。SQL はここから出さない
     paths.ts  mountPath と URL 生成、normalizePostPath / normalizeSegment
     slug.ts   タグ名 → slug（最後は normalizeSegment を通す）
+    api/      管理 API。mount を知らない形で <mount>/api にマウントされる
     auth/     AuthAdapter の型と Cloudflare Access アダプタ
     feed/     RSS 2.0 と Atom。どちらも全文
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
@@ -137,6 +139,32 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 - チーム名と AUD は `wrangler.jsonc` の `vars`。秘密ではないが deployment ごとに
   違うのでコードに焼き付けない。**空のままだと必ず拒否する**（fail closed）
 - 拒否した理由はレスポンスに載せない。どこまで合っていたかは、当てにいく手掛かりになる
+
+## 管理 API
+
+リクエストの検証は zod を `zValidator` で **1 度だけ**書き、レスポンスの型は
+handler から推論させる（Hono RPC）。手で書いた型と実装がずれる余地を作らない。
+
+```ts
+import { hc } from 'hono/client';
+import type { LilyApi } from './core/api/index.ts';
+
+const client = hc<LilyApi>('/blog/api');
+const res = await client.posts.$post({ json: { title: '…' } });
+if (!res.ok) { /* 400 / 404 / 409 */ }
+const { post } = await res.json();  // 型は handler から
+```
+
+- **route のパスは mount を知らない。** `<mount>/api` にマウントされるので、
+  リテラルのまま型に残り、`hc` が `client.posts` の形を作れる
+- **エラーのステータスは `400 | 404 | 409` に絞る。** 広い型にすると
+  `if (res.ok)` の絞り込みが効かなくなる
+- **保存のたびに `body_html` を描き直す。** 配信側が毎回描き直さずに済む。
+  renderer を更新したときの `POST /api/rerender` も同じ道を通る
+- プレビューの**生のトークンを返すのは発行のときだけ**。DB に入るのは SHA-256 の
+  ハッシュで、記事の詳細には `hasPreview` しか出ない
+- 添付は形式とファイル名を検査する。ファイル名は記事のパスと同じ
+  `normalizeSegment` を通す（export でそのままディレクトリに書き出すため）
 
 ## 増えてから壊れるもの
 
