@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fushihara-net-lily",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-08-23",
+
+  // route はまだ張らない。/blog-next* での並走を始めるときに足す
+  // (それまでデプロイしないので、書いておくと事故のもとになる)。
+  //
+  //   "routes": [{ "pattern": "fushihara.net/blog-next*", "zone_name": "fushihara.net" }]
+  //
+  // route は長い方が優先されるので、既存の fushihara.net/blog* より先に一致する。
+
+  // D1 と R2 は binding 名で参照する。lily を OSS として配ったときに
+  // 「リソース ID を手で埋める」前提にしないため、コードは DB / MEDIA しか知らない。
+  //
+  // database_id は本番の D1 を作るまで未確定。ローカル (miniflare / vitest) は
+  // この値を見ないので、テストと --local のマイグレーションはこのまま通る。
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fushihara-net-lily",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "fushihara-net-lily-media" }
+  ],
+
+  "observability": { "enabled": true }
+}

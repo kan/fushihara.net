@@ -1,0 +1,26 @@
+{
+  "name": "fushihara-net-lily",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "wrangler types -c ./wrangler.jsonc && tsc --noEmit",
+    "//wrangler": "リポジトリ直下に本体の .wrangler/deploy/config.json があると wrangler が両方を見つけて落ちるので、-c で明示する",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local -c ./wrangler.jsonc",
+    "db:migrate": "wrangler d1 migrations apply DB --remote -c ./wrangler.jsonc",
+    "db:seed:local": "wrangler d1 execute DB --local -c ./wrangler.jsonc --file ./seeds/dev.sql"
+  },
+  "dependencies": {
+    "hono": "^4.13.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@types/node": "^26.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.125.0"
+  }
+}

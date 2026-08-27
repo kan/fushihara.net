@@ -1,0 +1,37 @@
+name: CI / lily
+
+# lily は blog/ を置き換えるために並走させている別プロジェクト。
+# まだ何も配信していないので、ここにあるのはテストだけ。デプロイのジョブは
+# /blog-next* での並走を始めるときに足す。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lily/**'
+      - '.github/workflows/lily.yml'
+  pull_request:
+    paths:
+      - 'lily/**'
+      - '.github/workflows/lily.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: lily
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: lily/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

@@ -119,8 +119,10 @@ E2E で踏みやすい罠が 2 つある。
 
 ## CI とデプロイ
 
-ワークフローは 2 本ある。本体が `.github/workflows/deploy.yml`、ブログが
-`.github/workflows/deploy-blog.yml`。デプロイ先の Worker が別なので分けてある。
+ワークフローは 3 本ある。本体が `.github/workflows/deploy.yml`、ブログが
+`.github/workflows/deploy-blog.yml`、ブログの置き換えとして並走中の lily が
+`.github/workflows/lily.yml`。デプロイ先の Worker が別なので分けてある
+（lily はまだ配信していないので、テストだけで deploy ジョブを持たない）。
 
 ### 本体（deploy.yml）
 
@@ -592,3 +594,23 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
   `p` に落としている（`Base.astro` の `Brand` 変数）
 - `content/posts/` が空のあいだ、ビルドが「The collection "posts" does not exist or is
   empty」と警告する。記事を 1 本置けば消える
+
+## lily（ブログの置き換え・作りかけ）
+
+`blog/` の Astro を、**D1 を正とする自作 CMS**に置き換える作業が `lily/` で進行中。
+設計の正本は [issue #5](https://github.com/kan/fushihara.net/issues/5)、
+現状と手順は `lily/README.md`。
+
+**`lily/` は `blog/` から完全に独立した並走用のプロジェクト。** 自分の
+`package.json` / `wrangler.jsonc` / `tsconfig.json` を持ち、本体の `tsc -b` にも
+入っていない。切り替えのときに `blog/` を消して `lily/` を `blog/` に改名する前提で、
+それまで Astro 側には一切触らない。
+
+- **まだ何も配信していない。** `lily/src/index.ts` は 404 を返すだけで、route も
+  張っていない（`wrangler.jsonc` にコメントで置いてある）。デプロイは
+  `/blog-next*` での並走を始めるときに初めて行う
+- テストは実 workerd + 実 D1 で動く。**D1 の制約は生 SQL で叩いて確かめる**
+  （query layer 越しに見ても、制約が効いているかの検証にならない）
+- `wrangler` を叩くときは `-c ./wrangler.jsonc` が要る（`blog/` と同じ理由）
+- **`d1_databases[].database_id` はまだ placeholder。** ローカルは見ないので
+  テストと `--local` のマイグレーションは通るが、本番の D1 を作ったら差し替える

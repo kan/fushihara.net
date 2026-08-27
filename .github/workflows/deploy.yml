@@ -3,12 +3,15 @@ name: CI / Deploy to Cloudflare Workers
 on:
   push:
     branches: [main]
-    # ブログは独立した Worker なので deploy-blog.yml が受け持つ
+    # ブログ (blog/) と、その置き換えとして並走中の lily/ は独立したプロジェクトで、
+    # それぞれ deploy-blog.yml / lily.yml が受け持つ
     paths-ignore:
       - 'blog/**'
+      - 'lily/**'
   pull_request:
     paths-ignore:
       - 'blog/**'
+      - 'lily/**'
   # デプロイをスキップした後などに、手で出したいとき用
   workflow_dispatch:
 

@@ -1,0 +1,31 @@
+{
+  // src/ と test/ はどちらも Workers ランタイム上で動くので 1 プロジェクトで見る。
+  // 分けるのは管理画面 (src/admin/) を足すとき。あちらは Vue で DOM を触るので、
+  // Workers ランタイム型と同じプロジェクトに入れると Request / Response / caches の
+  // 型が衝突する (本体リポジトリで踏んだ)。そのときは tsconfig.admin.json を足す。
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "skipLibCheck": true,
+    "types": ["@cloudflare/vitest-plugin/types", "./worker-configuration.d.ts"],
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src", "test", "vitest.config.ts", "worker-configuration.d.ts"],
+  "exclude": ["src/admin"]
+}
