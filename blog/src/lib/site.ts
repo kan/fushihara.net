@@ -15,7 +15,7 @@ export const SITE_NAME = 'ふしはらねっとのぶろぐ';
  */
 export const SITE_URL = 'https://fushihara.net';
 
-export const AUTHOR = 'Kan Fushihara (伏原 幹)';
+export const AUTHOR = 'KAN Fushihara (伏原 幹)';
 
 export const SITE_DESCRIPTION = `${AUTHOR} のブログ`;
 
