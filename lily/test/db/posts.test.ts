@@ -6,7 +6,9 @@ import {
   getPostByPreviewTokenHash,
   getPublishedPosts,
   listAllPosts,
+  publishPost,
   setRenderedHtml,
+  unpublishPost,
   updatePost,
 } from '../../src/core/db/posts.ts';
 import { listPaths } from '../../src/core/db/post-paths.ts';
@@ -56,6 +58,15 @@ describe('createPost', () => {
   it('公開で作ると published_at が入る (CHECK に弾かれない)', async () => {
     const post = await create({ title: 'x', bodyMd: 'y', status: 'published' });
     expect(post.published_at).not.toBeNull();
+  });
+
+  it('public_id の衝突は path-taken と別のエラーになる (import で効く)', async () => {
+    const publicId = '99999999-9999-4999-8999-999999999999';
+    await create({ title: 'x', bodyMd: 'y', publicId });
+
+    const result = await createPost(db, { title: 'z', bodyMd: 'w', publicId, path: 'other' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('public-id-taken');
   });
 
   it('import 用に public_id と日時を引き継げる', async () => {
@@ -125,23 +136,33 @@ describe('更新と削除', () => {
     expect(updated?.updated_at).not.toBe('2020-01-01T00:00:00.000Z');
   });
 
-  it('status だけ published にしても published_at が補われる (公開ボタンの呼び方)', async () => {
+  it('publishPost は published_at を入れる (CHECK に弾かれない)', async () => {
     const post = await create({ title: 'x', bodyMd: 'y' });
-    const published = await updatePost(db, post.id, { status: 'published' });
+    const published = await publishPost(db, post.id);
     expect(published?.status).toBe('published');
     expect(published?.published_at).not.toBeNull();
   });
 
-  it('再公開しても元の公開日は変わらない', async () => {
+  it('取り下げて再公開しても元の公開日は変わらない', async () => {
     const post = await create({
       title: 'x',
       bodyMd: 'y',
       status: 'published',
       publishedAt: '2026-01-01T00:00:00.000Z',
     });
-    await updatePost(db, post.id, { status: 'draft' });
-    const republished = await updatePost(db, post.id, { status: 'published' });
+    const draft = await unpublishPost(db, post.id);
+    expect(draft?.status).toBe('draft');
+    // 日付は残しておく。戻したときに公開日が今日になってしまわないように
+    expect(draft?.published_at).toBe('2026-01-01T00:00:00.000Z');
+
+    const republished = await publishPost(db, post.id);
     expect(republished?.published_at).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('publishPost に日付を渡せば上書きできる', async () => {
+    const post = await create({ title: 'x', bodyMd: 'y' });
+    const published = await publishPost(db, post.id, '2020-05-05T00:00:00.000Z');
+    expect(published?.published_at).toBe('2020-05-05T00:00:00.000Z');
   });
 
   it('setRenderedHtml は body_html と renderer_version を一緒に入れる', async () => {

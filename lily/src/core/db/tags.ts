@@ -2,36 +2,13 @@
  * タグ。名前が正で、slug は URL 用の派生。
  */
 import { err, ok, type Result } from '../result.ts';
-import type { PostTagRow, TagRow, TagWithCountRow } from './types.ts';
-
-/** slug に使えない文字。パスの 1 セグメントとして成立する範囲に寄せる。 */
-const SLUG_FORBIDDEN = /[/\\<>:"|?*%\u0000-\u001F\u007F]/g;
-
-/**
- * タグ名から slug を作る。
- *
- * 日本語のタグは日本語のまま slug になる (URL に組むときにエンコードする)。
- * ラテン文字だけを通す変換にすると、日本語タグの slug が全部空になってしまう。
- */
-export function slugifyTag(name: string): Result<string, 'empty' | 'dot-segment'> {
-  const slug = name
-    .normalize('NFC')
-    .replace(SLUG_FORBIDDEN, '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  if (slug === '') return err('empty');
-  // `.` と `..` を通すと `/tags/../` のような URL を組んでしまう。
-  // encodeURIComponent はドットを素通しするので、ここで止めるしかない。
-  if (slug === '.' || slug === '..') return err('dot-segment');
-  return ok(slug);
-}
+import { slugifyTag } from '../slug.ts';
+import { PUBLISHED_WHERE } from './posts.ts';
+import { qualify, TAG_COLUMNS, type PostTagRow, type TagRow, type TagWithCountRow } from './types.ts';
 
 export async function getTagBySlug(db: D1Database, slug: string): Promise<TagRow | null> {
   return await db
-    .prepare('SELECT id, name, slug FROM tags WHERE slug = ?1')
+    .prepare(`SELECT ${TAG_COLUMNS.join(', ')} FROM tags WHERE slug = ?1`)
     .bind(slug)
     .first<TagRow>();
 }
@@ -40,11 +17,11 @@ export async function getTagBySlug(db: D1Database, slug: string): Promise<TagRow
 export async function listTagsWithCounts(db: D1Database): Promise<TagWithCountRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT t.id, t.name, t.slug, count(p.id) AS post_count
+      `SELECT ${qualify(TAG_COLUMNS, 't')}, count(p.id) AS post_count
          FROM tags t
          LEFT JOIN post_tags pt ON pt.tag_id = t.id
-         LEFT JOIN posts p ON p.id = pt.post_id AND p.status = 'published'
-        GROUP BY t.id, t.name, t.slug
+         LEFT JOIN posts p ON p.id = pt.post_id AND ${PUBLISHED_WHERE('p')}
+        GROUP BY ${qualify(TAG_COLUMNS, 't')}
         ORDER BY post_count DESC, t.name ASC`,
     )
     .all<TagWithCountRow>();
@@ -54,7 +31,7 @@ export async function listTagsWithCounts(db: D1Database): Promise<TagWithCountRo
 export async function getTagsForPost(db: D1Database, postId: number): Promise<TagRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT t.id, t.name, t.slug
+      `SELECT ${qualify(TAG_COLUMNS, 't')}
          FROM tags t JOIN post_tags pt ON pt.tag_id = t.id
         WHERE pt.post_id = ?1 ORDER BY t.name ASC`,
     )
@@ -69,7 +46,7 @@ export async function getTagsForPosts(db: D1Database, postIds: number[]): Promis
   const placeholders = postIds.map((_, i) => `?${i + 1}`).join(', ');
   const { results } = await db
     .prepare(
-      `SELECT pt.post_id, t.id, t.name, t.slug
+      `SELECT pt.post_id, ${qualify(TAG_COLUMNS, 't')}
          FROM tags t JOIN post_tags pt ON pt.tag_id = t.id
         WHERE pt.post_id IN (${placeholders})
         ORDER BY t.name ASC`,

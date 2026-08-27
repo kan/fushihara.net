@@ -7,8 +7,8 @@ import {
   getTagsForPosts,
   listTagsWithCounts,
   setPostTags,
-  slugifyTag,
 } from '../../src/core/db/tags.ts';
+import { slugifyTag } from '../../src/core/slug.ts';
 import type { PostRow } from '../../src/core/db/types.ts';
 import { db, resetDb } from './helpers.ts';
 
@@ -57,6 +57,13 @@ describe('slugifyTag', () => {
     expect(slug('..')).toBeNull();
     // encodeURIComponent はドットを素通しするので、slug 側で止めるしかない
     expect(encodeURIComponent('..')).toBe('..');
+  });
+
+  it('記事パスと同じ規則で弾く (規則を 2 本持たない)', () => {
+    // normalizeSegment を通しているので、Windows 予約名も末尾ドットも同じ扱いになる
+    expect(slug('con')).toBeNull();
+    expect(slug('foo.')).toBeNull();
+    expect(slug('a'.repeat(81))).toBeNull();
   });
 });
 

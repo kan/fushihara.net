@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createUrls, normalizeMountPath, normalizePostPath } from '../src/core/paths.ts';
 import type { PathErrorCode } from '../src/core/paths.ts';
+import { isReservedSegment, ROUTE } from '../src/core/routes/fixed.ts';
 
 /** 成功したときの値。失敗していたらエラーコード付きで落とす。 */
 function value(input: string): string {
@@ -174,5 +175,36 @@ describe('createUrls', () => {
     const urls = createUrls(site);
     expect(urls.post('日本語/1')).toBe('/blog/%E6%97%A5%E6%9C%AC%E8%AA%9E/1/');
     expect(urls.tag({ slug: '日記' })).toBe('/blog/tags/%E6%97%A5%E8%A8%98/');
+  });
+});
+
+describe('URL 生成と予約パスの対応', () => {
+  it('生成器が作る固定 URL は、すべて記事に取られないよう予約されている', () => {
+    // route を 1 本足したときに fixed.ts だけ直して paths.ts を忘れる (逆も) と、
+    // 「URL は生成できるが予約されていない」が黙って成立する。ここで塞ぐ。
+    const urls = createUrls({ siteUrl: 'https://example.com', mountPath: '/' });
+    const generated = [
+      urls.tag({ slug: 'x' }),
+      urls.media({ public_id: 'a', filename: 'b.png' }),
+      urls.feed('rss'),
+      urls.feed('atom'),
+      urls.preview('t'),
+      urls.admin(),
+      urls.admin('posts'),
+      urls.postsJson(),
+      urls.sitemap(),
+    ];
+
+    for (const url of generated) {
+      const first = url.slice(1).split('/')[0] as string;
+      expect(isReservedSegment(first), `${url} の ${first} が予約されていない`).toBe(true);
+      expect(normalizePostPath(first).ok, `${first} が記事パスとして通る`).toBe(false);
+    }
+  });
+
+  it('ROUTE のセグメントはすべて予約されている', () => {
+    for (const segment of Object.values(ROUTE)) {
+      expect(isReservedSegment(segment), `${segment} が予約されていない`).toBe(true);
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { isUniqueViolation } from '../../src/core/db/errors.ts';
-import { POST_COLUMNS } from '../../src/core/db/types.ts';
+import { MEDIA_COLUMNS, POST_COLUMNS, TAG_COLUMNS } from '../../src/core/db/types.ts';
 import { db, insertPostRaw, resetDb } from './helpers.ts';
 
 /**
@@ -199,11 +199,25 @@ describe('制約違反の判定', () => {
 });
 
 describe('Row 型と実テーブル', () => {
+  // 列リストと Row 型のずれは型が止める。実テーブルとのずれは `.first<Row>()` が
+  // ただのキャストなので、ここで実 D1 と突き合わせるしかない。
+  async function columnsOfTable(table: string): Promise<string[]> {
+    const { results } = await db
+      .prepare(`SELECT name FROM pragma_table_info(?1)`)
+      .bind(table)
+      .all<{ name: string }>();
+    return results.map((r) => r.name).sort();
+  }
+
   it('POST_COLUMNS が posts の列と過不足なく一致する', async () => {
-    // POST_COLUMNS と PostRow のずれは型が止める。実テーブルとのずれは
-    // `.first<PostRow>()` がただのキャストなので、ここで実 D1 と突き合わせるしかない。
-    await insertPostRaw({});
-    const row = await db.prepare('SELECT * FROM posts LIMIT 1').first();
-    expect(Object.keys(row ?? {}).sort()).toEqual([...POST_COLUMNS].sort());
+    expect(await columnsOfTable('posts')).toEqual([...POST_COLUMNS].sort());
+  });
+
+  it('MEDIA_COLUMNS が media の列と過不足なく一致する', async () => {
+    expect(await columnsOfTable('media')).toEqual([...MEDIA_COLUMNS].sort());
+  });
+
+  it('TAG_COLUMNS が tags の列と過不足なく一致する', async () => {
+    expect(await columnsOfTable('tags')).toEqual([...TAG_COLUMNS].sort());
   });
 });

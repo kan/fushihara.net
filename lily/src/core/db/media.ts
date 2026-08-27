@@ -5,10 +5,9 @@
  * 対応だけを持つ。配信 URL は `urlForMedia()` が `public_id` から組む。
  */
 import { newPublicId, nowIso } from '../ids.ts';
-import type { MediaRow } from './types.ts';
+import { MEDIA_COLUMNS, type MediaRow } from './types.ts';
 
-const MEDIA_COLUMNS =
-  'id, public_id, post_id, filename, r2_key, mime, bytes, width, height, created_at';
+const MEDIA_SELECT = MEDIA_COLUMNS.join(', ');
 
 export type CreateMediaInput = {
   postId: number | null;
@@ -52,7 +51,7 @@ export async function getMediaByPublicId(
   publicId: string,
 ): Promise<MediaRow | null> {
   return await db
-    .prepare(`SELECT ${MEDIA_COLUMNS} FROM media WHERE public_id = ?1`)
+    .prepare(`SELECT ${MEDIA_SELECT} FROM media WHERE public_id = ?1`)
     .bind(publicId)
     .first<MediaRow>();
 }
@@ -64,14 +63,14 @@ export async function findByPostAndFilename(
   filename: string,
 ): Promise<MediaRow | null> {
   return await db
-    .prepare(`SELECT ${MEDIA_COLUMNS} FROM media WHERE post_id = ?1 AND filename = ?2`)
+    .prepare(`SELECT ${MEDIA_SELECT} FROM media WHERE post_id = ?1 AND filename = ?2`)
     .bind(postId, filename)
     .first<MediaRow>();
 }
 
 export async function listMediaByPost(db: D1Database, postId: number): Promise<MediaRow[]> {
   const { results } = await db
-    .prepare(`SELECT ${MEDIA_COLUMNS} FROM media WHERE post_id = ?1 ORDER BY filename ASC`)
+    .prepare(`SELECT ${MEDIA_SELECT} FROM media WHERE post_id = ?1 ORDER BY filename ASC`)
     .bind(postId)
     .all<MediaRow>();
   return results;

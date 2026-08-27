@@ -8,9 +8,9 @@
 import { newPublicId, nowIso } from '../ids.ts';
 import { normalizePostPath } from '../paths.ts';
 import { err, ok, type Result } from '../result.ts';
-import { isUniqueViolation } from './errors.ts';
+import { uniqueViolationTarget } from './errors.ts';
 import { listR2KeysByPost } from './media.ts';
-import { findByPathCi, insertPathStatement, type PathWriteError } from './post-paths.ts';
+import { findByPathCi, initialPathStatements, isPathTakenViolation, type PathWriteError } from './post-paths.ts';
 import {
   postColumns,
   type PostRow,
@@ -20,6 +20,17 @@ import {
 
 /** 一覧・フィード共通の並び。 */
 const PUBLISHED_ORDER = 'p.published_at DESC, p.public_id ASC';
+
+/**
+ * 「公開記事とは何か」。並び順と同じくここを正にする (`tags.ts` の件数集計も読む)。
+ * 条件を変える日に 1 箇所で済み、タグの件数だけ古い条件のまま残ることがない。
+ */
+export function PUBLISHED_WHERE(alias: string): string {
+  return `${alias}.status = 'published'`;
+}
+
+/** posts の UNIQUE 制約。identity の衝突とパスの衝突を取り違えないため。 */
+const PUBLIC_ID_UNIQUE_TARGET = 'posts.public_id';
 
 export type CreatePostInput = {
   title: string;
@@ -78,16 +89,17 @@ export async function createPost(
         input.updatedAt ?? now,
         input.createdAt ?? now,
       ),
-    insertPathStatement(db, { path: canonical, publicId, isCanonical: true, now }),
+    ...initialPathStatements(db, { publicId, canonical, now }),
   ];
-  if (canonical !== publicId) {
-    statements.push(insertPathStatement(db, { path: publicId, publicId, isCanonical: false, now }));
-  }
   try {
     await db.batch(statements);
   } catch (error) {
-    // 上の SELECT との間に同じパスを作られた場合。check-then-act の隙間を埋める。
-    if (isUniqueViolation(error)) return err({ code: 'path-taken' });
+    // 上の SELECT との間に同じものを作られた場合。check-then-act の隙間を埋める。
+    // posts と post_paths の両方に INSERT するので、どちらの衝突かで分ける。
+    if (uniqueViolationTarget(error) === PUBLIC_ID_UNIQUE_TARGET) {
+      return err({ code: 'public-id-taken' });
+    }
+    if (isPathTakenViolation(error)) return err({ code: 'path-taken' });
     throw error;
   }
 
@@ -132,7 +144,7 @@ export async function getPublishedPosts(
       `SELECT ${postColumns('p')}, c.path AS canonical_path
          FROM posts p
          JOIN post_paths c ON c.post_id = p.id AND c.is_canonical = 1
-        WHERE p.status = 'published'
+        WHERE ${PUBLISHED_WHERE('p')}
         ORDER BY ${PUBLISHED_ORDER}
         LIMIT ?1 OFFSET ?2`,
     )
@@ -153,7 +165,7 @@ export async function getPublishedPostsByTagSlug(
          JOIN post_paths c ON c.post_id = p.id AND c.is_canonical = 1
          JOIN post_tags pt ON pt.post_id = p.id
          JOIN tags t ON t.id = pt.tag_id
-        WHERE p.status = 'published' AND t.slug = ?1
+        WHERE ${PUBLISHED_WHERE('p')} AND t.slug = ?1
         ORDER BY ${PUBLISHED_ORDER}
         LIMIT ?2 OFFSET ?3`,
     )
@@ -164,7 +176,7 @@ export async function getPublishedPostsByTagSlug(
 
 export async function countPublishedPosts(db: D1Database): Promise<number> {
   const row = await db
-    .prepare("SELECT count(*) AS n FROM posts WHERE status = 'published'")
+    .prepare(`SELECT count(*) AS n FROM posts p WHERE ${PUBLISHED_WHERE('p')}`)
     .first<{ n: number }>();
   return row?.n ?? 0;
 }
@@ -189,11 +201,18 @@ export async function listAllPosts(
 }
 
 /** UPDATE で受け付ける列。ここに無い列はこの関数からは触れない。 */
+/**
+ * UPDATE で受け付ける列。
+ *
+ * **`status` は入れない。** `published_at` と CHECK で結ばれているので、
+ * 片方だけ動かすと DB に弾かれる。`body_html` / `renderer_version` を
+ * `setRenderedHtml` に分けたのと同じ理由で、公開・取り下げは名前の付いた
+ * 操作 (`publishPost` / `unpublishPost`) にする。
+ */
 const PATCHABLE = [
   'title',
   'description',
   'body_md',
-  'status',
   'published_at',
   'preview_token_hash',
   'bluesky_uri',
@@ -202,14 +221,7 @@ const PATCHABLE = [
 /** 値の型は PostRow から取る。列の一覧と型を二重に書かないため。 */
 export type PostPatch = Partial<Pick<PostRow, (typeof PATCHABLE)[number]>>;
 
-/**
- * 記事を更新する。`body_html` と `renderer_version` はここでは触れない
- * (2 列そろっていないと CHECK に弾かれるので `setRenderedHtml` に分けてある)。
- *
- * **`status: 'published'` だけを渡す「公開ボタン」の呼び方を成立させる。**
- * `published_at` が未設定のまま公開にすると CHECK に弾かれるので、その場合だけ
- * 現在時刻を補う (既に日付が入っている記事の再公開では元の日付を保つ)。
- */
+/** 記事を更新する。列を機械的に流すだけで、呼び出し側の意図は推測しない。 */
 export async function updatePost(
   db: D1Database,
   id: number,
@@ -223,16 +235,45 @@ export async function updatePost(
     values.push(value);
     assignments.push(`${column} = ?${values.length}`);
   }
-  if (patch.status === 'published' && patch.published_at === undefined) {
-    values.push(nowIso());
-    assignments.push(`published_at = coalesce(published_at, ?${values.length})`);
-  }
   values.push(nowIso());
   assignments.push(`updated_at = ?${values.length}`);
 
   await db
     .prepare(`UPDATE posts SET ${assignments.join(', ')} WHERE id = ?${values.length + 1}`)
     .bind(...values, id)
+    .run();
+  return await getPostById(db, id);
+}
+
+/**
+ * 公開する。
+ *
+ * `published_at` は初回だけ入れて、取り下げてから再公開したときは元の日付を保つ
+ * (`coalesce`)。日付を明示したいときだけ `publishedAt` を渡す。
+ */
+export async function publishPost(
+  db: D1Database,
+  id: number,
+  publishedAt?: string,
+): Promise<PostRow | null> {
+  await db
+    .prepare(
+      `UPDATE posts
+          SET status = 'published',
+              published_at = coalesce(?1, published_at, ?2),
+              updated_at = ?2
+        WHERE id = ?3`,
+    )
+    .bind(publishedAt ?? null, nowIso(), id)
+    .run();
+  return await getPostById(db, id);
+}
+
+/** 取り下げる。`published_at` は残すので、再公開すると元の日付に戻る。 */
+export async function unpublishPost(db: D1Database, id: number): Promise<PostRow | null> {
+  await db
+    .prepare("UPDATE posts SET status = 'draft', updated_at = ?1 WHERE id = ?2")
+    .bind(nowIso(), id)
     .run();
   return await getPostById(db, id);
 }

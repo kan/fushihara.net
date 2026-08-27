@@ -1,26 +1,37 @@
 /**
- * 予約パスは routing 定義から導出する。
+ * ルーティング定義。**予約パスも URL 生成もここを正にする。**
  *
  * 手で並べると route を足したときに更新を忘れる。ルータはこの定義から
- * マウントし、記事のパス (canonical / alias) はここに載っているものを
- * 第 1 セグメントに使えない。
+ * マウントし、`core/paths.ts` はここからセグメント名を読んで URL を組み、
+ * 記事のパス (canonical / alias) はここに載っているものを第 1 セグメントに
+ * 使えない。3 者が同じ 1 箇所を見るので、片方だけ直して
+ * 「URL は生成できるが予約されていない」が黙って成立することがない。
  *
  * mountPath が '/' でも '/blog' でも、判定は mount root 相対で同じ。
  */
-export const FIXED_ROUTES = [
-  'admin',
-  'api',
-  'media',
-  'preview',
-  'tags',
-  'rss.xml',
-  'atom.xml',
-  'sitemap-index.xml',
-  'posts.json',
-  '404',
-] as const;
+export const ROUTE = {
+  admin: 'admin',
+  api: 'api',
+  media: 'media',
+  preview: 'preview',
+  tags: 'tags',
+  rss: 'rss.xml',
+  atom: 'atom.xml',
+  sitemap: 'sitemap-index.xml',
+  postsJson: 'posts.json',
+  notFound: '404',
+} as const;
 
-/** mount root 直下に出す静的アセット (現行の出力を維持する)。 */
+export const FIXED_ROUTES: readonly string[] = Object.values(ROUTE);
+
+/**
+ * mount root 直下に出す静的アセット (現行の出力を維持する)。
+ *
+ * **これだけはサイト側の都合が core に入っている。** lily として切り出すときは
+ * config で渡す形にして site 層へ移す (`robots.txt` を配るサイトもあれば、
+ * `ogp.png` を配らないサイトもある)。今そうしないのは、2 つ目のサイトが
+ * 無いうちに設定の形を決めても当たらないため。
+ */
 export const STATIC_ASSETS = [
   'favicon.svg',
   'favicon.ico',

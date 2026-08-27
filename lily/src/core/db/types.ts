@@ -71,14 +71,20 @@ export type TagWithCountRow = TagRow & { post_count: number };
 export type PostTagRow = TagRow & { post_id: number };
 
 /**
- * posts の列を 1 箇所で持つ。JOIN で列名が衝突するので `*` は使わない。
+ * SELECT する列を Row 型から導出する。
  *
- * `Record<keyof PostRow, true>` にしてあるので、**PostRow と過不足があると
- * コンパイルが通らない**。`.first<PostRow>()` はただのキャストなので、
- * SELECT 句と Row 型のずれは実行時まで気付けない。そこを型で止める。
+ * `Record<keyof Row, true>` にしてあるので、**Row 型と過不足があると
+ * コンパイルが通らない**。`.first<Row>()` はただのキャストなので、SELECT 句と
+ * Row 型のずれは実行時まで気付けない。そこを型で止める。
  * (実テーブルとのずれは `test/db/schema.test.ts` が実 D1 で突き合わせる。)
+ *
+ * JOIN で列名が衝突するので `*` は使わない。
  */
-const POST_COLUMN_SET: Record<keyof PostRow, true> = {
+function columnsOf<Row>(set: Record<keyof Row, true>): (keyof Row & string)[] {
+  return Object.keys(set) as (keyof Row & string)[];
+}
+
+export const POST_COLUMNS = columnsOf<PostRow>({
   id: true,
   public_id: true,
   title: true,
@@ -92,10 +98,28 @@ const POST_COLUMN_SET: Record<keyof PostRow, true> = {
   created_at: true,
   preview_token_hash: true,
   bluesky_uri: true,
-};
+});
 
-export const POST_COLUMNS = Object.keys(POST_COLUMN_SET) as (keyof PostRow)[];
+export const MEDIA_COLUMNS = columnsOf<MediaRow>({
+  id: true,
+  public_id: true,
+  post_id: true,
+  filename: true,
+  r2_key: true,
+  mime: true,
+  bytes: true,
+  width: true,
+  height: true,
+  created_at: true,
+});
+
+export const TAG_COLUMNS = columnsOf<TagRow>({ id: true, name: true, slug: true });
+
+/** 列を alias 付きで並べる (`p.id, p.public_id, ...`)。 */
+export function qualify(columns: readonly string[], alias: string): string {
+  return columns.map((c) => `${alias}.${c}`).join(', ');
+}
 
 export function postColumns(alias: string): string {
-  return POST_COLUMNS.map((c) => `${alias}.${c}`).join(', ');
+  return qualify(POST_COLUMNS, alias);
 }

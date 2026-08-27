@@ -7,13 +7,15 @@
 import { normalizePostPath, type PathErrorCode } from '../paths.ts';
 import { err, ok, type Result } from '../result.ts';
 import { nowIso } from '../ids.ts';
-import { isUniqueViolation } from './errors.ts';
+import { uniqueViolationTarget } from './errors.ts';
 import { postColumns, type PostPathRow, type ResolvedPathRow } from './types.ts';
 
 export type PathWriteErrorCode =
   | PathErrorCode
   /** 同じパス (大小文字違いを含む) を別の記事が持っている。 */
   | 'path-taken'
+  /** 同じ public_id の記事が既にある (import で持ち込んだときだけ起こる)。 */
+  | 'public-id-taken'
   | 'post-not-found'
   /** canonical は 1 本必要なので消せない。 */
   | 'canonical-required'
@@ -90,8 +92,15 @@ async function getPostPublicId(db: D1Database, postId: number): Promise<string |
   return row?.public_id ?? null;
 }
 
-/** canonical / alias の行を作る文（`createPost` の batch からも使う）。 */
-export function insertPathStatement(
+/** `post_paths` の UNIQUE 制約。どの制約が破れたかで呼び出し側の分岐が変わる。 */
+const PATH_UNIQUE_TARGETS = new Set(['post_paths_path_ci', 'post_paths.path']);
+
+export function isPathTakenViolation(error: unknown): boolean {
+  const target = uniqueViolationTarget(error);
+  return target !== null && PATH_UNIQUE_TARGETS.has(target);
+}
+
+function insertPathStatement(
   db: D1Database,
   input: { path: string; publicId: string; isCanonical: boolean; now: string },
 ): D1PreparedStatement {
@@ -103,6 +112,39 @@ export function insertPathStatement(
        VALUES (?1, (SELECT id FROM posts WHERE public_id = ?2), ?3, ?4)`,
     )
     .bind(input.path, input.publicId, input.isCanonical ? 1 : 0, input.now);
+}
+
+/**
+ * 新しい記事の paths を作る文。**canonical と identity をまとめて作る。**
+ *
+ * 「記事は常に public_id で引ける」という不変条件を守るコードをこのファイルに
+ * 閉じ込めるため、1 行ずつの INSERT は外へ出さない。別の作成経路 (import /
+ * 複製 / restore) を足したときに identity 行を入れ忘れると、
+ * `removePath` や `changeCanonicalPath` のガードは「無い行」を守れない。
+ */
+export function initialPathStatements(
+  db: D1Database,
+  input: { publicId: string; canonical: string; now: string },
+): D1PreparedStatement[] {
+  const statements = [
+    insertPathStatement(db, {
+      path: input.canonical,
+      publicId: input.publicId,
+      isCanonical: true,
+      now: input.now,
+    }),
+  ];
+  if (input.canonical !== input.publicId) {
+    statements.push(
+      insertPathStatement(db, {
+        path: input.publicId,
+        publicId: input.publicId,
+        isCanonical: false,
+        now: input.now,
+      }),
+    );
+  }
+  return statements;
 }
 
 /**
@@ -187,7 +229,7 @@ export async function addAlias(
       .run();
   } catch (error) {
     // 上の SELECT との間に同じパスを作られた場合。check-then-act の隙間を埋める。
-    if (isUniqueViolation(error)) return err({ code: 'path-taken' });
+    if (isPathTakenViolation(error)) return err({ code: 'path-taken' });
     throw error;
   }
   return ok(path);

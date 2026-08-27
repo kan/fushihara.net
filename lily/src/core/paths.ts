@@ -6,7 +6,7 @@
  * 各所に散らさないぶん、root mount の検証はユニットテストで済む。
  */
 import { err, ok, type Result } from './result.ts';
-import { isReservedSegment } from './routes/fixed.ts';
+import { isReservedSegment, ROUTE } from './routes/fixed.ts';
 
 /** パス全体の長さ上限。export 先のファイルシステムに書ける範囲に収める。 */
 const MAX_PATH_LENGTH = 200;
@@ -58,35 +58,48 @@ export function normalizePostPath(input: string): Result<string, PathError> {
   }
   if (decoded.includes('%')) return err({ code: 'percent-not-allowed' });
 
-  // export 先の macOS が NFD を返すので、往復で別物にならないよう NFC に寄せる。
-  const nfc = decoded.normalize('NFC');
-  if (CONTROL_CHARS.test(nfc)) return err({ code: 'control-character' });
-
   // 前後のスラッシュは入力ミスとして取り除く。連続スラッシュは黙って畳むと
   // 予測しにくいので、下の空セグメント検査で拒否する。
-  const trimmed = nfc.replace(/^\//, '').replace(/\/$/, '');
+  const trimmed = decoded.normalize('NFC').replace(/^\//, '').replace(/\/$/, '');
   if (trimmed === '') return err({ code: 'empty' });
   if (trimmed.length > MAX_PATH_LENGTH) return err({ code: 'too-long' });
 
-  const segments = trimmed.split('/');
-  for (const segment of segments) {
-    if (segment === '') return err({ code: 'empty-segment' });
-    if (segment === '.' || segment === '..') return err({ code: 'dot-segment', segment });
-    if (segment.length > MAX_SEGMENT_LENGTH) return err({ code: 'segment-too-long', segment });
-    if (FORBIDDEN_CHARS.test(segment)) return err({ code: 'forbidden-character', segment });
-    // Windows は末尾のドットと空白を落とすので、往復で別物になる。
-    if (/[.\s]$/.test(segment)) return err({ code: 'trailing-dot-or-space', segment });
-    const base = segment.split('.')[0] ?? segment;
-    if (WINDOWS_RESERVED.has(base.toUpperCase())) {
-      return err({ code: 'windows-reserved-name', segment });
-    }
+  const segments: string[] = [];
+  for (const raw of trimmed.split('/')) {
+    const segment = normalizeSegment(raw);
+    if (!segment.ok) return segment;
+    segments.push(segment.value);
   }
 
   // 予約判定は第 1 セグメントだけ。route が持っていくのはそこなので。
   const first = segments[0] as string;
   if (isReservedSegment(first)) return err({ code: 'reserved-path', segment: first });
 
-  return ok(trimmed);
+  return ok(segments.join('/'));
+}
+
+/**
+ * パスの 1 セグメント分の検査。**「URL セグメントとして安全か」の規則はここだけ。**
+ *
+ * `normalizePostPath` がセグメントごとに呼び、タグの slug (`core/slug.ts`) も
+ * 最後にこれを通す。規則を 2 本持つと、記事パスは弾かれて slug は通る、という
+ * 食い違いが黙って生まれる。
+ */
+export function normalizeSegment(input: string): Result<string, PathError> {
+  const segment = input.normalize('NFC');
+  if (segment === '') return err({ code: 'empty-segment' });
+  if (CONTROL_CHARS.test(segment)) return err({ code: 'control-character', segment });
+  if (segment === '.' || segment === '..') return err({ code: 'dot-segment', segment });
+  if (segment.length > MAX_SEGMENT_LENGTH) return err({ code: 'segment-too-long', segment });
+  if (segment.includes('/')) return err({ code: 'forbidden-character', segment });
+  if (FORBIDDEN_CHARS.test(segment)) return err({ code: 'forbidden-character', segment });
+  // Windows は末尾のドットと空白を落とすので、往復で別物になる。
+  if (/[.\s]$/.test(segment)) return err({ code: 'trailing-dot-or-space', segment });
+  const base = segment.split('.')[0] ?? segment;
+  if (WINDOWS_RESERVED.has(base.toUpperCase())) {
+    return err({ code: 'windows-reserved-name', segment });
+  }
+  return ok(segment);
 }
 
 /**
@@ -114,6 +127,7 @@ export type UrlsConfig = {
 
 export type MediaRef = { readonly public_id: string; readonly filename: string };
 export type TagRef = { readonly slug: string };
+/** ROUTE のキーなので、フィードの URL 名は ROUTE 側にしか無い。 */
 export type FeedKind = 'rss' | 'atom';
 
 /**
@@ -150,14 +164,17 @@ export function createUrls(config: UrlsConfig): Urls {
     mountPath,
     index: (o) => build('/', o),
     post: (canonicalPath, o) => build(`/${encodePath(canonicalPath)}/`, o),
-    tag: (tag, o) => build(`/tags/${encodeURIComponent(tag.slug)}/`, o),
+    tag: (tag, o) => build(`/${ROUTE.tags}/${encodeURIComponent(tag.slug)}/`, o),
     media: (media, o) =>
-      build(`/media/${encodeURIComponent(media.public_id)}/${encodeURIComponent(media.filename)}`, o),
-    feed: (kind, o) => build(`/${kind}.xml`, o),
-    preview: (token, o) => build(`/preview/${encodeURIComponent(token)}`, o),
-    admin: (sub, o) => build(sub === undefined ? '/admin/' : `/admin/${sub}`, o),
-    postsJson: (o) => build('/posts.json', o),
-    sitemap: (o) => build('/sitemap-index.xml', o),
+      build(
+        `/${ROUTE.media}/${encodeURIComponent(media.public_id)}/${encodeURIComponent(media.filename)}`,
+        o,
+      ),
+    feed: (kind, o) => build(`/${ROUTE[kind]}`, o),
+    preview: (token, o) => build(`/${ROUTE.preview}/${encodeURIComponent(token)}`, o),
+    admin: (sub, o) => build(sub === undefined ? `/${ROUTE.admin}/` : `/${ROUTE.admin}/${sub}`, o),
+    postsJson: (o) => build(`/${ROUTE.postsJson}`, o),
+    sitemap: (o) => build(`/${ROUTE.sitemap}`, o),
     asset: (filename, o) => build(`/${encodeURIComponent(filename)}`, o),
   };
 }

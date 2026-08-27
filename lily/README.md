@@ -35,8 +35,9 @@ seeds/        ローカルで画面を見るための中身。E2E のフィク�
 src/
   core/       将来 lily として切り出す部分（サイト固有を何も知らない）
     db/       Row 型とクエリ。SQL はここから出さない
-    paths.ts  mountPath と URL 生成、normalizePostPath
-    routes/   ルーティング定義（fixed.ts が予約パスの正本）
+    paths.ts  mountPath と URL 生成、normalizePostPath / normalizeSegment
+    slug.ts   タグ名 → slug（最後は normalizeSegment を通す）
+    routes/   ルーティング定義。fixed.ts が「予約パス」と「URL のセグメント名」の正本
   site/       fushihara.net 固有（レイアウト・CSS・文言）※これから
   admin/      Vue の管理画面 ※これから
 test/         Vitest
@@ -52,6 +53,20 @@ test/         Vitest
    画像は `./sample.png` の相対参照のまま保存し、公開 URL は描画時に解決する
 3. **`mountPath` は第一級の設定。** `/blog` にも root にもマウントできる。
    URL を組むのは `core/paths.ts` だけ
+
+## 1 箇所に閉じてあるもの
+
+同じ規則が 2 箇所にあると、片方だけ直した日に黙って食い違う。次は意図的に
+1 箇所へ寄せてある。
+
+| 何 | どこ |
+|---|---|
+| ルーティング（予約パスと URL のセグメント名） | `core/routes/fixed.ts` の `ROUTE` |
+| URL を組む場所 | `core/paths.ts`（`createUrls`） |
+| 「URL セグメントとして安全か」 | `core/paths.ts` の `normalizeSegment` |
+| 「公開記事とは何か」 | `core/db/posts.ts` の `PUBLISHED_WHERE` |
+| SELECT する列 | `core/db/types.ts`（Row 型から導出） |
+| 「記事は常に public_id で引ける」 | `core/db/post-paths.ts` |
 
 ## テストの方針
 
