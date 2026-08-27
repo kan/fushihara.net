@@ -6,6 +6,7 @@ import {
   findByPostAndFilename,
   getMediaByPublicId,
   listMediaByPost,
+  listMediaByPosts,
 } from '../../src/core/db/media.ts';
 import { db, resetDb } from './helpers.ts';
 
@@ -64,4 +65,19 @@ it('消すと R2 のキーを返す', async () => {
   expect(await deleteMedia(db, media.id)).toBe('posts/a/sample.png');
   expect(await getMediaByPublicId(db, media.public_id)).toBeNull();
   expect(await deleteMedia(db, media.id)).toBeNull();
+});
+
+it('id が 100 個を超えても引ける (D1 のバインドパラメータ上限)', async () => {
+  const postId = await createPostId('a');
+  await createMedia(db, {
+    postId,
+    filename: 'sample.png',
+    r2Key: 'posts/a/sample.png',
+    mime: 'image/png',
+    bytes: 1,
+  });
+
+  const ids = [postId, ...Array.from({ length: 250 }, (_, i) => postId + i + 1)];
+  expect((await listMediaByPosts(db, ids)).map((m) => m.filename)).toEqual(['sample.png']);
+  expect(await listMediaByPosts(db, [])).toEqual([]);
 });

@@ -11,7 +11,7 @@
  * **書き換えは開始タグの中だけ** (`mapOpenTags`)。HTML 全体に正規表現を掛けると、
  * コードブロックに書いた `<img src="./dog.png">` のような**本文**まで書き換わる。
  */
-import { mapOpenTags } from '../render/html.ts';
+import { mapOpenTags, rewriteUrlAttributes } from '../render/html.ts';
 
 export function toFeedHtml(html: string, postUrl: string): string {
   const base = new URL(postUrl);
@@ -23,12 +23,12 @@ export function toFeedHtml(html: string, postUrl: string): string {
  *
  * 記事内の相対リンク (`../../CONTRACT.md`) と脚注のアンカー (`#user-content-fn-x`) が
  * 対象。絶対 URL や `mailto:` / `data:` は `new URL()` がそのまま返すので素通しでよい。
+ *
+ * 属性の見方は placeholder の解決と同じ (`rewriteUrlAttributes`)。片方だけ狭いと、
+ * ページでは解決されるのにフィードでは相対のまま、という食い違いが生まれる。
  */
 function absolutizeUrls(tag: string, base: URL): string {
-  return tag.replace(/\s(src|href)="([^"]*)"/g, (whole, attribute: string, value: string) => {
-    const resolved = resolve(value, base);
-    return resolved === null ? whole : ` ${attribute}="${resolved}"`;
-  });
+  return rewriteUrlAttributes(tag, (value) => resolve(value, base));
 }
 
 /** 解決できない値は書き換えずに残す (壊すより素通しの方が実害が小さい)。 */

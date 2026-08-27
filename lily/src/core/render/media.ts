@@ -8,30 +8,8 @@
 import { visit } from 'unist-util-visit';
 import type { Element, Root } from 'hast';
 import type { MediaRef } from '../paths.ts';
-import { mapOpenTags } from './html.ts';
+import { mapOpenTags, rewriteUrlAttributes, URL_ATTRIBUTES } from './html.ts';
 import { mediaPlaceholder } from './placeholder.ts';
-
-/** URL を持つ属性。フィードの絶対化と同じ範囲に揃えてある。 */
-const URL_ATTRIBUTES = ['src', 'href'] as const;
-
-/**
- * 開始タグの中の `src` / `href`。
- *
- * **大小文字とクォートの形を選ばない。** 記事に直接書く HTML は
- * `SRC=` でも `src='...'` でも `src=x.png` でもありうる。ここが狭いと、
- * 相対参照が解決されないまま配信物に残り、しかも `onUnresolved` にも
- * 出ないので警告にすら現れない (レビューで実測)。
- */
-const TAG_ATTRIBUTE = new RegExp(
-  `\\s(${URL_ATTRIBUTES.join('|')})\\s*=\\s*("[^"]*"|'[^']*'|[^\\s"'>]+)`,
-  'gi',
-);
-
-/** 属性値からクォートを外す。 */
-function unquote(value: string): string {
-  const first = value[0];
-  return (first === '"' || first === "'") && value.endsWith(first) ? value.slice(1, -1) : value;
-}
 
 export type MediaPluginOptions = {
   /** この記事に紐づく添付。`filename` で突き合わせる。 */
@@ -72,13 +50,7 @@ export function rehypeMedia(options: MediaPluginOptions) {
         // 生 HTML はパースせず文字列のまま運んでいるので、ここだけ文字列で扱う。
         // 書き換えるのは開始タグの中だけ (`mapOpenTags`)。
         const raw = node as { value: string };
-        raw.value = mapOpenTags(raw.value, (tag) =>
-          tag.replace(TAG_ATTRIBUTE, (whole, attribute: string, value: string) => {
-            // placeholder には `"` が入らないので、書き換えるときは必ず二重引用符で囲める
-            const placeholder = toPlaceholder(unquote(value));
-            return placeholder === null ? whole : ` ${attribute}="${placeholder}"`;
-          }),
-        );
+        raw.value = mapOpenTags(raw.value, (tag) => rewriteUrlAttributes(tag, toPlaceholder));
       }
     });
   };

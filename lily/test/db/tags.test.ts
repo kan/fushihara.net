@@ -170,6 +170,17 @@ describe('タグでの絞り込み', () => {
     expect(await getTagsForPosts(db, [])).toEqual([]);
   });
 
+  it('id が 100 個を超えても引ける (D1 のバインドパラメータ上限)', async () => {
+    // `IN (?1, ?2, …)` を id の数だけ並べると 101 本目で 500 になる。
+    // 件数が増えて初めて壊れるので、その日まで誰も気付けない。
+    const post = await create('a');
+    await setPostTags(db, post.id, ['dev']);
+
+    const ids = [post.id, ...Array.from({ length: 250 }, (_, i) => post.id + i + 1)];
+    const rows = await getTagsForPosts(db, ids);
+    expect(rows.map((r) => r.name)).toEqual(['dev']);
+  });
+
   it('孤児タグを掃除できる', async () => {
     const post = await create('a');
     await setPostTags(db, post.id, ['dev']);

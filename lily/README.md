@@ -14,6 +14,7 @@
 - `src/core/render/`（CommonMark + GFM、Shiki、相対参照 → placeholder）
 - 公開側の SSR（一覧・記事・タグ・404・alias 308・下書きプレビュー）と CSS の移植
 - フィード（RSS 維持 + Atom 追加）、sitemap、favicon / ogp の配信
+- 添付の配信（R2 の原本をそのまま返す。Cloudflare Images はこれから）
 
 まだデプロイしていない（route を張っていない）。ローカルでは動く。
 
@@ -43,7 +44,8 @@ src/
     slug.ts   タグ名 → slug（最後は normalizeSegment を通す）
     feed/     RSS 2.0 と Atom。どちらも全文
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
-    routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、feeds.ts が機械向け
+    routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、
+              feeds.ts が機械向け、media.ts が添付
     theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
   site/       fushihara.net 固有（レイアウト・CSS・文言・OGP・クライアント JS）
   admin/      Vue の管理画面 ※これから
@@ -102,6 +104,8 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 | 見た目・文言・OGP（差し替え点） | `core/theme.ts` の `Theme` を `site/` が実装 |
 | キャッシュ方針 | `core/routes/cache.ts` |
 | 保存済み HTML と描画の使い分け | `core/delivery.ts` |
+| 開始タグの中の `src` / `href` の書き換え | `core/render/html.ts` の `rewriteUrlAttributes` |
+| D1 のバインドパラメータ上限（100）への対処 | `core/db/chunk.ts` |
 
 ## フィード
 
@@ -115,6 +119,16 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 - **RSS の `guid` は記事の URL のまま。** `urn:uuid:` に変えると、既存の
   購読者全員に全記事が「新着」として配り直される。Atom は新設なので
   `urn:uuid:<public_id>` を使える（パスを変えても同じ記事として扱われる）
+
+## 増えてから壊れるもの
+
+件数が少ないうちは通ってしまうので、意識して見張る。
+
+- **D1 のバインドパラメータは 1 クエリ 100 個まで。** `IN (?1, ?2, …)` を id の
+  数だけ並べるクエリは `core/db/chunk.ts` を通す
+- **一覧とフィードは今のところ全件を返す。** 記事が増えたらページングと
+  フィードの件数上限が要る（レスポンスサイズと、`body_html` が無い記事の
+  描画コストが効いてくる）
 
 ## テストの方針
 

@@ -5,6 +5,7 @@
  * 対応だけを持つ。配信 URL は `urlForMedia()` が `public_id` から組む。
  */
 import { newPublicId, nowIso } from '../ids.ts';
+import { queryInChunks } from './chunk.ts';
 import { MEDIA_COLUMNS, type MediaRow } from './types.ts';
 
 const MEDIA_SELECT = MEDIA_COLUMNS.join(', ');
@@ -81,15 +82,16 @@ export async function listMediaByPosts(
   db: D1Database,
   postIds: number[],
 ): Promise<MediaRow[]> {
-  if (postIds.length === 0) return [];
-  const placeholders = postIds.map((_, i) => `?${i + 1}`).join(', ');
-  const { results } = await db
-    .prepare(
-      `SELECT ${MEDIA_SELECT} FROM media WHERE post_id IN (${placeholders}) ORDER BY filename ASC`,
-    )
-    .bind(...postIds)
-    .all<MediaRow>();
-  return results;
+  return await queryInChunks(postIds, async (chunk) => {
+    const placeholders = chunk.map((_, i) => `?${i + 1}`).join(', ');
+    const { results } = await db
+      .prepare(
+        `SELECT ${MEDIA_SELECT} FROM media WHERE post_id IN (${placeholders}) ORDER BY filename ASC`,
+      )
+      .bind(...chunk)
+      .all<MediaRow>();
+    return results;
+  });
 }
 
 /**

@@ -3,6 +3,7 @@
  */
 import { err, ok, type Result } from '../result.ts';
 import { slugifyTag } from '../slug.ts';
+import { queryInChunks } from './chunk.ts';
 import { PUBLISHED_WHERE } from './posts.ts';
 import { qualify, TAG_COLUMNS, type PostTagRow, type TagRow, type TagWithCountRow } from './types.ts';
 
@@ -42,18 +43,19 @@ export async function getTagsForPost(db: D1Database, postId: number): Promise<Ta
 
 /** 一覧ページで N+1 を避けるためのまとめ取得。 */
 export async function getTagsForPosts(db: D1Database, postIds: number[]): Promise<PostTagRow[]> {
-  if (postIds.length === 0) return [];
-  const placeholders = postIds.map((_, i) => `?${i + 1}`).join(', ');
-  const { results } = await db
-    .prepare(
-      `SELECT pt.post_id, ${qualify(TAG_COLUMNS, 't')}
-         FROM tags t JOIN post_tags pt ON pt.tag_id = t.id
-        WHERE pt.post_id IN (${placeholders})
-        ORDER BY t.name ASC`,
-    )
-    .bind(...postIds)
-    .all<PostTagRow>();
-  return results;
+  return await queryInChunks(postIds, async (chunk) => {
+    const placeholders = chunk.map((_, i) => `?${i + 1}`).join(', ');
+    const { results } = await db
+      .prepare(
+        `SELECT pt.post_id, ${qualify(TAG_COLUMNS, 't')}
+           FROM tags t JOIN post_tags pt ON pt.tag_id = t.id
+          WHERE pt.post_id IN (${placeholders})
+          ORDER BY t.name ASC`,
+      )
+      .bind(...chunk)
+      .all<PostTagRow>();
+    return results;
+  });
 }
 
 export type SetPostTagsError = {

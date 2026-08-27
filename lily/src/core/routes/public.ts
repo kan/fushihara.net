@@ -30,6 +30,16 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
   // 中身が変わるのはデプロイのときだけなので、ETag は起動時に 1 度だけ組む。
   const stylesheetETag = `"${hash(theme.stylesheet)}"`;
 
+  /**
+   * 308 の飛び先。**クエリ文字列を落とさない。**
+   *
+   * 計測パラメータ付きの共有リンク (`?utm_source=…`) は末尾スラッシュ補正に
+   * 引っかかりやすく、ここで落とすと計測が丸ごと消える (本体側で同種の事故を
+   * 踏んでいる)。
+   */
+  const redirectTo = (path: string, requestUrl: string): string =>
+    `${path}${new URL(requestUrl).search}`;
+
   const context = (canonicalUrl: string | null): PageContext => ({
     site: config.site,
     urls,
@@ -40,7 +50,7 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
 
   // マウント直下のスラッシュ無し。`/blog` → `/blog/`
   if (mount !== '') {
-    app.get(mount, (c) => c.redirect(urls.index(), 308));
+    app.get(mount, (c) => c.redirect(redirectTo(urls.index(), c.req.url), 308));
   }
 
   app.get(urls.index(), async (c) => {
@@ -55,6 +65,13 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
   });
 
   app.get(urls.stylesheet(), (c) => {
+    // 中身が変わるのはデプロイのときだけ。返すだけで見ないと ETag は飾りになる。
+    if (c.req.header('If-None-Match') === stylesheetETag) {
+      return new Response(null, {
+        status: 304,
+        headers: { 'Cache-Control': LONG_EDGE, ETag: stylesheetETag },
+      });
+    }
     return c.body(theme.stylesheet, 200, {
       'Content-Type': 'text/css; charset=utf-8',
       'Cache-Control': LONG_EDGE,
@@ -63,7 +80,7 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
   });
 
   app.get(`${mount}/${ROUTE.tags}/:slug`, (c) =>
-    c.redirect(urls.tag({ slug: c.req.param('slug') }), 308),
+    c.redirect(redirectTo(urls.tag({ slug: c.req.param('slug') }), c.req.url), 308),
   );
 
   app.get(`${mount}/${ROUTE.tags}/:slug/`, async (c) => {
@@ -109,7 +126,6 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
     // ワイルドカードは名前付きパラメータとして取れないので、パスから直接切り出す。
     // mount とその後ろのスラッシュを落とした残りが記事のパス。
     const requested = c.req.path.slice(mount.length + 1);
-    const hadTrailingSlash = requested.endsWith('/');
 
     // リクエストのパスも保存時と同じ規則で正規化する。ここを別実装にすると、
     // 保存できたのに引けない (あるいはその逆の) パスが生まれる。
@@ -123,10 +139,14 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
     // リダイレクトの有無で存在が分かってしまう。
     if (resolved.status !== 'published') return await notFound();
 
-    // alias・大小文字違い・末尾スラッシュ無しをまとめて canonical へ寄せる。
-    // 判定は正規化後の値で行うので、308 が繰り返すことはない。
-    if (!hadTrailingSlash || resolved.canonical_path !== normalized.value) {
-      return c.redirect(urls.post(resolved.canonical_path), 308);
+    // alias・大小文字違い・末尾スラッシュ無し・連続スラッシュ・エンコードの揺れを
+    // まとめて canonical へ寄せる。**比較はリクエストのパスそのもの**で行う。
+    // 正規化後の値だけを見ると、`//now/` のように正規化で消える差が残ってしまい、
+    // 同じ記事が 2 つの URL で 200 を返す。飛び先は自分自身と一致するので、
+    // 308 が繰り返すことはない。
+    const canonicalPath = urls.post(resolved.canonical_path);
+    if (c.req.path !== canonicalPath) {
+      return c.redirect(redirectTo(canonicalPath, c.req.url), 308);
     }
 
     const stored = await storedOrRenderedHtml(resolved, () => listMediaByPost(db, resolved.id));
@@ -143,8 +163,6 @@ export function publicRoutes(config: LilyConfig): Hono<Env> {
       'Cache-Control': SHORT_EDGE,
     });
   });
-
-  app.notFound(() => notFound());
 
   return app;
 }

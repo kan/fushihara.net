@@ -111,6 +111,21 @@ describe('RSS', () => {
     expect(body).not.toContain('lily-media://');
   });
 
+  it('生 HTML で書いた相対 URL も絶対化する', async () => {
+    // 属性の見方が狭いと、ページでは解決されるのにフィードでは相対のまま残る。
+    await seedPost({
+      path: 'start-blog',
+      bodyMd: `<a href='../other/'>一重引用符</a>\n\n<a HREF="../upper/">大文字</a>\n`,
+      skipRender: true,
+    });
+    const body = bodyOf(await (await get('/blog/rss.xml')).text(), 'content:encoded');
+
+    expect(body).toContain(`href="${SITE}/blog/other/"`);
+    // 属性名の大小はそのまま残す (書き換えるのは値だけ)
+    expect(body).toMatch(new RegExp(`href="${SITE}/blog/upper/"`, 'i'));
+    expect(body).not.toContain('../');
+  });
+
   it('本文が CSS 変数に頼らない', async () => {
     // リーダーはこのブログのスタイルシートを読まないので、変数に入れた色は解決されない。
     await seedRichPost();

@@ -1,4 +1,6 @@
+import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { lily } from '../../src/config.ts';
 import { addAlias } from '../../src/core/db/post-paths.ts';
 import { updatePost } from '../../src/core/db/posts.ts';
 import { createMedia } from '../../src/core/db/media.ts';
@@ -86,6 +88,27 @@ describe('記事', () => {
     expect(res.headers.get('location')).toBe('/blog/Start-Blog/');
   });
 
+  it('308 でクエリ文字列を落とさない', async () => {
+    // 計測パラメータ付きの共有リンクは末尾スラッシュ補正に引っかかりやすい。
+    // ここで落とすと計測が丸ごと消える (本体側で同種の事故を踏んでいる)。
+    await seedPost({ path: 'now' });
+    const post = await get('/blog/now?utm_source=twitter');
+    expect(post.headers.get('location')).toBe('/blog/now/?utm_source=twitter');
+
+    const index = await get('/blog?utm_source=twitter');
+    expect(index.headers.get('location')).toBe('/blog/?utm_source=twitter');
+
+    const tag = await get('/blog/tags/dev?utm_source=twitter');
+    expect(tag.headers.get('location')).toBe('/blog/tags/dev/?utm_source=twitter');
+  });
+
+  it('連続スラッシュも canonical へ寄せる (同じ記事が 2 つの URL で出ない)', async () => {
+    await seedPost({ path: 'now' });
+    const res = await get('/blog//now/');
+    expect(res.status).toBe(308);
+    expect(res.headers.get('location')).toBe('/blog/now/');
+  });
+
   it('308 の飛び先はもう 308 しない', async () => {
     await seedPost({ path: 'now' });
     const first = await get('/blog/now');
@@ -106,7 +129,7 @@ describe('記事', () => {
     expect(body).toContain('<h2>あとから描画</h2>');
   });
 
-  it('本文の相対参照が配信 URL に解決される', async () => {
+  it('本文の相対参照が配信 URL に解決され、その URL が実際に配れる', async () => {
     const post = await seedPost({
       path: 'with-image',
       bodyMd: '![図](./sample.png)\n',
@@ -117,12 +140,20 @@ describe('記事', () => {
       filename: 'sample.png',
       r2Key: 'posts/with-image/sample.png',
       mime: 'image/png',
-      bytes: 10,
+      bytes: 3,
     });
+    await env.MEDIA.put(media.r2_key, 'png');
 
     const body = await (await get('/blog/with-image/')).text();
-    expect(body).toContain(`src="/blog/media/${media.public_id}/sample.png"`);
+    const url = `/blog/media/${media.public_id}/sample.png`;
+    expect(body).toContain(`src="${url}"`);
     expect(body).not.toContain('lily-media://');
+
+    // URL を出すだけでは足りない。その URL が本当に画像を返すところまで見る。
+    const image = await get(url);
+    expect(image.status).toBe(200);
+    expect(image.headers.get('content-type')).toBe('image/png');
+    expect(await image.text()).toBe('png');
   });
 });
 
@@ -208,6 +239,16 @@ describe('スタイルシート', () => {
     expect(body).toContain('--bg:');
     // blog.css 側
     expect(body).toContain('.prose pre.shiki');
+  });
+
+  it('If-None-Match が一致したら 304 を返す', async () => {
+    const etag = (await get('/blog/styles.css')).headers.get('etag')!;
+    const res = await lily.fetch(
+      new Request(`${SITE}/blog/styles.css`, { headers: { 'If-None-Match': etag } }),
+      env,
+    );
+    expect(res.status).toBe(304);
+    expect(await res.text()).toBe('');
   });
 });
 
