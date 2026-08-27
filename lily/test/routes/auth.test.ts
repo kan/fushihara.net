@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test';
 import { afterEach, describe, expect, it } from 'vitest';
 import { lily } from '../../src/config.ts';
-import { get, getRoot, setStubUser, SITE } from './helpers.ts';
+import { get, getRoot, getRootRequest, ROOT_SITE, setStubUser, SITE } from './helpers.ts';
 
 afterEach(() => setStubUser(null));
 
@@ -59,5 +59,51 @@ describe('本番の設定 (Cloudflare Access)', () => {
     setStubUser({ id: 'user-1' });
     const res = await lily.fetch(new Request(`${SITE}/blog/api/me`), env);
     expect(res.status).toBe(403);
+  });
+});
+
+describe('CSRF', () => {
+  /**
+   * Cloudflare Access の CF_Authorization は Cookie なので、他所のサイトから
+   * 送られたリクエストにも付いて回る。認証だけでは、ログイン中の管理者が
+   * 細工したページを開くだけで書き込みが起きてしまう。
+   */
+  function post(path: string, headers: Record<string, string> = {}): Promise<Response> {
+    setStubUser({ id: 'admin' });
+    return getRootRequest(new Request(`${ROOT_SITE}${path}`, { method: 'POST', headers }));
+  }
+
+  it('body を読まない口も、別サイトからは叩けない', async () => {
+    // ここが素通しだと、記事の取り下げやプレビュー URL の発行を仕込まれる。
+    const evil = await post('/api/rerender', { Origin: 'https://evil.example.com' });
+    expect(evil.status).toBe(403);
+  });
+
+  it('Origin が無いフォーム送信も弾く', async () => {
+    expect((await post('/api/rerender')).status).toBe(403);
+  });
+
+  it('multipart も弾く (CORS の preflight が要らない形)', async () => {
+    const form = new FormData();
+    form.append('file', new File(['x'], 'a.png', { type: 'image/png' }));
+    setStubUser({ id: 'admin' });
+    const res = await getRootRequest(
+      new Request(`${ROOT_SITE}/api/posts/x/media`, {
+        method: 'POST',
+        body: form,
+        headers: { Origin: 'https://evil.example.com' },
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('同一オリジンからは通る', async () => {
+    const res = await post('/api/rerender', { Origin: ROOT_SITE });
+    expect(res.status).toBe(200);
+  });
+
+  it('読み取りは Origin が無くても通る', async () => {
+    setStubUser({ id: 'admin' });
+    expect((await getRoot('/api/me')).status).toBe(200);
   });
 });

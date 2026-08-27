@@ -10,6 +10,7 @@ import { theme } from '../../src/site/theme.ts';
 import { db } from '../db/helpers.ts';
 
 export const SITE = 'https://fushihara.net';
+export const ROOT_SITE = 'https://blog.example.com';
 
 /** `/blog` にマウントした本番同等のアプリ。 */
 export async function get(path: string): Promise<Response> {
@@ -38,7 +39,7 @@ const stubAuth: AuthAdapter = {
 /** root mount。core に `/blog` が焼き付いていないことを見るために使う。 */
 const rootApp = createLily({
   site: {
-    url: 'https://blog.example.com',
+    url: ROOT_SITE,
     name: 'ルート',
     description: 'root mount',
     author: 'someone',
@@ -99,7 +100,11 @@ export async function seedPost(options: SeedOptions = {}): Promise<PostRow> {
  */
 export async function api(path: string, init?: RequestInit): Promise<Response> {
   setStubUser({ id: 'admin', email: 'kan@example.com' });
-  return await getRootRequest(new Request(`https://blog.example.com${path}`, init));
+  const request = new Request(`https://blog.example.com${path}`, init);
+  // ブラウザは同一オリジンでも非 GET には Origin を付ける。CSRF の防御が
+  // それを見ているので、テストのリクエストも同じ形にする。
+  if (!request.headers.has('Origin')) request.headers.set('Origin', ROOT_SITE);
+  return await getRootRequest(request);
 }
 
 /** レスポンスの JSON。テストでは形を都度書かずに読む。 */

@@ -6,6 +6,7 @@
  * リテラルのまま残るので、管理画面は `hc<LilyApi>('<mount>/api')` だけで済む)。
  */
 import { Hono } from 'hono';
+import { csrf } from 'hono/csrf';
 import { createApi, type ApiEnv } from '../api/index.ts';
 import type { LilyBindings, LilyConfig } from '../config.ts';
 import { createUrls } from '../paths.ts';
@@ -23,10 +24,24 @@ export function apiRoutes<Bindings extends LilyBindings>(
   const app = new Hono<AppEnv<Bindings>>();
   const mount = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath }).mountPath;
 
+  /**
+   * **認証だけでは足りない。**
+   *
+   * Cloudflare Access の `CF_Authorization` は Cookie なので、他所のサイトから
+   * 送られたリクエストにも付いて回る。JSON を受け取る口は Content-Type が
+   * `application/json` でないと通らない (= preflight が要る) ので偶然守られて
+   * いるが、body を読まない口 (`unpublish` / `preview` / `rerender`) と
+   * multipart の口 (`media`) は素のフォームから叩ける。ログイン中の管理者が
+   * 細工したページを開くだけで、記事の取り下げやプレビュー URL の発行が起きる。
+   *
+   * `csrf()` は Origin を見て別サイトからの書き込みを弾く。
+   */
+  const protect = [csrf(), requireAuth(config.auth, jsonForbidden)] as const;
+
   // **中身より先に掛ける。** 未実装のパスも 403 で返るので、route を足したときに
   // 保護を忘れる余地が無い。
-  app.use(`${mount}/${ROUTE.api}/*`, requireAuth(config.auth, jsonForbidden));
-  app.use(`${mount}/${ROUTE.admin}/*`, requireAuth(config.auth, textForbidden));
+  app.use(`${mount}/${ROUTE.api}/*`, ...protect);
+  app.use(`${mount}/${ROUTE.admin}/*`, csrf(), requireAuth(config.auth, textForbidden));
 
   app.route(`${mount}/${ROUTE.api}`, createApi(config));
 
