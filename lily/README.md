@@ -11,6 +11,7 @@
 - D1 のスキーマとマイグレーション（`STRICT` / `CHECK` / index）
 - `src/core/db/` の query layer（記事・パス・添付・タグ）
 - `src/core/paths.ts`（`mountPath` と URL 生成、`normalizePostPath`、予約パス）
+- `src/core/render/`（CommonMark + GFM、Shiki、相対参照 → placeholder）
 
 まだ何も配信していない。`src/index.ts` は 404 を返すだけの入口。
 
@@ -37,6 +38,7 @@ src/
     db/       Row 型とクエリ。SQL はここから出さない
     paths.ts  mountPath と URL 生成、normalizePostPath / normalizeSegment
     slug.ts   タグ名 → slug（最後は normalizeSegment を通す）
+    render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
     routes/   ルーティング定義。fixed.ts が「予約パス」と「URL のセグメント名」の正本
   site/       fushihara.net 固有（レイアウト・CSS・文言）※これから
   admin/      Vue の管理画面 ※これから
@@ -54,6 +56,29 @@ test/         Vitest
 3. **`mountPath` は第一級の設定。** `/blog` にも root にもマウントできる。
    URL を組むのは `core/paths.ts` だけ
 
+## 描画（`core/render/`）
+
+```
+body_md ──renderMarkdown()──▶ body_html（保存。mount を知らない）
+                                 └──resolveMediaUrls()──▶ 配信する HTML
+```
+
+保存する HTML には `lily-media://<public_id>/<filename>` という placeholder が
+入っていて、実際の URL は配信時に組む。**この分離があるので `mountPath` を
+変えても `body_html` の再生成が要らない**（`/blog-next` と `/blog` が同じ D1 を
+見て同時に正しい URL を出せる）。
+
+- **`rehype-raw` は使わない。** HTML を parse5 で読み直すので、表の中の改行が
+  foster parenting で表の外へ追い出される（`</pre>` と `<table>` の間に空行が
+  14 行並ぶ）。生 HTML は raw ノードのまま最後まで運ぶ
+- **Shiki は `defaultColor: false` を維持する。** 色を直接書かせず
+  `--shiki-light` / `--shiki-dark` だけを出させて CSS の `light-dark()` に渡す。
+  `'light'` にすると `!important` が要るようになる
+- 載せる言語は `render/highlighter.ts` の `LANGS`。**バンドルに入る**ので、
+  書かない言語は入れない（現在 18 言語 + 2 テーマで Worker 全体が gzip 267 KiB）
+- Astro は `pre.astro-code` を出していたが、Shiki 素のクラス名は `pre.shiki`。
+  CSS を移植するときに読み替えること
+
 ## 1 箇所に閉じてあるもの
 
 同じ規則が 2 箇所にあると、片方だけ直した日に黙って食い違う。次は意図的に
@@ -67,6 +92,7 @@ test/         Vitest
 | 「公開記事とは何か」 | `core/db/posts.ts` の `PUBLISHED_WHERE` |
 | SELECT する列 | `core/db/types.ts`（Row 型から導出） |
 | 「記事は常に public_id で引ける」 | `core/db/post-paths.ts` |
+| 生成済み HTML の後処理を開始タグに限る | `core/render/html.ts` の `mapOpenTags` |
 
 ## テストの方針
 
