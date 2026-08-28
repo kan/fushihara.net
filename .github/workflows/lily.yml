@@ -70,6 +70,12 @@ jobs:
       # wrangler.jsonc の assets.directory が dist/ を指すので、これが無いと
       # デプロイする中身が無い (静的アセットのコピー + 管理画面のビルド)。
       - run: npm run build
+      # TODO: 一時的な切り分け。CI のトークンが D1 を触れるかを見る
+      # (トークンの値は出ず、権限の一覧だけが出る)。原因が分かったら消すこと。
+      - run: npx wrangler whoami -c ./wrangler.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # **マイグレーションはデプロイより先。** 逆にすると、新しい列を読むコードが
       # 古いスキーマに当たる時間ができる。裏を返すと migrations/ は追加のみで
       # 書くという前提で、列や表を落とすときはこの順序では守れない
