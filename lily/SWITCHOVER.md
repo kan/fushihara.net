@@ -26,7 +26,17 @@
   管理画面の入口を守るなら**ワイルドカード無しの `blog/admin`** を使う
 - **同じ route を 2 つの Worker が持てない。** Astro から外してから lily に付ける
   という順序が強制され、**その間 `/blog*` は本体 Worker に落ちて 404 になる**
-  （素の 404。`dist/404.html` が無いため）。デプロイ 1 回ぶんなので分単位
+  （素の 404。`dist/404.html` が無いため）。分単位
+- **`wrangler.jsonc` から `routes` を消しても route は外れない。** wrangler は設定に
+  無い既存の route をそのまま残す。**2026-08-28 の 1 回目の試行はこれで失敗した**
+  （Astro が `/blog*` を持ち続け、lily は route を取れず、切り替えが起きないまま
+  Astro だけが再デプロイされた）。**route の削除は dashboard で明示的に行う**
+- **Astro を `npx wrangler deploy` で出さない。必ず `npm run deploy`。**
+  `blog/dist` には前回の E2E のフィクスチャビルドが残っていることがあり、
+  それを本番に出すと「描画サンプル」「同日 A」といった作り物が公開される。
+  **2026-08-28 に実際にやって 12 分間配信した**（RSS も含む）。
+  今は `blog/wrangler.jsonc` の `build.command` が `check:no-fixtures` を
+  呼ぶので `wrangler deploy` でも止まるが、**手順としては `npm run deploy`**
 - **`ACCESS_AUD` は 1 つしか持てない。** `core/auth/access.ts` が単一の aud で
   検証するので、**Access のアプリを 2 つに分けない**。1 つのアプリに
   `/blog/admin` と `/blog/api` の 2 本を持たせる（AUD はアプリ単位）
@@ -75,33 +85,50 @@ curl -s -o /dev/null -w '%{http_code}\n' https://fushihara.net/blog/rss.xml
 
 ## 2. route の差し替え
 
-**ここから `/blog*` が落ちる。** 2 つのデプロイを続けて行う。
+**ここから `/blog*` が落ちる。**
+
+### 2-1. Astro の route を削除（dashboard）
+
+**設定ファイルから消すのでは外れない。** Workers & Pages → `fushihara-net-blog` →
+Settings → Domains & Routes → `fushihara.net/blog*` を削除。
+
+**Astro を再デプロイしない。** ここで `wrangler deploy` を叩く理由は無く、
+叩くと `blog/dist` に残ったフィクスチャビルドを出す危険だけがある。
+
+確認（route が本当に外れたか）:
 
 ```bash
-# 2-1. Astro から route を外す
-#      blog/wrangler.jsonc の "routes" を削除してから
-cd blog && npx wrangler deploy -c ./wrangler.jsonc
+# 本体 Worker に落ちて素の 404 になる。まだ記事が出るなら route が残っている
+curl -s -o /dev/null -w '%{http_code}\n' https://fushihara.net/blog/start-blog/
+```
 
-# 2-2. lily を /blog* に載せ替える
-#      lily/wrangler.jsonc  routes: fushihara.net/blog*
-#      lily/src/site/meta.ts MOUNT_PATH = '/blog'
-cd ../lily && npm run typecheck && npm test && npm run test:e2e
+- [ ] `/blog/start-blog/` が **404**（200 なら Astro がまだ持っている。先へ進まない）
+
+### 2-2. lily を `/blog*` に載せ替える
+
+```bash
+# lily/wrangler.jsonc  routes: fushihara.net/blog*
+# lily/src/site/meta.ts MOUNT_PATH = '/blog'
+cd lily && npm run typecheck && npm test && npm run test:e2e
 npm run build && npx wrangler deploy -c ./wrangler.jsonc
 ```
 
 - [ ] `MOUNT_PATH` と `routes` を**セットで**変えた（片方だけだと 404 になる）
+- [ ] deploy の出力に `fushihara.net/blog*` が**実際に出た**
+      （出ていなければ route が取れていない。2-1 に戻る）
 - [ ] E2E が `/blog` で通る（mount は `meta.ts` の 1 行から引いている）
 
 確認:
 
 ```bash
 while read -r u; do printf '%s ' "$(curl -s -o /dev/null -w '%{http_code}' "$u")"; echo "$u"; done < /tmp/before-urls.txt
-curl -s https://fushihara.net/blog/rss.xml | grep -c '<item>'
-curl -s -o /dev/null -w '%{http_code}\n' https://fushihara.net/blog/favicon/
+curl -s https://fushihara.net/blog/rss.xml | grep -o '<title>[^<]*</title>' | head
+curl -s -o /dev/null -w '%{http_code}\n' https://fushihara.net/blog/posts.json   # lily なら 200
 ```
 
 - [ ] `/tmp/before-urls.txt` が**全部 200**
-- [ ] RSS の件数が切り替え前と同じ
+- [ ] RSS の題が実記事（「描画サンプル」「同日 A」が出たらフィクスチャ。即ロールバック）
+- [ ] `/blog/posts.json` が 200（Astro には無い口なので、lily が配っている証拠）
 - [ ] 画像（`/blog/media/...`）が出る
 - [ ] `/blog/admin/` が Access のログインへ飛び、ログインすると開く
 - [ ] `/blog/` が Access に**掛からない**
@@ -158,7 +185,7 @@ npm run typecheck && npm test && npm run test:e2e && npm run deploy
 | いつ | 何をする |
 |---|---|
 | 手順 1 で公開側が 302 になった | Access のパスから広すぎる行を消す（それだけで戻る） |
-| 手順 2 で `/blog` が壊れた | lily の route を `/blog-next*` に戻して deploy → Astro に `/blog*` を戻して deploy |
+| 手順 2 で `/blog` が壊れた | dashboard で `/blog*` を `fushihara-net-blog` に戻す → `cd blog && npm run deploy`（**`npx wrangler deploy` ではない**）→ lily の route を `/blog-next*` に戻して deploy |
 | 手順 3 で付箋が空になった | `services` の `BLOG` を `fushihara-net-blog` に戻して deploy |
 
 **D1 と R2 は触らない。** 戻しても記事は消えない。

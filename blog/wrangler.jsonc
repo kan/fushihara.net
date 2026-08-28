@@ -23,5 +23,10 @@
   "routes": [
     { "pattern": "fushihara.net/blog*", "zone_name": "fushihara.net" }
   ],
+  // **配信物の検査を wrangler 側に置く。** npm run deploy にだけ入れていると、
+  // `npx wrangler deploy` を直に叩いたときに素通りする。実際にそれをやって、
+  // E2E のフィクスチャビルドを 12 分間本番に出した (2026-08-28)。
+  "build": { "command": "npm run check:no-fixtures" },
+
   "observability": { "enabled": true }
 }

@@ -562,7 +562,10 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 
   ビルド側で `cacheDir` を分けているのは、**dev サーバーを立てたまま E2E を回しても
   互いを壊さない**ようにするため（捨てるだけの方式では、動いている dev を守れない）。
-  最後の砦として `npm run deploy` と CI が `check:no-fixtures` で配信物を検査する
+  最後の砦として `check:no-fixtures` が配信物を検査する。**`wrangler.jsonc` の
+  `build.command` から呼んでいる**ので、`npx wrangler deploy` を直に叩いても止まる
+  （`npm run deploy` にだけ入れていたときに迂回して、E2E のフィクスチャビルドを
+  12 分間本番に出した）
 - **frontmatter は「キーはあるが値が空」を省略と同じ扱いにしてある。** YAML では
   `description:` が `null` になり、素の zod だと `Expected string, received object` で
   落ちる。テンプレートを埋めながら書けば必ず踏むので `blankAsUnset()` で吸収している
