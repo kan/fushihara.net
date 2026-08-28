@@ -69,9 +69,12 @@ describe('保護境界', () => {
 });
 
 describe('本番の設定 (Cloudflare Access)', () => {
-  it('ACCESS_TEAM / ACCESS_AUD が空なら必ず拒否する (fail closed)', async () => {
-    // 設定を入れ忘れたまま動かしても、管理画面が開いてしまうことはない。
-    expect(env.ACCESS_TEAM).toBe('');
+  it('Access の設定が無くても実ドメインからは開かない (fail closed)', async () => {
+    // **テストとローカルはここが空。** `.dev.vars` が wrangler.jsonc の値
+    // (本番の Access) を打ち消しているので、選ばれるのは localhostOnly。
+    // Access を手元で再現できない以上この経路が要るが、**実ドメインからは
+    // 必ず拒否する**ので、設定を入れ忘れたまま公開しても管理画面は開かない。
+    expect(authMode(env)).toBe('localhost');
     expect((await get(`${MOUNT}/api/me`)).status).toBe(403);
     expect((await get(`${MOUNT}/admin/`)).status).toBe(403);
   });

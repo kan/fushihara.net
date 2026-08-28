@@ -25,7 +25,9 @@
 - Vue の管理画面（一覧・編集・プレビュー・画像 D&D・パス変更・プレビュー URL・
   公開日時・タグ補完・ページング）
 
-まだデプロイしていない（route を張っていない）。ローカルでは動く。
+**`/blog-next*` で並走中。** 実記事 8 本を移行済みで、公開側・フィード・管理画面が
+本番の D1 / R2 / Access の上で動いている。切り替え（route を `/blog*` へ）はまだ。
+詳細は「`/blog-next` での並走」の節。
 
 ## コマンド
 
@@ -450,6 +452,47 @@ RSS の全文（`content:encoded`）は、XML として解析すれば上記以�
 `<img>` の `loading` / `decoding` / `width` / `height` は**埋めた**（上の
 「`<img>` の属性」）。Astro が付けていたものとの差は、寸法を読めない添付
 （AVIF や `viewBox` の無い SVG）で `width` / `height` が出ないことだけ。
+
+## `/blog-next` での並走
+
+`fushihara.net/blog-next*` に route を張り、Cloudflare Access で丸ごと守った状態で
+動かしている。**公開側もログインしないと見えない**ので、`/blog` と重複した内容が
+検索に載る余地が無い。切り替えのときに Access を `/blog/admin` と `/blog/api` へ絞る。
+
+mount を変えるのは `src/site/meta.ts` の `MOUNT_PATH` 1 行。テストも E2E も
+そこから引いているので、`/blog-next` ↔ `/blog` の往復で spec を書き換えずに済む。
+
+### ここで踏んだ罠
+
+- **Access のパスは文字列の前方一致。** アプリのパスに `blog` を入れると
+  `/blog` だけでなく **`/blog-next` も掴む**。並走を始めるときにこれをやって、
+  **現行ブログを読者ごと締め出した**（RSS も含めて全部 Access のログインへ 302 した）。
+  切り替えで `/blog` に絞るときも同じ罠があり、将来 `/blogroll` のようなパスを
+  足すと巻き添えになる
+- **`routes` を書くと `wrangler dev` のリクエスト host が実ドメインになる。**
+  route のゾーン（`fushihara.net`）を origin として渡すので、`localhostOnly` が
+  「ローカルではない host」として拒否し、**管理画面も E2E のフィクスチャ投入も
+  403 になる**。`wrangler.jsonc` の `"dev": { "host": "localhost" }` で戻す
+- **`.dev.vars` は vitest のプールも読む。** ローカルで Access を打ち消すために
+  置いてあるので、ユニットテストから見える `ACCESS_TEAM` も空になる。
+  「この deployment は Access を使う」という assertion はテスト環境からは書けない
+  （本番の値は `wrangler.jsonc` の `vars`）
+
+### 記事の入れ方（Access の内側）
+
+管理画面に import / export のボタンは無いので、書庫は API へ直接投げる。**Access を
+通った JWT が要る**ので、`cloudflared` で人としてログインしてから叩く。
+
+```bash
+cloudflared access login https://fushihara.net/blog-next/
+cloudflared access curl https://fushihara.net/blog-next/api/import \
+  -X POST -H 'Origin: https://fushihara.net' -F 'file=@/tmp/migrate.zip'
+```
+
+**サービストークンでは通らない。** Access がサービストークンに出す JWT は `sub` が
+空文字で（識別子は `common_name` に入る）、`core/auth/access.ts` は `sub` が無いものを
+拒否する。バックアップ cron のように機械から叩く口が要るようになったら、そこで
+対応を決めること。
 
 ## E2E
 

@@ -4,23 +4,23 @@
   "main": "./src/index.ts",
   "compatibility_date": "2026-08-23",
 
-  // route はまだ張らない。/blog-next* での並走を始めるときに足す
-  // (それまでデプロイしないので、書いておくと事故のもとになる)。
-  //
-  //   "routes": [{ "pattern": "fushihara.net/blog-next*", "zone_name": "fushihara.net" }]
+  // /blog-next* で並走中。**末尾の `*` は必須**で、無いとクエリ付きの URL
+  // (`?utm_source=…`) に一致せず本体 Worker へ落ちる (本体で実際に踏んだ)。
   //
   // route は長い方が優先されるので、既存の fushihara.net/blog* より先に一致する。
+  // 切り替えのときはここを `fushihara.net/blog*` にして、Astro 側の route を外す。
+  "routes": [{ "pattern": "fushihara.net/blog-next*", "zone_name": "fushihara.net" }],
 
   // D1 と R2 は binding 名で参照する。lily を OSS として配ったときに
   // 「リソース ID を手で埋める」前提にしないため、コードは DB / MEDIA しか知らない。
   //
-  // database_id は本番の D1 を作るまで未確定。ローカル (miniflare / vitest) は
-  // この値を見ないので、テストと --local のマイグレーションはこのまま通る。
+  // ローカル (miniflare / vitest) はこの値を見ないので、テストと --local の
+  // マイグレーションは database_id が何であっても通る。
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "fushihara-net-lily",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "d2588105-bed3-4baa-94ba-1140241e494e",
       "migrations_dir": "./migrations"
     }
   ],
@@ -30,6 +30,13 @@
   // 静的アセットの URL はディレクトリ直下からの相対 (`/favicon.svg`) になるので、
   // `<mount>/favicon.svg` や `<mount>/admin/…` へは Worker が binding 経由で
   // 読み替えて出す。そのため run_worker_first: true で全部いったん Worker に通す。
+  // **route を張るとローカルの host まで実ドメインになる。** wrangler dev は
+  // リクエストの origin を route のゾーン (fushihara.net) として渡すので、
+  // localhostOnly が「ローカルではない host」として拒否し、管理画面も E2E の
+  // フィクスチャ投入も通らなくなる (実際に踏んだ)。ローカルでは localhost を
+  // origin として扱わせる。**デプロイには影響しない。**
+  "dev": { "host": "localhost" },
+
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
@@ -49,15 +56,16 @@
   ],
 
   // Cloudflare Access の設定。**秘密ではない**が deployment ごとに違うので、
-  // コードではなくここに置く。Access のアプリケーションを作ったら実際の値を入れる。
-  //
-  // 空のままだと src/config.ts が localhostOnly アダプタに落ちる。**本番は
-  // 開かない** (host が localhost 以外なら必ず拒否する) が、Access で守られて
-  // いる状態とは別物なので、公開する前にここを埋めること。
+  // コードではなくここに置く。空のままだと src/config.ts が localhostOnly
+  // アダプタに落ちる (本番は開かないが、Access で守られている状態とは別物)。
   // どちらが選ばれたかは起動時にログへ出る。
+  //
+  // 並走中は Access のアプリケーションが /blog-next 丸ごとを守っているので、
+  // 公開ページもログインしないと見えない (インデックスされる余地が無い)。
+  // 切り替えのときに /blog/admin と /blog/api へ絞る。
   "vars": {
-    "ACCESS_TEAM": "",
-    "ACCESS_AUD": ""
+    "ACCESS_TEAM": "kanf",
+    "ACCESS_AUD": "5f36e8cb80f216e06cf2557fa4b140e2c11ad9ba1b49ea63fe7ab422da1cd542"
   },
 
   "observability": { "enabled": true }

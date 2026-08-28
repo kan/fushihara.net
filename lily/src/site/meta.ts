@@ -9,7 +9,7 @@
  */
 
 /** マウント位置。**切り替えのときにここを触る** (`/blog-next` → `/blog`)。 */
-export const MOUNT_PATH = '/blog';
+export const MOUNT_PATH = '/blog-next';
 
 const AUTHOR = 'KAN Fushihara (伏原 幹)';
 
