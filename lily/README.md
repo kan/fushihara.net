@@ -62,7 +62,7 @@ src/
     api/      管理 API。mount を知らない形で <mount>/api にマウントされる
     auth/     AuthAdapter の型と Cloudflare Access アダプタ
     feed/     RSS 2.0 と Atom。どちらも全文
-    media/    画像の最適化（任意。無くても原本で配れる）
+    media/    画像の最適化（任意）と、受け付ける形式の表
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
     transfer/ portable な import / export。frontmatter・zip・往復の規則
     routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、
@@ -127,6 +127,7 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 | 生成済み HTML の後処理を開始タグに限る | `core/render/html.ts` の `mapOpenTags` |
 | 画像記法の組み立て（空白を含む名前の `<…>`） | `core/render/markdown.ts` |
 | 添付の R2 キーの決め方 | `core/db/media.ts` の `mediaR2Key` |
+| 添付として受け付ける形式（判断の材料ごと） | `core/media/formats.ts` |
 | portable な形式（frontmatter のキーと並び） | `core/transfer/format.ts` |
 | その形式の YAML をどこまで読むか | `core/transfer/frontmatter.ts` |
 | 日時の JST 変換 | `shared/date.ts` |
@@ -206,8 +207,10 @@ const { post } = await res.json();  // 型は handler から
   残り、同じパスで作り直すと 409 になって手詰まりになる
 - プレビューの**生のトークンを返すのは発行のときだけ**。DB に入るのは SHA-256 の
   ハッシュで、記事の詳細には `hasPreview` しか出ない
-- 添付は形式とファイル名を検査する。ファイル名は記事のパスと同じ
-  `normalizeSegment` を通す（export でそのままディレクトリに書き出すため）
+- 添付は**拡張子で形式を決める**。ファイル名は記事のパスと同じ `normalizeSegment` を
+  通す（export でそのままディレクトリに書き出すため）。ブラウザの `Content-Type`
+  だけで通すと、**上げられるのに取り込み直せない添付**ができる（書庫に
+  Content-Type は無いので、import 側は拡張子しか見られない）
 - `POST /api/link-title` は**外から来た URL をそのまま fetch する口**。
   http/https だけ・IP リテラルとローカル向けの名前を弾く・**リダイレクトを自分で
   追って飛び先も毎回検査する**・5 秒で打ち切る・先頭 64KB だけ読む、で狭めてある
@@ -358,7 +361,11 @@ D1 の dump（運用復旧用）とは別物。あちらは D1 / R2 という構
   受け付ける範囲と同じ）。それ以外は警告にして記事は取り込む
 - `index.md` が無いディレクトリは記事ではない。記事の下のさらに下にあるファイルも
   添付にできない（`media.filename` に `/` を入れられないため）
-
+- **書庫から来た `public_id` は記事のパスと同じ規則で見る。** 記事のものは予約語が
+  route を食うから、添付のものは空文字が `<mount>/media//<filename>` という
+  どこにも当たらない URL になるから（`media.public_id` には `NOT NULL UNIQUE` しか無い）
+- **frontmatter の `__proto__` は入口で断る。** 素のオブジェクトに代入しても
+  キーが生えないので、通すと「知らないキーは拒否する」の網を黙ってすり抜ける
 
 ### 増えたときに効く上限
 

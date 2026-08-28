@@ -374,7 +374,10 @@ describe('添付', () => {
       body: filePayload('evil.html', 'text/html', '<script>'),
     });
     expect(res.status).toBe(400);
-    expect((await json(res)).error).toBe('mime-not-allowed');
+    // **判断は拡張子。** 書庫に Content-Type は無いので、import 側は拡張子しか
+    // 見られない。ここを Content-Type だけで通すと、上げられるのに取り込み直せない
+    // 添付ができる (往復の検査は test/transfer/transfer.test.ts の「添付の形式」)。
+    expect((await json(res)).error).toBe('extension-not-allowed');
   });
 
   it('記事のパスと同じ規則でファイル名を見る', async () => {

@@ -359,6 +359,28 @@ describe('import', () => {
     ]);
   });
 
+  it('使えない public_id の添付は採番し直す (壊れた配信 URL を作らない)', async () => {
+    // media.public_id には NOT NULL UNIQUE しか無い。空文字を通すと
+    // `/media//sample.png` になり、どの route にも当たらない。
+    const result = await importFiles({
+      'posts/p/index.md': postFile([
+        'title: あ',
+        'date: 2026-08-23',
+        'media:',
+        "  sample.png: ''",
+      ]),
+      'posts/p/sample.png': PNG,
+    });
+    expect(result.imported[0]?.warnings).toEqual([
+      '添付の public_id が使えないので採番し直した: sample.png',
+    ]);
+
+    const post = await getPostByPublicId(db, result.imported[0]?.publicId as string);
+    const media = await listMediaByPost(db, post?.id as number);
+    expect(media[0]?.public_id).not.toBe('');
+    expect(media[0]?.public_id.length).toBeGreaterThan(0);
+  });
+
   it('本文が解決できない参照を持っていたら警告する', async () => {
     const result = await importFiles({
       'posts/p/index.md': postFile(['title: あ', 'date: 2026-08-23'], '![図](./missing.png)\n'),
@@ -405,6 +427,33 @@ describe('import', () => {
 
   it('zip でなければ 1 本も取り込まない', async () => {
     await expect(importArchive(db, env.MEDIA, encoder.encode('これは zip ではない'))).rejects.toThrow();
+  });
+});
+
+describe('添付の形式', () => {
+  /** 管理画面からのアップロード。書庫を経由しない経路。 */
+  async function upload(filename: string, type: string) {
+    const post = await seedPost({ path: `up-${filename}` });
+    const form = new FormData();
+    form.set('file', new File([PNG], filename, { type }));
+    const res = await api(`/api/posts/${post.public_id}/media`, { method: 'POST', body: form });
+    return { status: res.status, body: await json(res) };
+  }
+
+  it('拡張子で決めるので、上げられたものは必ず取り込み直せる', async () => {
+    expect((await upload('sample.png', 'image/png')).status).toBe(201);
+  });
+
+  it.each([
+    ['取り込めない拡張子', 'photo.jfif', 'image/jpeg', 'extension-not-allowed'],
+    ['拡張子が無い', 'photo', 'image/jpeg', 'extension-not-allowed'],
+    ['名前と中身の申告が食い違う', 'photo.jpg', 'image/png', 'mime-mismatch'],
+  ])('%s は受けない', async (_name, filename, type, code) => {
+    // ここを Content-Type だけで通すと、export したあと import で黙って消える
+    // (書庫に Content-Type は無く、取り込み側は拡張子しか見られない)。
+    const res = await upload(filename, type);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(code);
   });
 });
 

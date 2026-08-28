@@ -65,7 +65,9 @@ export type FrontmatterErrorCode =
   | 'unsupported-syntax'
   | 'unterminated-quote'
   | 'invalid-escape'
-  | 'empty-value';
+  | 'empty-value'
+  /** `__proto__` のように、オブジェクトのキーとして特別扱いされる名前。 */
+  | 'unsafe-key';
 
 export type FrontmatterError = {
   readonly code: FrontmatterErrorCode;
@@ -84,6 +86,17 @@ const DELIMITER = '---';
 
 /** 最上位のキーに使える形。ここを緩めると本文の `:` を含む行と見分けが付かなくなる。 */
 const KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+/**
+ * オブジェクトのキーとして受け付けない名前。
+ *
+ * `__proto__` は `KEY` を満たすが、素のオブジェクトに代入すると prototype の
+ * setter が動くだけで**キーが生えない**。読めているのに `Object.keys()` に出ない
+ * ので、「知らないキーは拒否する」の網をすり抜けて**黙って消える**
+ * (このファイル自身は Object.create(null) を使うが、zod や JSON を通った先まで
+ * 面倒を見きれないので、入口で断る)。
+ */
+const UNSAFE_KEYS = new Set(['__proto__']);
 
 /** プレーンスカラとして始められない文字 (YAML の指示子)。 */
 const INDICATORS = /^[[\]{}|>&*!%@`]/;
@@ -104,7 +117,9 @@ export function parseFrontmatter(text: string): Result<FrontmatterDoc, Frontmatt
   // 本文は行に分けたものを繋ぎ直すだけ。CRLF もそのまま残る。
   const body = lines.slice(close + 1).join('\n');
 
-  const data: Record<string, FmValue> = {};
+  // prototype を持たせない。`key in data` が継承したプロパティを拾うと、
+  // `constructor` のようなキーが duplicate-key に化ける。
+  const data: Record<string, FmValue> = Object.create(null);
   let i = 1;
   while (i < close) {
     const line = chomp(lines[i] as string);
@@ -118,6 +133,7 @@ export function parseFrontmatter(text: string): Result<FrontmatterDoc, Frontmatt
     if (separator === -1) return err({ code: 'invalid-line', line: at, detail: line });
     const key = line.slice(0, separator).trim();
     if (!KEY.test(key)) return err({ code: 'invalid-line', line: at, detail: key });
+    if (UNSAFE_KEYS.has(key)) return err({ code: 'unsafe-key', line: at, detail: key });
     if (key in data) return err({ code: 'duplicate-key', line: at, detail: key });
 
     const inline = line.slice(separator + 1).trim();
@@ -185,7 +201,7 @@ function parseBlockSequence(
 function parseBlockMapping(
   block: readonly { text: string; line: number }[],
 ): Result<Record<string, string>, FrontmatterError> {
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = Object.create(null);
   for (const entry of block) {
     const text = entry.text.trim();
 
@@ -209,6 +225,7 @@ function parseBlockMapping(
     }
 
     if (key === '') return err({ code: 'invalid-line', line: entry.line, detail: text });
+    if (UNSAFE_KEYS.has(key)) return err({ code: 'unsafe-key', line: entry.line, detail: key });
     if (key in map) return err({ code: 'duplicate-key', line: entry.line, detail: key });
     if (rest === '') return err({ code: 'empty-value', line: entry.line, detail: key });
 

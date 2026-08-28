@@ -107,8 +107,20 @@ describe('読めないものは拒否する (黙って別物として解釈し�
     ['知らないエスケープ', '---\ntitle: "\\q"\n---\n', 'invalid-escape'],
     ['引用符の後ろに何かある', '---\ntitle: "あ" い\n---\n', 'unsupported-syntax'],
     ['字下げが揃っていない', '---\ntags:\n  - a\n    - b\n---\n', 'inconsistent-indent'],
+    // `__proto__` は代入しても素のオブジェクトにキーが生えないので、通すと
+    // 「知らないキーは拒否する」の網を黙ってすり抜ける。
+    ['__proto__ のキー', '---\ntitle: あ\n__proto__: x\n---\n', 'unsafe-key'],
+    ['写像の中の __proto__', '---\nmedia:\n  __proto__: x\n---\n', 'unsafe-key'],
   ])('%s', (_name, text, code) => {
     expect(errorOf(text).code).toBe(code);
+  });
+
+  it('prototype のプロパティ名は重複ではなく知らないキーとして扱う', () => {
+    // `key in data` が継承分を拾うと、書き間違いが duplicate-key に化けて
+    // 「同じキーが 2 つある」という的外れなエラーになる。
+    const { data } = parse('---\ntitle: あ\nconstructor: x\n---\n');
+    expect(data.constructor).toBe('x');
+    expect(Object.keys(data).sort()).toEqual(['constructor', 'title']);
   });
 
   it('何行目かを返す', () => {

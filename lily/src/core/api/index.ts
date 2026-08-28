@@ -37,7 +37,7 @@ import {
 import { applyTags, listTagsWithCounts, resolveTags } from '../db/tags.ts';
 import type { PostRow } from '../db/types.ts';
 import { fetchLinkTitle } from '../link-title.ts';
-import { ALLOWED_MIME } from '../media/formats.ts';
+import { mimeForFilename } from '../media/formats.ts';
 import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
@@ -300,12 +300,24 @@ export function createApi(config: PageConfig) {
       if (!(file instanceof File)) return c.json(...apiError('file-required'));
       if (file.size === 0) return c.json(...apiError('file-empty'));
       if (file.size > MAX_UPLOAD_BYTES) return c.json(...apiError('file-too-large'));
-      if (!ALLOWED_MIME.has(file.type)) return c.json(...apiError('mime-not-allowed', file.type));
 
       // ファイル名は記事のパスと同じ規則で見る。export でそのままディレクトリに
       // 書き出すので、書ける形であることまで含めて縛る。
       const filename = normalizeSegment(String(form.get('filename') ?? file.name));
       if (!filename.ok) return c.json(...apiError(filename.error.code));
+
+      // **形式は拡張子で決める。** import には Content-Type が無いので、ここだけ
+      // ブラウザの申告で通すと、上げられるのに取り込み直せない添付ができる
+      // (export → import で画像だけが消える)。
+      const mime = mimeForFilename(filename.value);
+      if (mime === undefined) {
+        return c.json(...apiError('extension-not-allowed', filename.value));
+      }
+      // 名前と中身の申告が食い違うものは受けない。どちらを信じても、往復か配信の
+      // どちらかで辻褄が合わなくなる。
+      if (file.type !== mime) {
+        return c.json(...apiError('mime-mismatch', `${file.type} / ${filename.value}`));
+      }
 
       // **DB を先に入れてから R2 に置く。** r2Key は (記事, ファイル名) から
       // 決まるので、逆順にすると 2 回目の upload が既存の実体を上書きしてから
@@ -321,7 +333,7 @@ export function createApi(config: PageConfig) {
           postId: post.id,
           filename: filename.value,
           r2Key,
-          mime: file.type,
+          mime,
           bytes: file.size,
         });
       } catch (error) {

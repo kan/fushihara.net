@@ -246,12 +246,20 @@ async function importMedia(
       continue;
     }
 
-    // public_id は配信 URL なので、書庫にあるものを引き継ぐ。他の記事が既に
-    // 使っていたら採番し直す (URL は変わるが、取り込み自体は止めない)。
-    let publicId = publicIds[name];
-    if (publicId !== undefined && (await getMediaByPublicId(db, publicId))) {
-      warnings.push(`添付の public_id が使われていたので採番し直した: ${name}`);
-      publicId = undefined;
+    // public_id は配信 URL なので、書庫にあるものを引き継ぐ。ただし**そのまま
+    // URL の 1 セグメントになる**ので、記事のパスと同じ規則で見る。空文字を
+    // 通すと `<mount>/media//<filename>` になり、どの route にも当たらない
+    // (media.public_id には NOT NULL UNIQUE しか無く、DB は形を見ない)。
+    let publicId = Object.hasOwn(publicIds, name) ? publicIds[name] : undefined;
+    if (publicId !== undefined) {
+      const checked = normalizeSegment(publicId);
+      if (!checked.ok || checked.value !== publicId) {
+        warnings.push(`添付の public_id が使えないので採番し直した: ${name}`);
+        publicId = undefined;
+      } else if (await getMediaByPublicId(db, publicId)) {
+        warnings.push(`添付の public_id が使われていたので採番し直した: ${name}`);
+        publicId = undefined;
+      }
     }
 
     const r2Key = mediaR2Key(postPublicId, filename.value);

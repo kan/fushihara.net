@@ -106,6 +106,17 @@ describe('他の道具が作った書庫', () => {
     expect(new TextDecoder().decode(files[0]?.data)).toBe('本文'.repeat(50));
   });
 
+  it('壊れた deflate は ZipError にする (入力の誤りなので 400 に落としたい)', async () => {
+    const archive = await deflatedZip('posts/a/index.md', '本文'.repeat(50));
+    // **先頭のブロックヘッダを潰す。** 途中のバイトを潰しても展開自体は通って
+    // しまい、CRC の検算で ZipError になるだけなので、この経路の検査にならない。
+    const at = 30 + 'posts/a/index.md'.length;
+    archive[at] = 0xff;
+
+    await expect(readZip(archive)).rejects.toBeInstanceOf(ZipError);
+    await expect(readZip(archive)).rejects.toThrow(/展開できない/);
+  });
+
   it('申告より大きく膨らむ項目は途中で打ち切る', async () => {
     // 申告を信じて全部展開してから検算すると、嘘をつかれたときに memory が先に尽きる。
     const archive = await deflatedZip('posts/a/index.md', 'あ'.repeat(10000));

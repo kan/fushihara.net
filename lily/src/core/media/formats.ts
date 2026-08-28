@@ -1,14 +1,14 @@
 /**
  * 添付として受け付ける形式。**この表が唯一の正。**
  *
- * 受け口が 2 つあり、判断の材料が違う:
+ * **どちらの受け口も拡張子で決める。**
  *
- * - 管理画面からのアップロードは、ブラウザが付けた `Content-Type` を見る
- * - portable import は書庫を読むので Content-Type が無く、拡張子で決める
+ * portable import は書庫を読むので Content-Type が無く、拡張子しか手がかりが無い。
+ * だからアップロード側も拡張子に揃える。ブラウザの `Content-Type` だけで通すと、
+ * `photo.jfif` (Windows の Chrome が付ける JPEG の名前) のように**上げられるのに
+ * 取り込み直せない添付**が生まれ、export → import で画像だけが黙って消える。
  *
- * 形式の一覧を両方に持つと、片方だけ増やした日に「管理画面からは上げられるのに
- * 取り込み直せない添付」が黙って生まれる。だから拡張子 → MIME の対応を 1 本だけ
- * 持ち、受け付ける MIME はそこから導く。
+ * 表を 1 本にするだけでは足りない。**判断の材料まで揃えないと往復が壊れる。**
  */
 
 const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
@@ -20,9 +20,6 @@ const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   avif: 'image/avif',
   svg: 'image/svg+xml',
 };
-
-/** アップロードで受け付ける `Content-Type`。**任意の形式を配らせない。** */
-export const ALLOWED_MIME: ReadonlySet<string> = new Set(Object.values(MIME_BY_EXTENSION));
 
 /** 拡張子から MIME を引く。知らない拡張子なら `undefined`。 */
 export function mimeForFilename(filename: string): string | undefined {

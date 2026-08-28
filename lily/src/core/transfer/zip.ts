@@ -122,6 +122,11 @@ export function createZip(entries: readonly ZipEntry[]): Uint8Array {
     locals.push(local, entry.data);
     centrals.push(central);
     offset += local.length + entry.data.length;
+    if (offset > MAX_ARCHIVE_BYTES) {
+      throw new ZipError(
+        `書庫が大きすぎる (${MAX_ARCHIVE_BYTES} バイトまで)。範囲を分けて出すこと`,
+      );
+    }
     if (offset > MAX_UINT32) throw new ZipError('書庫が 4GB を超える (zip64 は未対応)');
   }
 
@@ -151,6 +156,15 @@ export type ZipFile = {
  * 数十 GB になりうる (Workers は 128MB)。
  */
 const MAX_UNCOMPRESSED_BYTES = 64 * 1024 * 1024;
+
+/**
+ * 書き出せる書庫の上限。**`createZip` は全部をメモリに載せる**ので、Workers の
+ * 128MB に当たる前に止める。OOM で isolate ごと落ちると、何が起きたのか分からない
+ * まま「バックアップが取れない」状態になる。
+ *
+ * ここに届いたら、範囲を指定して分けて出す形が要る。
+ */
+const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 
 /**
  * 書庫を読む。**ディレクトリの項目は落とす。**
@@ -246,14 +260,21 @@ async function inflate(
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
+    // **壊れた deflate は TypeError で飛んでくる。** そのまま上げると、書庫が
+    // 壊れているだけなのに 500 になる (他の壊れ方はすべて ZipError で 400)。
+    let chunk;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      throw new ZipError(`展開できない: ${path} (${error instanceof Error ? error.message : error})`);
+    }
+    if (chunk.done) break;
+    total += chunk.value.length;
     if (total > limit) {
       await reader.cancel();
       throw new ZipError(`展開後が申告より大きい: ${path}`);
     }
-    chunks.push(value);
+    chunks.push(chunk.value);
   }
   return concat(chunks);
 }
