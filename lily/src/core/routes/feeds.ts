@@ -8,7 +8,7 @@ import { Hono } from 'hono';
 import type { LilyBindings, PageConfig } from '../config.ts';
 import { listMediaByPosts } from '../db/media.ts';
 import { getPublishedPosts } from '../db/posts.ts';
-import { listTagsWithCounts } from '../db/tags.ts';
+import { getTagsForPosts, listTagsWithCounts } from '../db/tags.ts';
 import type { PostWithPathRow } from '../db/types.ts';
 import { storedOrRenderedHtml } from '../delivery.ts';
 import { buildAtom, buildRss, type FeedEntry } from '../feed/index.ts';
@@ -27,6 +27,10 @@ type Env = { Bindings: LilyBindings };
  * 購読者のリーダーが持つのは新しいものだけでよい。
  */
 const FEED_LIMIT = 50;
+
+/** `posts.json` の既定と上限。本体サイトの `/api/blog` と同じ考え方。 */
+const POSTS_JSON_DEFAULT = 5;
+const POSTS_JSON_MAX = 20;
 
 export function feedRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
@@ -69,6 +73,36 @@ export function feedRoutes(config: PageConfig): Hono<Env> {
     );
   });
 
+  /**
+   * 本体サイトの Blog 付箋が読む口。**機械可読の供給と読者向けの配信を分ける。**
+   *
+   * これが無いあいだ、本体は RSS を正規表現で解析していた。生成側が CDATA を
+   * 吐いた瞬間に壊れる結合なので、こちらを正式な出力にして本体を移す。
+   * 公開・認証不要。
+   */
+  app.get(urls.postsJson(), async (c) => {
+    const db = c.env.DB;
+    const limit = clampLimit(c.req.query('limit'));
+    const posts = await getPublishedPosts(db, { limit });
+    const tags = groupByPost(await getTagsForPosts(db, posts.map((post) => post.id)));
+
+    return Response.json(
+      {
+        posts: posts.map((post) => ({
+          id: post.public_id,
+          title: post.title,
+          // canonical の絶対 URL。読む側が組み立て直さずに済む。
+          url: urls.post(post.canonical_path, { absolute: true }),
+          // 公開記事なので published_at は必ずある (DB の CHECK)。
+          published_at: post.published_at as string,
+          description: post.description,
+          tags: (tags.get(post.id) ?? []).map((tag) => tag.name),
+        })),
+      },
+      { headers: { 'Cache-Control': SHORT_EDGE } },
+    );
+  });
+
   // favicon 3 点と ogp.png。実体は本体サイトと共有の shared/public にあり、
   // 静的アセットの URL はディレクトリ直下からの相対になる。`<mount>/favicon.svg`
   // へは binding 経由で読み替えて出す。
@@ -77,6 +111,16 @@ export function feedRoutes(config: PageConfig): Hono<Env> {
   }
 
   return app;
+}
+
+/**
+ * `?limit=` を丸める。**読めない値は既定に落とす。**
+ * 上限を超える要求で全件返すと、増えたぶんだけ本体サイトが重くなる。
+ */
+function clampLimit(raw: string | undefined): number {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) return POSTS_JSON_DEFAULT;
+  return Math.min(value, POSTS_JSON_MAX);
 }
 
 /**

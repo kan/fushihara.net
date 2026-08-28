@@ -165,7 +165,11 @@ async function importPost(
     // created_at は portable な形式が持っていない。公開日 → 更新日の順で当てる
     // (どちらも無ければ createPost が現在時刻を入れる)。
     createdAt: frontmatter.date ?? frontmatter.updated,
-    updatedAt: frontmatter.updated,
+    // **updated が無いときに現在時刻を入れない。** 「公開してから直していない」の
+    // つもりで書かれていないキーなので、取り込み時刻を入れると移行した全記事が
+    // 「今日更新された」ことになる (記事に更新日が出て、Atom の <updated> と
+    // sitemap の lastmod も動き、購読者のリーダーに全記事が浮き上がる)。
+    updatedAt: frontmatter.updated ?? frontmatter.date,
   });
   if (!created.ok) return { ok: false, error: `${created.error.code}` };
   const post = created.value;

@@ -267,6 +267,18 @@ describe('import', () => {
     expect((await listAllPosts(db))[0]?.canonical_path).toBe('start-blog');
   });
 
+  it('updated が無い記事は公開日を更新日にする (取り込み時刻を入れない)', async () => {
+    // Astro 版の frontmatter は updated を省ける。現在時刻を入れると移行した
+    // 全記事が「今日更新された」ことになり、記事に更新日が出て、Atom と sitemap
+    // にも伝わる。
+    const result = await importFiles({
+      'posts/p/index.md': postFile(['title: あ', 'date: 2026-08-23']),
+    });
+    const post = await getPostByPublicId(db, result.imported[0]?.publicId as string);
+    expect(post?.updated_at).toBe('2026-08-23T00:00:00.000Z');
+    expect(post?.published_at).toBe('2026-08-23T00:00:00.000Z');
+  });
+
   it('canonical はディレクトリ名。paths の残りが alias になる', async () => {
     const result = await importFiles({
       'posts/new-path/index.md': postFile([

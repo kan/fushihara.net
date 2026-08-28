@@ -239,6 +239,53 @@ describe('サイトマップ', () => {
   });
 });
 
+describe('posts.json', () => {
+  // 本体サイトの Blog 付箋が読む口。RSS を正規表現で解析するのをやめるための出力。
+  it('公開記事だけを新しい順に、canonical の絶対 URL で返す', async () => {
+    await seedPost({ path: 'new', title: '新しい', publishedAt: '2026-08-02T00:00:00.000Z' });
+    await seedPost({ path: 'old', title: '古い', publishedAt: '2026-08-01T00:00:00.000Z' });
+    await seedPost({ path: 'draft', title: '下書き', draft: true });
+
+    const res = await get('/blog/posts.json');
+    expect(res.status).toBe(200);
+    const { posts } = (await res.json()) as {
+      posts: { id: string; title: string; url: string; published_at: string; tags: string[] }[];
+    };
+
+    expect(posts.map((p) => p.title)).toEqual(['新しい', '古い']);
+    expect(posts[0]?.url).toBe('https://fushihara.net/blog/new/');
+    expect(posts[0]?.published_at).toBe('2026-08-02T00:00:00.000Z');
+  });
+
+  it('limit は既定 5・上限 20 で、読めない値は既定に落とす', async () => {
+    // 上限を超える要求で全件返すと、増えたぶんだけ本体サイトが重くなる。
+    for (let i = 0; i < 25; i++) {
+      await seedPost({
+        path: `p${i}`,
+        title: `記事 ${i}`,
+        publishedAt: `2026-08-01T00:00:${String(i).padStart(2, '0')}.000Z`,
+      });
+    }
+    const count = async (query: string) =>
+      ((await (await get(`/blog/posts.json${query}`)).json()) as { posts: unknown[] }).posts.length;
+
+    expect(await count('')).toBe(5);
+    expect(await count('?limit=3')).toBe(3);
+    expect(await count('?limit=999')).toBe(20);
+    expect(await count('?limit=0')).toBe(5);
+    expect(await count('?limit=abc')).toBe(5);
+  });
+
+  it('タグと説明も載せる', async () => {
+    await seedPost({ path: 'p', description: 'ようやく', tags: ['dev', '日記'] });
+    const { posts } = (await (await get('/blog/posts.json')).json()) as {
+      posts: { description: string | null; tags: string[] }[];
+    };
+    expect(posts[0]?.description).toBe('ようやく');
+    expect(posts[0]?.tags.sort()).toEqual(['dev', '日記']);
+  });
+});
+
 describe('静的アセット', () => {
   const ICONS = [
     '/blog/favicon.ico',

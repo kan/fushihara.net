@@ -19,6 +19,7 @@
   `<mount>/admin/*` の保護境界
 - 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
 - portable な import / export（Markdown 一式の zip。往復で identity と URL が保たれる）
+- `posts.json`（本体サイトの Blog 付箋が読む口）
 - Vue の管理画面（一覧・編集・プレビュー・画像 D&D・パス変更・プレビュー URL・
   公開日時・タグ補完・ページング）
 
@@ -354,11 +355,56 @@ D1 の dump（運用復旧用）とは別物。あちらは D1 / R2 という構
 - `index.md` が無いディレクトリは記事ではない。記事の下のさらに下にあるファイルも
   添付にできない（`media.filename` に `/` を入れられないため）
 
+
 ### 増えたときに効く上限
 
 書庫は**丸ごとメモリに載る**。import は 50MB までにしてあるが、Workers の 128MB と
 subrequest の上限（添付 1 つにつき R2 が 1 回）に当たる日が先に来る。記事が数百を
 超えたら、範囲を指定して分けて出す形が要る。
+
+## Astro からの移行
+
+**`blog/content/posts/` を zip にして `<mount>/api/import` に投げるだけ。**
+`public_id` / `paths` / `media` を省いた frontmatter がそのまま読めるので、
+移行用のコードを別に書かない。
+
+```bash
+npm run db:migrate:local && npm run build && npm run dev   # 別の端末で
+cd ../blog/content && zip -r /tmp/migrate.zip posts        # posts/<slug>/index.md の形
+curl -X POST http://localhost:8787/blog/api/import \
+  -H 'Origin: http://localhost:8787' -F 'file=@/tmp/migrate.zip'
+```
+
+`imported` / `failed` / `ignored` が返る。**`failed` と `ignored` が空であること**を
+確かめること（記事が 1 本落ちても 200 で返る）。
+
+### Astro の出力と変わるところ
+
+実記事 8 本で突き合わせた結果。**意図した差分**:
+
+| 何 | 変化 |
+|---|---|
+| タグ | `<span class="tag">` → `<a href="<mount>/tags/…/">`（タグ一覧ページを足したため） |
+| 画像 | `/blog/_astro/<hash>.svg` → `<mount>/media/<public_id>/<filename>` |
+| 脚注 | 見出しと戻りリンクが英語 → 日本語 |
+| sitemap / 一覧 | `<mount>/tags/…` が増える |
+| 同日公開の並び | slug 昇順 → **`public_id` 昇順**（下記） |
+
+RSS の全文（`content:encoded`）は、XML として解析すれば上記以外**完全に一致**する。
+生の文字列は違って見えるが、これは `"` を `&quot;` に逃がすかどうかの差で、XML の
+テキストノードでは不要な逃がし。本体サイトの `/api/blog`（正規表現で読む）も
+そのまま通ることを確認済み。
+
+**同日に公開した記事の並びは変わる。** tie-break が `public_id` 昇順なので、
+移行の時点で採番された uuid 次第。**同じ日の順序を決めたいときは `published_at` に
+時刻を入れる**（この運用は Astro 版から変わっていない）。
+
+### まだ埋めていない差分
+
+`<img>` から `loading="lazy"` / `decoding="async"` / `width` / `height` が消える。
+Astro の画像パイプラインが付けていたもので、**`width`/`height` が無いとレイアウト
+シフトが起きる**。`media` テーブルに列だけは用意してあるが、アップロード時に画像の
+寸法を読む処理がまだ無い。
 
 ## 増えてから壊れるもの
 
