@@ -22,7 +22,7 @@ beforeEach(() => {
 
   assets = vi.fn(async () => new Response('Not Found', { status: 404 }));
   // BLOG はブログ Worker への service binding。上流と同じモックに寄せて、
-  // 「RSS を返す上流」としてまとめて観測できるようにする。
+  // 「posts.json を返す上流」としてまとめて観測できるようにする。
   env = { ASSETS: { fetch: assets }, BLOG: { fetch: blogService } } as unknown as Env;
 });
 
@@ -309,49 +309,55 @@ describe('上流が落ちたときの控え', () => {
 });
 
 describe('/api/blog', () => {
-  /** ブログの RSS を組み立てる。@astrojs/rss と同じく実体参照でエスケープする */
-  function rss(items: { title: string; link: string; pubDate?: string; content?: string }[]) {
-    const escape = (t: string) =>
-      t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const body = items
-      .map(
-        (i) =>
-          `<item><title>${escape(i.title)}</title><link>${i.link}</link>` +
-          `<pubDate>${i.pubDate ?? 'Mon, 24 Aug 2026 00:00:00 GMT'}</pubDate>` +
-          (i.content === undefined ? '' : `<content:encoded>${escape(i.content)}</content:encoded>`) +
-          '</item>',
-      )
-      .join('');
-    return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>${body}</channel></rss>`;
+  /** lily の posts.json。読まないキーも混ぜて、増えた列に引きずられないことを見る */
+  function postsJson(items: { title: string; url: string; published_at?: string }[]) {
+    return JSON.stringify({
+      posts: items.map((i) => ({
+        id: 'ffffffff-0000-4000-8000-000000000000',
+        title: i.title,
+        url: i.url,
+        published_at: i.published_at ?? '2026-08-24T00:00:00.000Z',
+        description: '要約',
+        tags: ['dev'],
+      })),
+    });
   }
 
-  /** binding 越しに RSS を 1 回分返す */
-  function replyRss(items: Parameters<typeof rss>[0], init: { status?: number } = {}) {
+  /** binding 越しに posts.json を 1 回分返す */
+  function replyPosts(items: Parameters<typeof postsJson>[0], init: { status?: number } = {}) {
     blogService.mockResolvedValueOnce(
-      new Response(rss(items), {
+      new Response(postsJson(items), {
         status: init.status ?? 200,
-        headers: { 'Content-Type': 'application/rss+xml' },
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
   }
 
-  const post = { title: '記事タイトル', link: 'https://fushihara.net/blog/foo/' };
+  const post = { title: '記事タイトル', url: 'https://fushihara.net/blog/foo/' };
 
-  it('ブログ Worker への binding 経由で RSS を読む', async () => {
+  it('ブログ Worker への binding 経由で posts.json を読む', async () => {
     // 同一ゾーンの URL を素の fetch で叩くと Worker ルートが再実行されず、
     // origin へ向かって 522 になる (本番で踏んだ)。binding を通すこと。
-    replyRss([post]);
+    replyPosts([post]);
 
     await call('/api/blog');
 
     expect(blogService).toHaveBeenCalledOnce();
-    expect(new URL(blogService.mock.calls[0][0] as string).href)
-      .toBe('https://fushihara.net/blog/rss.xml');
+    const called = new URL(blogService.mock.calls[0][0] as string);
+    expect(called.origin + called.pathname).toBe('https://fushihara.net/blog/posts.json');
+  });
+
+  it('件数を上流にも伝える (全文を貰わずに済ませる)', async () => {
+    replyPosts([post]);
+
+    await call('/api/blog?count=3');
+
+    expect(new URL(blogService.mock.calls[0][0] as string).searchParams.get('limit')).toBe('3');
   });
 
   it('ローカル (dev / preview) では公開 URL を直接読む', async () => {
     // dev には別 Worker のセッションが無く、binding は 503 しか返さない
-    upstream.mockResolvedValueOnce(new Response(rss([post]), { status: 200 }));
+    upstream.mockResolvedValueOnce(new Response(postsJson([post]), { status: 200 }));
 
     const ctx = createExecutionContext();
     const request = new Request(
@@ -365,14 +371,16 @@ describe('/api/blog', () => {
     expect(upstream).toHaveBeenCalledOnce();
   });
 
-  it('RSS を title / link / date の JSON に均す', async () => {
-    replyRss([{ ...post, pubDate: 'Mon, 24 Aug 2026 15:00:00 GMT' }]);
+  it('title / link / date の JSON に均す', async () => {
+    replyPosts([{ ...post, published_at: '2026-08-24T15:00:00.000Z' }]);
 
     const res = await call('/api/blog');
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('application/json');
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=3600');
+    // **外向きの形は RSS を読んでいた頃と同じ。** src/api.ts もキャッシュキーも
+    // 触らずに上流だけ入れ替えられる、という前提がここで固定される。
     await expect(res.json()).resolves.toEqual({
       posts: [
         {
@@ -384,30 +392,8 @@ describe('/api/blog', () => {
     });
   });
 
-  it('タイトルの実体参照を戻す', async () => {
-    replyRss([{ ...post, title: 'A & B <script> 「引用」' }]);
-
-    const res = await call('/api/blog');
-    const { posts } = (await res.json()) as { posts: { title: string }[] };
-
-    expect(posts[0].title).toBe('A & B <script> 「引用」');
-  });
-
-  it('全文 (content:encoded) に item や title があっても記事を取り違えない', async () => {
-    // 本文に生の HTML を書ける (CommonMark) ので、item の切れ目を偽装しうる文字列を入れる
-    replyRss([
-      { ...post, content: '<item><title>本文の中の偽物</title></item> 本文' },
-      { ...post, title: '2 本目', link: 'https://fushihara.net/blog/bar/' },
-    ]);
-
-    const res = await call('/api/blog');
-    const { posts } = (await res.json()) as { posts: { title: string }[] };
-
-    expect(posts.map((p) => p.title)).toEqual(['記事タイトル', '2 本目']);
-  });
-
   it('日付が読めない記事も落とさず、date だけ空にする', async () => {
-    replyRss([{ ...post, pubDate: 'never' }]);
+    replyPosts([{ ...post, published_at: 'never' }]);
 
     const res = await call('/api/blog');
     const { posts } = (await res.json()) as { posts: { date: string }[] };
@@ -416,13 +402,27 @@ describe('/api/blog', () => {
     expect(posts[0].date).toBe('');
   });
 
+  it('title か url が欠けた記事は落とす', async () => {
+    blogService.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ posts: [{ title: '', url: 'https://x/' }, { title: 'あり', url: '' }, post] }),
+        { headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const res = await call('/api/blog');
+    const { posts } = (await res.json()) as { posts: { title: string }[] };
+
+    expect(posts.map((p) => p.title)).toEqual(['記事タイトル']);
+  });
+
   const many = Array.from({ length: 30 }, (_, i) => ({
     title: `記事 ${i}`,
-    link: `https://fushihara.net/blog/p${i}/`,
+    url: `https://fushihara.net/blog/p${i}/`,
   }));
 
   it('count 未指定なら 5 件に絞る', async () => {
-    replyRss(many);
+    replyPosts(many);
 
     const res = await call('/api/blog');
     const { posts } = (await res.json()) as { posts: unknown[] };
@@ -430,8 +430,9 @@ describe('/api/blog', () => {
     expect(posts).toHaveLength(5);
   });
 
-  it('count で件数を指定できる', async () => {
-    replyRss(many);
+  it('上流が limit を無視しても絞る', async () => {
+    // 付箋がはみ出さないよう、こちら側でも数える
+    replyPosts(many);
 
     const res = await call('/api/blog?count=3');
     const { posts } = (await res.json()) as { posts: unknown[] };
@@ -440,7 +441,7 @@ describe('/api/blog', () => {
   });
 
   it('count は上限 20 に丸める', async () => {
-    replyRss(many);
+    replyPosts(many);
 
     const res = await call('/api/blog?count=999');
     const { posts } = (await res.json()) as { posts: unknown[] };
@@ -448,7 +449,17 @@ describe('/api/blog', () => {
     expect(posts).toHaveLength(20);
   });
 
-  it('解釈できない RSS は上流の異常として扱う', async () => {
+  it('上流が引けなければ空配列を返す（ボードは静的テキストのまま残る）', async () => {
+    blogService.mockResolvedValueOnce(new Response('boom', { status: 502 }));
+
+    const res = await call('/api/blog');
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    await expect(res.json()).resolves.toEqual({ posts: [] });
+  });
+
+  it('解釈できない応答は上流の異常として扱う', async () => {
     // 200 でも中身が取れないなら、空の控えを 30 日書かせない
     blogService.mockResolvedValueOnce(new Response('<html>maintenance</html>', { status: 200 }));
 
@@ -459,8 +470,8 @@ describe('/api/blog', () => {
     await expect(res.json()).resolves.toEqual({ posts: [] });
   });
 
-  it('解釈できない RSS が来ても前回の控えを潰さない', async () => {
-    replyRss([post]);
+  it('解釈できない応答が来ても前回の控えを潰さない', async () => {
+    replyPosts([post]);
     blogService.mockResolvedValueOnce(new Response('<html>maintenance</html>', { status: 200 }));
 
     await call('/api/blog');
@@ -468,18 +479,16 @@ describe('/api/blog', () => {
     const res = await callRaw('/api/blog');
 
     expect(res.headers.get('X-Backup')).toBe('hit');
-    const { posts } = (await res.json()) as { posts: { title: string }[] };
-    expect(posts.map((p) => p.title)).toEqual(['記事タイトル']);
-  });
-
-  it('RSS が引けなければ空配列を返す（ボードは静的テキストのまま残る）', async () => {
-    blogService.mockResolvedValueOnce(new Response('boom', { status: 502 }));
-
-    const res = await call('/api/blog');
-
-    expect(res.status).toBe(502);
-    expect(res.headers.get('Cache-Control')).toBe('no-store');
-    await expect(res.json()).resolves.toEqual({ posts: [] });
+    // 控えは posts.json を読めた回のもの。上流が壊れても付箋は「Loading...」に戻らない
+    await expect(res.json()).resolves.toEqual({
+      posts: [
+        {
+          title: '記事タイトル',
+          link: 'https://fushihara.net/blog/foo/',
+          date: '2026-08-24T00:00:00.000Z',
+        },
+      ],
+    });
   });
 });
 

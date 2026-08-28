@@ -178,6 +178,39 @@ npm run typecheck && npm test && npm run test:e2e && npm run deploy
 - [ ] `blog/CONTRACT.md` を書き換える（issue #5 の最後の項目）
 - [ ] `lily/README.md` の「`/blog-next` での並走」の節を畳む
 
+## 実施記録
+
+### 2026-08-28〜29（1 回目・失敗 → 2 回目・成功）
+
+**1 回目は失敗した。** 手順 2 に `cd blog && npx wrangler deploy` と書いてあり、
+そのとおりに叩いたら `blog/dist` に残っていた E2E のフィクスチャビルドが本番に出た。
+`check:no-fixtures` は `npm run deploy` にしか入っていなかったので素通り。
+約 12 分間、`/blog` が「描画サンプル」「同日 A」等を配信し、実記事は 404 だった
+（RSS も。あの間に取りに来たリーダーはフィクスチャを新着として取り込んでいる）。
+
+同時に **`routes` を設定から消しても route は外れない**ことが分かった。Astro が
+`/blog*` を持ち続け、lily は route を取れず、切り替え自体は起きていなかった。
+皮肉なことに、これが被害を「Astro が変な中身を配る」だけに留めた。
+
+復旧は `cd blog && npm run deploy` の 1 回。D1 も R2 も無傷だった。
+
+**入れた対策**: `blog/wrangler.jsonc` の `build.command` から `check:no-fixtures` を
+呼ぶ（`wrangler deploy` を直に叩いても止まる）。ただしこれは `wrangler dev` でも
+走るので、フィクスチャを配る E2E が起動できなくなり CI を一度赤くした。
+`BLOG_CONTENT_DIR` が立っているときは検査しない形に直した。
+
+**2 回目は通った。** 手順 2-1 を dashboard での削除に変え、`/blog/start-blog/` が
+404 になることを確認してから 2-2 へ進む形にした。deploy の出力に
+`fushihara.net/blog*` が出ることも確認項目に足した（1 回目はここが取れていなかった）。
+
+- 切り替え前の 9 URL はすべて 200（キャッシュを外して確認）
+- RSS は実記事 8 本、`/blog/posts.json` と `/blog/atom.xml` が 200（lily の証拠）
+- `/api/blog` は切り替え前の控えと**完全一致**（外向きの形を変えていない）
+- 同日公開の並びだけ変わる（`public_id` の昇順。想定どおり）
+
+**次に読む人へ**: `/blog/start-blog/` の 404 確認でキャッシュに騙されかけた。
+route を消した直後は 200 が返ることがあるので、`?cb=$RANDOM` を付けて確かめること。
+
 ## ロールバック
 
 `body_html` も `post_paths` も mount を知らないので、**戻すのは配線だけ**。

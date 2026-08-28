@@ -8,14 +8,20 @@ https://fushihara.net/ のソース。個人ポートフォリオサイトで、
 [@kanf/wema](https://www.npmjs.com/package/@kanf/wema) の `WemaBoard` 1 つで構成されている。
 **Cloudflare Workers**（Static Assets + `/api/*` の Worker）にデプロイする。
 
-`/blog/` 配下は Astro のブログで、**別 Worker** として動く:
+`/blog/` 配下はブログで、**別 Worker** として動く:
 
 ```
 fushihara.net/*      → Worker: fushihara-net       (Custom Domain)
-fushihara.net/blog*  → Worker: fushihara-net-blog  (Route)
+fushihara.net/blog*  → Worker: fushihara-net-lily  (Route)
 ```
 
 route は Custom Domain より優先されるので、`/blog` 配下がブログ Worker に届く。
+
+**2026-08-29 に Astro（`fushihara-net-blog`）から lily（D1 を正とする自作 CMS）へ
+切り替えた。** `blog/` と `fushihara-net-blog` Worker は**ロールバックのために残して
+あるだけ**で、何も配信していない。削除と `lily/` → `blog/` の改名は
+[issue #5](https://github.com/kan/fushihara.net/issues/5) の最後の項目。
+手順と踏んだ穴は `lily/SWITCHOVER.md`。
 
 **末尾の `*` は必須。** route はクエリ文字列まで含めて URL 全体と突き合わせ、パターンに
 `?` は書けないため、`*` で終わらせないとクエリ付き URL に一致しない。`/blog` と
@@ -240,7 +246,7 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
 
 | エンドポイント | 上流 | ボードの反映先 |
 |---|---|---|
-| `/api/blog` | `fushihara.net/blog/rss.xml` | `blog` ノート（Worker 側で JSON に均す） |
+| `/api/blog` | `fushihara.net/blog/posts.json` | `blog` ノート（Worker 側で JSON に均す） |
 | `/api/github` | GitHub `users/:name/repos` | `oss` ノート（fork は front 側で除外） |
 | `/api/github-languages` | 同上を 100 件取得 | `skills` ノート（Worker 側で言語を集計） |
 
@@ -304,25 +310,31 @@ API から補完するのは**説明だけ**で、star は出さない（顔ぶ�
 `caches.default` はデータセンター単位で、追い出されることもある。全世界で確実に
 残す必要が出たら KV に移す。
 
-#### `/api/blog` の RSS 解析
+#### `/api/blog` が読むもの
 
-Worker が正規表現で RSS を読めるのは、生成側（`@astrojs/rss` → `fast-xml-parser`）が
-本文を CDATA ではなく実体参照で書くため。XML 中に生の `<` はタグしか現れないので、
-全文入りの `<content:encoded>` が item の切れ目を偽装できない。
-**CDATA を吐く生成器に替えたらこの前提は崩れる**（`blog/CONTRACT.md` は RSS を出すことは
-約束しているが、書き方までは縛っていない）。
+**ブログの `posts.json`。** lily が本体サイトのために生やしている口で、
+`{ id, title, url, published_at, description, tags }` を返す。`/api/blog` は
+そこから `{ title, link, date }` だけを取り出す（**知らないキーは見ない**ので、
+ブログ側が列を増やしても本体は壊れない）。
 
-前提が崩れたときは記事が 1 件も取れなくなるが、そのときは 502 を返して**前回の控えで
-凌ぐ**（上の「上流が落ちたときの控え」参照）。
+`count` はそのまま `posts.json` の `limit` に渡す（既定 5・上限 20 で同じ形）。
+**上流が `limit` を無視しても本体側で絞る。**
+
+Astro だった頃は RSS を正規表現で読んでいた。生成側が本文を CDATA ではなく実体参照で
+書くので item の切れ目を偽装できない、という前提に乗った実装で、**生成器を替えたら
+崩れる**ものだった。専用の口ができたのでその前提ごと消えている。
+
+取り出せた記事が 0 件なら 502 を返して**前回の控えで凌ぐ**（上の「上流が落ちたときの
+控え」参照）。
 
 ##### 取りに行き方（同一ゾーンの罠）
 
-**素の `fetch('https://fushihara.net/blog/rss.xml')` で取ってはいけない。**
+**素の `fetch('https://fushihara.net/blog/posts.json')` で取ってはいけない。**
 Worker から同一ゾーンの URL へのサブリクエストは、**その Worker ルートを再実行せず
 origin へ向かう**。このゾーンに origin は無いので 522（接続タイムアウト）になる。
 本番で踏んだ。**ローカル dev は素の外向き fetch なので、これを一切再現しない。**
 
-そのため `wrangler.jsonc` の `services`（`BLOG` → `fushihara-net-blog`）でブログ
+そのため `wrangler.jsonc` の `services`（`BLOG` → `fushihara-net-lily`）でブログ
 Worker を直接呼ぶ。ローカルにはそのセッションが無く binding は 503 しか返さないので、
 `worker/api.ts` の `isLocal()` が `localhost` / `127.0.0.1` のときだけ公開 URL への
 素の fetch に切り替える（同一ゾーンの制限は本番のエッジの話なので、ローカルからは
@@ -490,7 +502,13 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 
 ## ブログ（blog/）
 
-`/blog/` 配下。Astro の静的サイトを `fushihara-net-blog` Worker として配る。
+**もう配信していない。** 2026-08-29 に `/blog` は lily に移した（上の Overview）。
+この節はロールバックのために残してあるだけで、`fushihara-net-blog` Worker に
+route は付いていない。削除は issue #5 の最後の項目。
+
+以下は Astro が配信していた頃の記述:
+
+`/blog/` 配下。Astro の静的サイトを `fushihara-net-blog` Worker として配っていた。
 
 **Astro は使い捨ての足場**として置いている。将来ここを自作 OSS の生成器に置き換える
 前提なので、移行で持ち越すもの（Markdown 本文 / URL / HTML と CSS / E2E）を汚さない
@@ -598,25 +616,28 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 - `content/posts/` が空のあいだ、ビルドが「The collection "posts" does not exist or is
   empty」と警告する。記事を 1 本置けば消える
 
-## lily（ブログの置き換え・作りかけ）
+## lily（ブログの本体）
 
-`blog/` の Astro を、**D1 を正とする自作 CMS**に置き換える作業が `lily/` で進行中。
-設計の正本は [issue #5](https://github.com/kan/fushihara.net/issues/5)、
-現状と手順は `lily/README.md`。
+**`/blog` を配っているのは `lily/`。** D1 を正とする自作 CMS で、2026-08-29 に
+Astro から切り替えた。設計の正本は
+[issue #5](https://github.com/kan/fushihara.net/issues/5)、現状は `lily/README.md`、
+切り替えの手順と踏んだ穴は `lily/SWITCHOVER.md`。
 
-**`lily/` は `blog/` から完全に独立した並走用のプロジェクト。** 自分の
-`package.json` / `wrangler.jsonc` / `tsconfig.json` を持ち、本体の `tsc -b` にも
-入っていない。切り替えのときに `blog/` を消して `lily/` を `blog/` に改名する前提で、
-それまで Astro 側には一切触らない。
+**`lily/` は `blog/` から独立したプロジェクト。** 自分の `package.json` /
+`wrangler.jsonc` / `tsconfig.json` を持ち、本体の `tsc -b` にも入っていない。
+`blog/` を消して `lily/` を `blog/` に改名するのは issue #5 の最後の項目で、
+それまでは Astro 側を**ロールバック用に残してある**（route は付いていない）。
 
-- **まだ何も配信していない。** `lily/src/index.ts` は 404 を返すだけで、route も
-  張っていない（`wrangler.jsonc` にコメントで置いてある）。デプロイは
-  `/blog-next*` での並走を始めるときに初めて行う
+- **mount は `src/site/meta.ts` の `MOUNT_PATH` 1 行。** ユニットテストも E2E も
+  そこから引くので、`/blog` と `/blog-next` の往復で spec を書き換えずに済む
+- **`.dev.vars` が Access の設定をローカルだけ打ち消す。** 本番の値は
+  `wrangler.jsonc` の `vars`。vitest のプールも `.dev.vars` を読むので、
+  テストから見える `ACCESS_TEAM` は空になる
+- **route を書くと `wrangler dev` のリクエスト host が実ドメインになる。**
+  `localhostOnly` が効かなくなるので `"dev": { "host": "localhost" }` で戻す
 - テストは実 workerd + 実 D1 で動く。**D1 の制約は生 SQL で叩いて確かめる**
   （query layer 越しに見ても、制約が効いているかの検証にならない）
 - `wrangler` を叩くときは `-c ./wrangler.jsonc` が要る（`blog/` と同じ理由）
-- **`d1_databases[].database_id` はまだ placeholder。** ローカルは見ないので
-  テストと `--local` のマイグレーションは通るが、本番の D1 を作ったら差し替える
 - **記事の出し入れは portable な zip（`lily/src/core/transfer/`）。** 形は
   `posts/<canonical>/index.md` + 添付で、今の `blog/content/posts/` と同じ。
   Astro 版の frontmatter がそのまま読めるので、**移行はこの経路**を通す

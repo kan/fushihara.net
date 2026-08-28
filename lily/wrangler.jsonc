@@ -4,12 +4,14 @@
   "main": "./src/index.ts",
   "compatibility_date": "2026-08-23",
 
-  // /blog-next* で並走中。**末尾の `*` は必須**で、無いとクエリ付きの URL
-  // (`?utm_source=…`) に一致せず本体 Worker へ落ちる (本体で実際に踏んだ)。
+  // **末尾の `*` は必須。** route はクエリ文字列まで含めて URL 全体と突き合わせ、
+  // パターンに `?` は書けないので、`*` で終わらせないとクエリ付きの URL
+  // (`/blog?utm_source=…`) に一致せず本体 Worker へ落ちる (本体で実際に踏んだ)。
   //
-  // route は長い方が優先されるので、既存の fushihara.net/blog* より先に一致する。
-  // 切り替えのときはここを `fushihara.net/blog*` にして、Astro 側の route を外す。
-  "routes": [{ "pattern": "fushihara.net/blog-next*", "zone_name": "fushihara.net" }],
+  // 同じ route を 2 つの Worker が持てないので、Astro (fushihara-net-blog) の
+  // route を dashboard で消してからここに付けた。**設定から消すのでは外れない**
+  // (wrangler は設定に無い既存の route を残す)。
+  "routes": [{ "pattern": "fushihara.net/blog*", "zone_name": "fushihara.net" }],
 
   // D1 と R2 は binding 名で参照する。lily を OSS として配ったときに
   // 「リソース ID を手で埋める」前提にしないため、コードは DB / MEDIA しか知らない。
@@ -60,9 +62,9 @@
   // アダプタに落ちる (本番は開かないが、Access で守られている状態とは別物)。
   // どちらが選ばれたかは起動時にログへ出る。
   //
-  // 並走中は Access のアプリケーションが /blog-next 丸ごとを守っているので、
-  // 公開ページもログインしないと見えない (インデックスされる余地が無い)。
-  // 切り替えのときに /blog/admin と /blog/api へ絞る。
+  // Access のアプリケーションは /blog/admin と /blog/api の 2 本だけを守る。
+  // **バラの `blog` を指定しないこと。** ワイルドカード無しのパスは前方一致なので、
+  // 公開ブログごと締め出す (並走を始めるときに実際にやった)。
   "vars": {
     "ACCESS_TEAM": "kanf",
     "ACCESS_AUD": "5f36e8cb80f216e06cf2557fa4b140e2c11ad9ba1b49ea63fe7ab422da1cd542"

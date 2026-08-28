@@ -1,6 +1,8 @@
 // ブラウザから外部 API を直接叩かず、ここを経由させている。
-// GitHub はレートリミット、ブログの RSS は XML を毎回ブラウザで解析させない
-// (全文入りなので重い) のが理由。
+// GitHub はレートリミットの回避、ブログは**同一ゾーンの制限**が理由。
+// (ブラウザからは /blog/posts.json を直に読めるが、Worker からは service binding を
+//  通さないと届かない。下の「取りに行き方」を参照。) どちらもエッジキャッシュと、
+// 上流が落ちた日の控えを 1 箇所で持てるのが利点。
 
 const USER_AGENT = 'fushihara-net-portfolio';
 
@@ -135,63 +137,39 @@ export const githubLanguages = forAllowedUser(async (url, user) => {
 
 // --- ブログ (/blog) の記事一覧 ---
 
-// ブログは別 Worker (fushihara-net-blog) が fushihara.net/blog* で配っている。
+// ブログは別 Worker (fushihara-net-lily) が fushihara.net/blog* で配っている。
 //
 // **素の fetch で叩いてはいけない。** 同一ゾーンの URL へのサブリクエストは Worker
 // ルートを再実行せず origin へ向かうので、origin を持たないこのゾーンでは 522 に
 // なる (本番で踏んだ)。wrangler.jsonc の service binding 経由で直接呼ぶ。
-// URL はホスト名を見られないが、ブログ Worker のパス解決に /blog/rss.xml が要る。
-const BLOG_RSS_URL = 'https://fushihara.net/blog/rss.xml';
+// URL はホスト名を見られないが、ブログ Worker のパス解決に /blog/ が要る。
+//
+// **読むのは posts.json で、RSS ではない。** lily が本体サイトのために生やしている
+// 口なので、全文入りの XML を正規表現で読む必要がもう無い (Astro 版はそうしていた)。
+const BLOG_POSTS_URL = 'https://fushihara.net/blog/posts.json';
 
-const XML_ENTITIES: Record<string, string> = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
-};
-
-/** XML のテキストノードに現れる実体参照を戻す */
-function decodeXml(text: string): string {
-  return text.replace(/&(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, ref: string) => {
-    if (ref[0] !== '#') return XML_ENTITIES[ref.toLowerCase()] ?? whole;
-    const code = ref[1] === 'x' ? parseInt(ref.slice(2), 16) : Number(ref.slice(1));
-    return Number.isInteger(code) && code > 0 && code <= 0x10ffff
-      ? String.fromCodePoint(code)
-      : whole;
-  });
-}
-
-// item ごとに RegExp を組み直さないよう、使うぶんだけ定数で持つ
-const TAG_RE = {
-  title: /<title>([\s\S]*?)<\/title>/,
-  link: /<link>([\s\S]*?)<\/link>/,
-  pubDate: /<pubDate>([\s\S]*?)<\/pubDate>/,
-};
-
-/** item 内の最初の <name>…</name> をテキストとして取り出す */
-function tagText(item: string, name: keyof typeof TAG_RE): string {
-  const found = TAG_RE[name].exec(item);
-  return found ? decodeXml(found[1]).trim() : '';
-}
+type BlogPost = { title: string; link: string; date: string };
 
 /**
- * RSS 2.0 から記事の見出しだけを抜く。
+ * posts.json を付箋が読む形に均す。
  *
- * 正規表現で足りるのは、生成側 (@astrojs/rss → fast-xml-parser) が本文を CDATA では
- * なく実体参照で書くため。つまり XML 中に生の `<` はタグしか現れず、全文入りの
- * `<content:encoded>` の中身が item の切れ目を偽装することがない。
- * CDATA を吐く生成器に替えたらこの前提は崩れる (`blog/CONTRACT.md` は RSS の
- * 出力を約束しているが、書き方までは縛っていない)。
+ * **知らないキーは見ない。** lily 側が列を増やしても本体は壊れないし、
+ * `/api/blog` の外向きの形 (`{title, link, date}`) も変わらない。
  */
-function parseRssItems(xml: string, limit: number): { title: string; link: string; date: string }[] {
-  const posts: { title: string; link: string; date: string }[] = [];
-  for (const [, item] of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
-    // RSS は新しい順なので、必要な件数を取れたら残りの全文は読まない
-    if (posts.length === limit) break;
-    const title = tagText(item, 'title');
-    const link = tagText(item, 'link');
-    if (!title || !link) continue;
+function toPosts(body: unknown, limit: number): BlogPost[] {
+  const source = (body as { posts?: unknown })?.posts;
+  if (!Array.isArray(source)) return [];
 
-    // pubDate は RFC 822。表示形式はフロントに任せるので ISO に寄せておく
-    const at = new Date(tagText(item, 'pubDate'));
-    posts.push({ title, link, date: Number.isNaN(at.getTime()) ? '' : at.toISOString() });
+  const posts: BlogPost[] = [];
+  for (const item of source) {
+    if (posts.length === limit) break;
+    const { title, url, published_at } = (item ?? {}) as Record<string, unknown>;
+    if (typeof title !== 'string' || title === '') continue;
+    if (typeof url !== 'string' || url === '') continue;
+
+    // published_at は UTC の ISO8601。表示形式はフロントに任せるので形だけ揃える。
+    const at = new Date(typeof published_at === 'string' ? published_at : '');
+    posts.push({ title, link: url, date: Number.isNaN(at.getTime()) ? '' : at.toISOString() });
   }
   return posts;
 }
@@ -201,20 +179,22 @@ const isLocal = (url: URL) => url.hostname === 'localhost' || url.hostname === '
 
 export const blog = async (url: URL, env: Env): Promise<Response> => {
   const count = positiveInt(url, 'count', 5, 20);
+  // 上流にも件数を伝える。posts.json の limit は既定 5・上限 20 で count と同じ形。
+  const upstream = `${BLOG_POSTS_URL}?limit=${count}`;
 
   // ローカルでは公開 URL をそのまま読む。同一ゾーンで Worker ルートが再実行されない
-  // のは本番 (Cloudflare のエッジ) の話なので、素の fetch で本番の RSS が読める。
+  // のは本番 (Cloudflare のエッジ) の話なので、素の fetch で本番の口が読める。
   const res = isLocal(url)
-    ? await fetch(BLOG_RSS_URL, { headers: { 'User-Agent': USER_AGENT } })
-    : await env.BLOG.fetch(BLOG_RSS_URL, { headers: { 'User-Agent': USER_AGENT } });
+    ? await fetch(upstream, { headers: { 'User-Agent': USER_AGENT } })
+    : await env.BLOG.fetch(upstream, { headers: { 'User-Agent': USER_AGENT } });
   if (!res.ok) return jsonError(res.status, { posts: [] });
 
-  const posts = parseRssItems(await res.text(), count);
+  // 上流が limit を無視しても付箋がはみ出さないよう、こちらでも絞る。
+  const posts = toPosts(await res.json().catch(() => null), count);
   if (posts.length === 0) {
     // 200 でも中身を取り出せないなら上流の異常とみなす。ここで 200 を返すと
     // worker/index.ts が空の控えを 30 日書いてしまい、付箋が「Loading...」で
-    // 固定される。RSS の書き方が変わったとき (CDATA を吐く生成器に替えた等) に
-    // 起きるのは、上流が落ちたときと同じ「前回の控えで凌ぐ」場面。
+    // 固定される。
     return jsonError(502, { posts: [] });
   }
 
