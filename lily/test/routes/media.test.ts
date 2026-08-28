@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createMedia } from '../../src/core/db/media.ts';
 import { db, resetDb } from '../db/helpers.ts';
 import { lily } from '../../src/config.ts';
-import { get, getRootWith, seedPost, SITE } from './helpers.ts';
+import { get, getRootWith, MOUNT, seedPost, SITE } from './helpers.ts';
 
 beforeEach(resetDb);
 
@@ -52,7 +52,7 @@ describe('添付', () => {
 
   it('URL は不変なので長期キャッシュする', async () => {
     const media = await seedMedia();
-    const res = await get(`/blog/media/${media.public_id}/sample.png`);
+    const res = await get(`${MOUNT}/media/${media.public_id}/sample.png`);
     // 差し替えは行ごと作り直す = public_id が変わるので、URL は不変
     expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
     expect(res.headers.get('etag')).toBeTruthy();
@@ -60,7 +60,7 @@ describe('添付', () => {
 
   it('直接開かれてもスクリプトが走らないようにする (SVG も配るので)', async () => {
     const media = await seedMedia();
-    const res = await get(`/blog/media/${media.public_id}/sample.png`);
+    const res = await get(`${MOUNT}/media/${media.public_id}/sample.png`);
     expect(res.headers.get('content-security-policy')).toBe('sandbox');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   });
@@ -77,14 +77,14 @@ describe('添付', () => {
     });
     await env.MEDIA.put(media.r2_key, 'png');
 
-    const res = await get(`/blog/media/${media.public_id}/sample.png`);
+    const res = await get(`${MOUNT}/media/${media.public_id}/sample.png`);
     expect(res.headers.get('content-length')).not.toBe('9999');
     expect(await res.text()).toBe('png');
   });
 
   it('ファイル名が違えば返さない (URL と中身を食い違わせない)', async () => {
     const media = await seedMedia();
-    expect((await get(`/blog/media/${media.public_id}/other.png`)).status).toBe(404);
+    expect((await get(`${MOUNT}/media/${media.public_id}/other.png`)).status).toBe(404);
   });
 
   it('知らない id と、R2 に実体が無いものは 404', async () => {
@@ -96,8 +96,8 @@ describe('添付', () => {
       mime: 'image/png',
       bytes: 1,
     });
-    expect((await get('/blog/media/nope/x.png')).status).toBe(404);
-    expect((await get(`/blog/media/${orphan.public_id}/missing.png`)).status).toBe(404);
+    expect((await get(`${MOUNT}/media/nope/x.png`)).status).toBe(404);
+    expect((await get(`${MOUNT}/media/${orphan.public_id}/missing.png`)).status).toBe(404);
   });
 });
 
@@ -108,7 +108,7 @@ describe('添付', () => {
 describe('画像の最適化', () => {
   it('相手が読めるなら小さい形式にして返す', async () => {
     const media = await seedImage();
-    const path = `/blog/media/${media.public_id}/sample.png`;
+    const path = `${MOUNT}/media/${media.public_id}/sample.png`;
 
     const webp = await fetchWith(path, 'image/webp,image/*');
     expect(webp.headers.get('content-type')).toBe('image/webp');
@@ -123,7 +123,7 @@ describe('画像の最適化', () => {
     // Cloudflare のエッジは Accept-Encoding 以外の Vary を見ない。public のまま
     // だと最初に入った表現が居座り、AVIF を読めない相手にも AVIF が配られる。
     const media = await seedImage();
-    const path = `/blog/media/${media.public_id}/sample.png`;
+    const path = `${MOUNT}/media/${media.public_id}/sample.png`;
 
     const converted = await fetchWith(path, 'image/avif,image/webp');
     expect(converted.headers.get('cache-control')).toBe('private, max-age=86400');
@@ -137,7 +137,7 @@ describe('画像の最適化', () => {
     // 同じ検証子だと、キャッシュが「変わっていない」と判断して頼んでいない
     // 形式を返しうる。
     const media = await seedImage();
-    const path = `/blog/media/${media.public_id}/sample.png`;
+    const path = `${MOUNT}/media/${media.public_id}/sample.png`;
 
     const etags = await Promise.all(
       ['image/avif,image/webp', 'image/webp', 'image/*'].map(async (accept) =>
@@ -149,7 +149,7 @@ describe('画像の最適化', () => {
 
   it('読めない相手には原本を返す。ただし交渉していることは伝える', async () => {
     const media = await seedImage();
-    const res = await fetchWith(`/blog/media/${media.public_id}/sample.png`, 'image/*');
+    const res = await fetchWith(`${MOUNT}/media/${media.public_id}/sample.png`, 'image/*');
     expect(res.headers.get('content-type')).toBe('image/png');
     // 付けたり付けなかったりすると、交渉していない応答として共有キャッシュに収まる
     expect(res.headers.get('vary')).toBe('Accept');
@@ -157,7 +157,7 @@ describe('画像の最適化', () => {
 
   it('SVG は触らない (ベクタなので潰す意味がない)', async () => {
     const media = await seedImage('image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg"/>', 'a.svg');
-    const res = await fetchWith(`/blog/media/${media.public_id}/a.svg`, 'image/avif,image/webp');
+    const res = await fetchWith(`${MOUNT}/media/${media.public_id}/a.svg`, 'image/avif,image/webp');
     expect(res.headers.get('content-type')).toBe('image/svg+xml');
     expect(res.headers.get('vary')).toBeNull();
   });
@@ -165,7 +165,7 @@ describe('画像の最適化', () => {
   it('変換に失敗しても原本を返す (画像が表示不能にならない)', async () => {
     // quota 到達も壊れたファイルもここに来る。**fallback は正式仕様。**
     const media = await seedImage('image/png', 'これは画像ではない');
-    const res = await fetchWith(`/blog/media/${media.public_id}/sample.png`, 'image/avif,image/webp');
+    const res = await fetchWith(`${MOUNT}/media/${media.public_id}/sample.png`, 'image/avif,image/webp');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/png');
     expect(await res.text()).toBe('これは画像ではない');

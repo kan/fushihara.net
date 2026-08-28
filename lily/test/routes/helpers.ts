@@ -6,11 +6,22 @@ import { setPostTags } from '../../src/core/db/tags.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../../src/core/render/index.ts';
 import type { PostRow } from '../../src/core/db/types.ts';
 import { lily } from '../../src/config.ts';
+import { normalizeMountPath } from '../../src/core/paths.ts';
+import { MOUNT_PATH } from '../../src/site/meta.ts';
 import { theme } from '../../src/site/theme.ts';
 import { db } from '../db/helpers.ts';
 
 export const SITE = 'https://fushihara.net';
+
 export const ROOT_SITE = 'https://blog.example.com';
+/**
+ * このデプロイの mount（先頭スラッシュ付き・末尾スラッシュ無し）。
+ *
+ * **テストに `/blog` を直接書かない。** `/blog-next` での並走と本番の `/blog` を
+ * 行き来するたびに全 spec を書き換えることになるうえ、`mountPath` を第一級の設定に
+ * している意味が消える（`e2e/helpers.ts` が同じ理由で同じことをしている）。
+ */
+export const MOUNT: string = normalizeMountPath(MOUNT_PATH);
 
 /** `/blog` にマウントした本番同等のアプリ。 */
 export async function get(path: string): Promise<Response> {

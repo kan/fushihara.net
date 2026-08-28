@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test';
 import { afterEach, describe, expect, it } from 'vitest';
 import { authMode, lily } from '../../src/config.ts';
-import { get, getRoot, getRootRequest, ROOT_SITE, setStubUser, SITE } from './helpers.ts';
+import { get, getRoot, getRootRequest, MOUNT, ROOT_SITE, setStubUser, SITE } from './helpers.ts';
 
 afterEach(() => setStubUser(null));
 
@@ -72,8 +72,8 @@ describe('本番の設定 (Cloudflare Access)', () => {
   it('ACCESS_TEAM / ACCESS_AUD が空なら必ず拒否する (fail closed)', async () => {
     // 設定を入れ忘れたまま動かしても、管理画面が開いてしまうことはない。
     expect(env.ACCESS_TEAM).toBe('');
-    expect((await get('/blog/api/me')).status).toBe(403);
-    expect((await get('/blog/admin/')).status).toBe(403);
+    expect((await get(`${MOUNT}/api/me`)).status).toBe(403);
+    expect((await get(`${MOUNT}/admin/`)).status).toBe(403);
   });
 
   it('ACCESS の設定が片方でも欠けたら Access にはしない', () => {
@@ -89,7 +89,7 @@ describe('本番の設定 (Cloudflare Access)', () => {
     // テスト用スタブを通すと素通りしてしまうので、本番アプリが Access を
     // 使っていることをここで確かめる。
     setStubUser({ id: 'user-1' });
-    const res = await lily.fetch(new Request(`${SITE}/blog/api/me`), env);
+    const res = await lily.fetch(new Request(`${SITE}${MOUNT}/api/me`), env);
     expect(res.status).toBe(403);
   });
 });
