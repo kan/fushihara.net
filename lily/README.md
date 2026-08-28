@@ -473,6 +473,12 @@ mount を変えるのは `src/site/meta.ts` の `MOUNT_PATH` 1 行。テスト�
   route のゾーン（`fushihara.net`）を origin として渡すので、`localhostOnly` が
   「ローカルではない host」として拒否し、**管理画面も E2E のフィクスチャ投入も
   403 になる**。`wrangler.jsonc` の `"dev": { "host": "localhost" }` で戻す
+- **CI のトークンは「Account API Token」。** deploy ジョブの `db:migrate` が
+  `code: 7403`（D1 へのアクセス権限なし）で落ちたときに、User API Token の一覧
+  （`dash.cloudflare.com/profile/api-tokens`）を見ても目当てのトークンが無い。
+  編集するのは **Manage Account → API Tokens**（`dash.cloudflare.com/<account>/api-tokens`）
+  の方で、要るのは **Account / D1 / Edit**。どちらのトークンかは
+  `npx wrangler whoami` が教えてくれる（トークンの値は出ない）
 - **`.dev.vars` は vitest のプールも読む。** ローカルで Access を打ち消すために
   置いてあるので、ユニットテストから見える `ACCESS_TEAM` も空になる。
   「この deployment は Access を使う」という assertion はテスト環境からは書けない
