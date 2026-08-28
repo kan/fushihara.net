@@ -40,3 +40,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # E2E は wrangler dev に対して回す。末尾スラッシュの補完も 404 の解決も
+      # Workers の配信側の挙動なので、別のサーバー相手では本番を検証したことにならない。
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: lily-playwright-report
+          path: lily/playwright-report/
+          retention-days: 7

@@ -38,3 +38,8 @@ worker-configuration.d.ts
 blog/test-results/
 blog/playwright-report/
 blog/blob-report/
+
+# lily (ブログの置き換え / 独立プロジェクト)
+lily/test-results/
+lily/playwright-report/
+lily/blob-report/

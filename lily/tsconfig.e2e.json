@@ -1,0 +1,31 @@
+{
+  // E2E は Node の上で動き、page.evaluate() の中だけがブラウザ。src/ (Workers の
+  // ランタイム型) と同じプロジェクトには入れられないので分ける。
+  //
+  // **分けたうえで typecheck から呼ぶこと。** ここが型検査の外にあると、
+  // src/ の export を変えても E2E が壊れたことに Playwright を回すまで気付けない。
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true
+  },
+  // src/ のうち E2E が読むものだけを引き込む。app 一式は入れない
+  // (Workers のランタイム型が要るので、この lib では型検査できない)。
+  "include": ["e2e", "playwright.config.ts", "src/site/meta.ts", "src/core/transfer/zip.ts", "src/core/paths.ts", "../shared/theme.ts"]
+}

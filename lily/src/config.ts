@@ -4,22 +4,13 @@
 import { createLily } from './core/app.ts';
 import { cloudflareAccess } from './core/auth/access.ts';
 import { localhostOnly } from './core/auth/localhost.ts';
+import { MOUNT_PATH, SITE } from './site/meta.ts';
 import { theme } from './site/theme.ts';
 
-const AUTHOR = 'KAN Fushihara (伏原 幹)';
-
 export const lily = createLily({
-  site: {
-    url: 'https://fushihara.net',
-    // 読み手向けのサイト名。画面上のパンくず表示 (`fushihara.net / blog`) とは別物。
-    name: 'ふしはらねっとのぶろぐ',
-    description: `${AUTHOR} のブログ`,
-    author: AUTHOR,
-    twitter: '@__kan',
-  },
-  // **切り替えのときにここを触る。** 並走中は '/blog-next'、差し替え後は '/blog'。
+  site: SITE,
   // route (wrangler.jsonc) と必ずセットで見ること。
-  mountPath: '/blog',
+  mountPath: MOUNT_PATH,
   theme,
   // 画像は配信時に WebP / AVIF へ変換する。**無効にしても URL は変わらず、
   // 原本がそのまま出る**（Images の設定・quota・障害に記事を巻き込まない）。

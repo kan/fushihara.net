@@ -20,6 +20,7 @@
 - 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
 - portable な import / export（Markdown 一式の zip。往復で identity と URL が保たれる）
 - `posts.json`（本体サイトの Blog 付箋が読む口）
+- E2E（`e2e/`。フィクスチャは import で入れる）
 - Vue の管理画面（一覧・編集・プレビュー・画像 D&D・パス変更・プレビュー URL・
   公開日時・タグ補完・ページング）
 
@@ -30,7 +31,8 @@
 ```bash
 npm install
 npm test                 # Vitest。実 workerd + 実 D1 で動く
-npm run typecheck        # wrangler types → tsc
+npm run test:e2e         # Playwright。wrangler dev に対して回す (localhost:8788)
+npm run typecheck        # wrangler types → tsc (src / e2e / 管理画面 の 3 プロジェクト)
 npm run db:migrate:local # ローカル D1 にマイグレーションを当てる
 npm run db:seed:local    # 開発用の記事を入れる（seeds/dev.sql）
 npm run build            # 静的アセット（shared/public のコピー + 管理画面）
@@ -67,9 +69,11 @@ src/
               feeds.ts が機械向け、media.ts が添付、api.ts が保護境界
     theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
   site/       fushihara.net 固有（レイアウト・CSS・文言・OGP・クライアント JS）
+    meta.ts   mount とサイト名。**何も import しない**（E2E が Node から読む）
   admin/      Vue の管理画面。別ビルド（vite）で dist/admin に出る
   config.ts   サイト設定。createLily() に渡す
 test/         Vitest
+e2e/          Playwright。fixtures/ を import で入れて wrangler dev に対して回す
 ```
 
 ## 設計で外せない 3 点
@@ -405,6 +409,32 @@ RSS の全文（`content:encoded`）は、XML として解析すれば上記以�
 Astro の画像パイプラインが付けていたもので、**`width`/`height` が無いとレイアウト
 シフトが起きる**。`media` テーブルに列だけは用意してあるが、アップロード時に画像の
 寸法を読む処理がまだ無い。
+
+## E2E
+
+`e2e/blog.spec.ts` は Astro 版の `blog/e2e/blog.spec.ts` を**そのまま引き継いだもの**。
+生成器を差し替えても入出力の契約は変わらない、というのが `CONTRACT.md` の趣旨で、
+ここがその出番。**lily 固有の API をここに持ち込まない**（HTTP と DOM から見える
+ものだけで合否を出す）。
+
+- フィクスチャは `e2e/fixtures/posts/`。**seed に生 SQL を使わない**のは、添付の実体が
+  R2 に要るから。import なら D1 と R2 の両方が同時に埋まる（`e2e/seed.setup.ts`）
+- **D1 と R2 は dev と分ける。** `--persist-to .wrangler/e2e` に逃がし、起動のたびに
+  捨てる。既定の場所を使うと E2E が手元の記事を消してフィクスチャで上書きする
+- ポートは 8788（`wrangler dev` の既定 8787 と分ける。`reuseExistingServer: false`
+  なので、同じにすると dev を開いたままテストを回せない）
+- **状態を変えるテストは 1 プロジェクトだけで走らせる。** desktop と mobile は
+  同じサーバーを共有しているので、プレビューの発行・失効が互いに効いてしまう
+- `mount` を spec に直接書かない。`e2e/helpers.ts` が `src/site/meta.ts` から読む
+  （切り替えのたびに全 spec を書き換えないため）
+
+**`src/site/meta.ts` には import を足さないこと。** E2E と `playwright.config.ts` が
+Node からこれを読むので、設定を辿って CSS まで引き込むと起動しなくなる。
+
+**`e2e/` は `tsconfig.e2e.json` で型検査する**（`npm run typecheck` が回す）。
+Workers のランタイム型と DOM は同じプロジェクトに入れられないので分けてあるが、
+**型検査の外に置かない**こと。`src/` の export を変えたときに Playwright を
+回すまで気付けなくなる。
 
 ## 増えてから壊れるもの
 
