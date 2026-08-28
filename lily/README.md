@@ -462,6 +462,9 @@ RSS の全文（`content:encoded`）は、XML として解析すれば上記以�
 mount を変えるのは `src/site/meta.ts` の `MOUNT_PATH` 1 行。テストも E2E も
 そこから引いているので、`/blog-next` ↔ `/blog` の往復で spec を書き換えずに済む。
 
+**切り替えの手順は `SWITCHOVER.md`。** 順序を間違えると公開ブログを締め出すので、
+その場で考えずにあれを読むこと。
+
 ### ここで踏んだ罠
 
 - **Access のパスは文字列の前方一致。** アプリのパスに `blog` を入れると
