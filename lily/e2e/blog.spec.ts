@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { STORAGE_KEY } from '../../shared/theme.ts';
 import { SITE } from '../src/site/meta.ts';
 import { ID, MOUNT, ORIGIN, url } from './helpers.ts';
@@ -20,6 +20,17 @@ const SITE_URL: string = SITE.url;
 
 /** `<title>` の組み立て。`src/site/layout.ts` と同じ規則を 1 行だけ持つ。 */
 const pageTitle = (page: string) => `${page} | ${SITE_NAME}`;
+
+/**
+ * ブラウザがデコードした実寸。**EXIF の回転を反映した値**が返る (読み込みが
+ * 終わるまでは 0)。属性の検証はこれと突き合わせる。
+ */
+async function naturalSize(img: Locator): Promise<{ width: number; height: number }> {
+  return await img.evaluate((el: HTMLImageElement) => ({
+    width: el.naturalWidth,
+    height: el.naturalHeight,
+  }));
+}
 
 const POST = url.post('rendering-sample');
 const POST_TITLE = '描画サンプル';
@@ -193,10 +204,36 @@ test.describe('記事の描画', () => {
 
     const img = page.getByAltText('サンプル画像');
     await expect(img).toBeVisible();
-    // 壊れた img は naturalWidth が 0 になる
-    expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+    // **描画されたことと読み込めたことは別。** width / height を出すようになって
+    // からは img が読み込み前から箱を持つので、toBeVisible() が通った時点では
+    // まだデコードが終わっていない (属性を足した日にここが 0 で落ちた)。
+    // 壊れた img は naturalWidth が 0 のままになる。
+    await expect.poll(() => naturalSize(img)).not.toEqual({ width: 0, height: 0 });
 
     await expect(page.locator('blockquote')).toContainText('引用も使える');
+  });
+
+  /**
+   * **`width` / `height` が無いと、画像が届くまで高さが 0 で本文が飛ぶ。**
+   *
+   * 属性は添付を受け取った時点でヘッダから読んだ値なので、ブラウザがデコードした
+   * 実寸と突き合わせる。フィクスチャの寸法を書き写すと、読み違えていても通る。
+   * 2 枚目は EXIF の回転情報を持つ写真で、**格納値をそのまま書いていると
+   * 縦横が入れ替わって落ちる**。
+   */
+  test('画像の寸法が実寸と一致し、遅延読み込みになる', async ({ page }) => {
+    await page.goto(POST);
+
+    for (const alt of ['サンプル画像', '回転情報つきの写真']) {
+      const img = page.getByAltText(alt);
+      await expect.poll(() => naturalSize(img)).not.toEqual({ width: 0, height: 0 });
+      const natural = await naturalSize(img);
+
+      await expect(img, alt).toHaveAttribute('width', String(natural.width));
+      await expect(img, alt).toHaveAttribute('height', String(natural.height));
+      await expect(img, alt).toHaveAttribute('loading', 'lazy');
+      await expect(img, alt).toHaveAttribute('decoding', 'async');
+    }
   });
 
   // 本文には `./sample.png` としか書いていない。配信時に解決されるので、

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdown } from '../../src/core/render/index.ts';
+import { renderMarkdown, type RenderMedia } from '../../src/core/render/index.ts';
 import { imageMarkdown } from '../../src/core/render/markdown.ts';
 
-const MEDIA = [{ public_id: 'MEDIA-ID', filename: 'sample.png' }];
+const MEDIA: readonly RenderMedia[] = [
+  { public_id: 'MEDIA-ID', filename: 'sample.png', width: 96, height: 48 },
+];
 
-async function html(markdown: string, media = MEDIA): Promise<string> {
+async function html(markdown: string, media: readonly RenderMedia[] = MEDIA): Promise<string> {
   return (await renderMarkdown(markdown, { media })).html;
 }
 
@@ -115,6 +117,41 @@ describe('画像記法の組み立て', () => {
   });
 });
 
+describe('img の属性', () => {
+  /**
+   * Astro 版が出していた `width` / `height` / `loading` / `decoding` の引き継ぎ。
+   * **`width` / `height` が無いと画像が届くまで高さが 0 で、本文が飛ぶ。**
+   */
+  it('寸法と読み込み方が付く', async () => {
+    expect(await html('![図](./sample.png)')).toContain(
+      '<img src="lily-media://MEDIA-ID/sample.png" alt="図" width="96" height="48" loading="lazy" decoding="async">',
+    );
+  });
+
+  it('寸法が読めていない添付でも loading / decoding は付く', async () => {
+    const media = [{ public_id: 'X', filename: 'sample.png', width: null, height: null }];
+    const out = await html('![図](./sample.png)', media);
+    expect(out).toContain('loading="lazy"');
+    expect(out).toContain('decoding="async"');
+    expect(out).not.toContain('width=');
+    expect(out).not.toContain('height=');
+  });
+
+  it('解決できなかった画像には付かない', async () => {
+    // 添付が無いので URL も書き換わらない。属性だけ足すと、無い画像の寸法を
+    // 主張することになる。
+    const out = await html('![無い](./missing.png)');
+    expect(out).toContain('<img src="./missing.png" alt="無い">');
+  });
+
+  it('生 HTML の img には URL の解決しかしない', async () => {
+    // 属性は著者が決めている。片方だけ足すと指定と違う比率に潰れる。
+    const out = await html('<img src="./sample.png" width="300">');
+    expect(out).toContain('<img src="lily-media://MEDIA-ID/sample.png" width="300">');
+    expect(out).not.toContain('loading=');
+  });
+});
+
 describe('本文に書いた HTML', () => {
   it('コードブロックと inline code は書き換えられずそのまま出る', async () => {
     const out = await html(
@@ -134,7 +171,7 @@ describe('本文に書いた HTML', () => {
 describe('相対参照の解決', () => {
   it('Markdown の画像記法を placeholder にする', async () => {
     expect(await html('![図](./sample.png)')).toContain(
-      '<img src="lily-media://MEDIA-ID/sample.png" alt="図">',
+      '<img src="lily-media://MEDIA-ID/sample.png" alt="図"',
     );
   });
 

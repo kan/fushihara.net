@@ -11,6 +11,7 @@
  * 移行にはこれで足りるので、必要になってから決める。
  */
 import { createMedia, getMediaByPublicId, mediaR2Key } from '../db/media.ts';
+import { imageDimensions } from '../media/dimensions.ts';
 import { mimeForFilename } from '../media/formats.ts';
 import { addAlias } from '../db/post-paths.ts';
 import { createPost, getPostByPublicId } from '../db/posts.ts';
@@ -262,6 +263,10 @@ async function importMedia(
       }
     }
 
+    // 寸法は `<img>` の width / height に使う。読めなければ NULL のまま
+    // (属性が出ないだけで、記事は取り込める)。
+    const size = imageDimensions(data, mime);
+
     const r2Key = mediaR2Key(postPublicId, filename.value);
     await createMedia(db, {
       postId,
@@ -269,6 +274,8 @@ async function importMedia(
       r2Key,
       mime,
       bytes: data.length,
+      width: size?.width,
+      height: size?.height,
       publicId,
     });
     await bucket.put(r2Key, data, { httpMetadata: { contentType: mime } });

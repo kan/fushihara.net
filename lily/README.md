@@ -14,7 +14,8 @@
 - `src/core/render/`（CommonMark + GFM、Shiki、相対参照 → placeholder）
 - 公開側の SSR（一覧・記事・タグ・404・alias 308・下書きプレビュー）と CSS の移植
 - フィード（RSS 維持 + Atom 追加）、sitemap、favicon / ogp の配信
-- 添付の配信（R2 が原本、Cloudflare Images は任意の最適化層）
+- 添付の配信（R2 が原本、Cloudflare Images は任意の最適化層）と、
+  `<img>` の `width` / `height` / `loading` / `decoding`
 - `AuthAdapter` と Cloudflare Access アダプタ、`<mount>/api/*` と
   `<mount>/admin/*` の保護境界
 - 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
@@ -62,7 +63,7 @@ src/
     api/      管理 API。mount を知らない形で <mount>/api にマウントされる
     auth/     AuthAdapter の型と Cloudflare Access アダプタ
     feed/     RSS 2.0 と Atom。どちらも全文
-    media/    画像の最適化（任意）と、受け付ける形式の表
+    media/    画像の最適化（任意）、受け付ける形式の表、寸法をヘッダから読む
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
     transfer/ portable な import / export。frontmatter・zip・往復の規則
     routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、
@@ -111,6 +112,41 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 - Astro は `pre.astro-code` を出していたが、Shiki 素のクラス名は `pre.shiki`。
   CSS を移植するときに読み替えること
 
+### `<img>` の属性
+
+Markdown の画像記法から出た `<img>` には `width` / `height` / `loading="lazy"` /
+`decoding="async"` を付ける。**`width` / `height` が無いと、画像が届くまで高さが
+0 のままで本文が飛ぶ**（Astro 版からの唯一の機能的な後退だった）。
+
+寸法は**画像そのものの性質で deployment に依存しない**ので、保存する `body_html`
+に焼き込んでよい（配信時に解決されるのは URL だけ）。読むのは
+**アップロードと import の時点**で、`core/media/dimensions.ts` がヘッダから取る。
+
+- **EXIF の orientation を見る。** 5〜8 は縦横を入れ替えて描かれる（ブラウザの
+  `image-orientation` は既定で `from-image`）。格納値をそのまま書くと、スマホで撮った
+  縦写真に**横長の枠を予約してから縦長で描き直す**ことになり、防ぎたかったレイアウト
+  シフトが却って大きくなる。EXIF を持てる 3 形式（JPEG の APP1 / PNG の `eXIf` /
+  WebP の `EXIF` チャンク）すべてで見る
+- **書くのは Markdown の画像記法から出た `<img>` だけ。** 記事に直接書いた生 HTML は
+  属性を著者が決めているので、URL の解決以外は触らない
+- `width` と `height` は**揃っているときだけ**足す。片方だけ書かれているところへ
+  もう片方を入れると、著者の指定と違う比率に潰れる
+- **寸法が読めなくても添付は受け付ける**（属性が出ないだけ）。AVIF は読まない。
+  寸法は `ispe` にあるが、どれが本体のものかは `pitm` と `ipma` を辿らないと
+  決まらず（サムネイルやアルファの補助画像にも付く）、実物で検証する手段が
+  手元に無いため
+- **`viewBox` しか無い SVG はその比を寸法として使う。** `<img>` に置いた
+  viewBox-only の SVG は固有サイズを持たないので、属性が無いと既定の 300px 幅に
+  伸びる。`viewBox="0 0 24 24"` のアイコンは 24px で出るようになる。これは
+  Astro（sharp）が書いていた値と同じ
+- **属性を出すと `<img>` は読み込み前から箱を持つ。** E2E で「描画された」と
+  「読み込めた」を同じもので見ていると通り抜ける（`naturalWidth` は
+  `expect.poll` で待つ）
+- **既存の添付には遡らない。** 寸法は `createMedia()` の INSERT でしか入らないので、
+  この変更より前に上げた添付は `width` / `height` が NULL のまま。`/api/rerender` は
+  `body_html` を作り直すだけで埋めない。埋めたければ**入れ直すか再 import する**
+  （まだ配信していないので、実害があるのは手元の D1 だけ）
+
 ## 1 箇所に閉じてあるもの
 
 同じ規則が 2 箇所にあると、片方だけ直した日に黙って食い違う。次は意図的に
@@ -128,6 +164,7 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 | 画像記法の組み立て（空白を含む名前の `<…>`） | `core/render/markdown.ts` |
 | 添付の R2 キーの決め方 | `core/db/media.ts` の `mediaR2Key` |
 | 添付として受け付ける形式（判断の材料ごと） | `core/media/formats.ts` |
+| 添付の寸法をヘッダから読む規則 | `core/media/dimensions.ts` |
 | portable な形式（frontmatter のキーと並び） | `core/transfer/format.ts` |
 | その形式の YAML をどこまで読むか | `core/transfer/frontmatter.ts` |
 | 日時の JST 変換 | `shared/date.ts` |
@@ -410,12 +447,9 @@ RSS の全文（`content:encoded`）は、XML として解析すれば上記以�
 移行の時点で採番された uuid 次第。**同じ日の順序を決めたいときは `published_at` に
 時刻を入れる**（この運用は Astro 版から変わっていない）。
 
-### まだ埋めていない差分
-
-`<img>` から `loading="lazy"` / `decoding="async"` / `width` / `height` が消える。
-Astro の画像パイプラインが付けていたもので、**`width`/`height` が無いとレイアウト
-シフトが起きる**。`media` テーブルに列だけは用意してあるが、アップロード時に画像の
-寸法を読む処理がまだ無い。
+`<img>` の `loading` / `decoding` / `width` / `height` は**埋めた**（上の
+「`<img>` の属性」）。Astro が付けていたものとの差は、寸法を読めない添付
+（AVIF や `viewBox` の無い SVG）で `width` / `height` が出ないことだけ。
 
 ## E2E
 

@@ -7,8 +7,7 @@
 import { listMediaByPost } from './db/media.ts';
 import { setRenderedHtml } from './db/posts.ts';
 import type { PostRow } from './db/types.ts';
-import type { MediaRef } from './paths.ts';
-import { RENDERER_VERSION, renderMarkdown } from './render/index.ts';
+import { RENDERER_VERSION, renderMarkdown, type RenderMedia } from './render/index.ts';
 
 /**
  * `loadMedia` は **`body_html` が無いときだけ**呼ばれる。添付の取得は
@@ -16,7 +15,7 @@ import { RENDERER_VERSION, renderMarkdown } from './render/index.ts';
  */
 export async function storedOrRenderedHtml(
   post: Pick<PostRow, 'body_html' | 'body_md'>,
-  loadMedia: () => Promise<readonly MediaRef[]>,
+  loadMedia: () => Promise<readonly RenderMedia[]>,
 ): Promise<string> {
   if (post.body_html !== null) return post.body_html;
   return (await renderMarkdown(post.body_md, { media: await loadMedia() })).html;

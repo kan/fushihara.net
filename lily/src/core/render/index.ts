@@ -14,19 +14,20 @@ import remarkParse from 'remark-parse';
 import remarkRehype from 'remark-rehype';
 import { unified } from 'unified';
 
-import type { MediaRef } from '../paths.ts';
 import { getHighlighter, THEMES } from './highlighter.ts';
-import { rehypeMedia } from './media.ts';
+import { rehypeMedia, type RenderMedia } from './media.ts';
+
+export type { RenderMedia } from './media.ts';
 
 /**
  * `body_html` は派生データなので、renderer を変えたら作り直す必要がある。
  * **出力が変わる変更をしたらここを上げる**（`POST /api/rerender` が拾う）。
  */
-export const RENDERER_VERSION = '1';
+export const RENDERER_VERSION = '2';
 
 export type RenderOptions = {
   /** 記事に紐づく添付。本文の `./sample.png` はこれと突き合わせる。 */
-  readonly media?: readonly MediaRef[];
+  readonly media?: readonly RenderMedia[];
 };
 
 export type RenderResult = {

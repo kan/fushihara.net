@@ -13,7 +13,8 @@ import type { PostWithPathRow } from '../db/types.ts';
 import { storedOrRenderedHtml } from '../delivery.ts';
 import { buildAtom, buildRss, type FeedEntry } from '../feed/index.ts';
 import { toFeedHtml } from '../feed/html.ts';
-import { createUrls, type MediaRef, type Urls } from '../paths.ts';
+import { createUrls, type Urls } from '../paths.ts';
+import type { RenderMedia } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
 import { buildSitemap, buildSitemapIndex } from '../sitemap.ts';
 import { groupByPost } from '../view.ts';
@@ -159,7 +160,7 @@ async function feedEntries(db: D1Database, urls: Urls): Promise<FeedEntry[]> {
 async function loadMediaFor(
   db: D1Database,
   posts: readonly PostWithPathRow[],
-): Promise<Map<number, MediaRef[]>> {
+): Promise<Map<number, RenderMedia[]>> {
   const needsRender = posts.filter((post) => post.body_html === null).map((post) => post.id);
   return groupByPost(await listMediaByPosts(db, needsRender));
 }

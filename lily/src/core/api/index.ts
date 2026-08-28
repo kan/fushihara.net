@@ -37,6 +37,7 @@ import {
 import { applyTags, listTagsWithCounts, resolveTags } from '../db/tags.ts';
 import type { PostRow } from '../db/types.ts';
 import { fetchLinkTitle } from '../link-title.ts';
+import { imageDimensions } from '../media/dimensions.ts';
 import { mimeForFilename } from '../media/formats.ts';
 import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
@@ -326,6 +327,11 @@ export function createApi(config: PageConfig) {
         return c.json(...apiError('filename-taken', filename.value));
       }
 
+      // 寸法は `<img>` の width / height に使う。**R2 に置く前にここで読む。**
+      // 後から読むには実体を取り直すことになり、置いた直後にもう 1 往復が要る。
+      const data = new Uint8Array(await file.arrayBuffer());
+      const size = imageDimensions(data, mime);
+
       const r2Key = mediaR2Key(post.public_id, filename.value);
       let media;
       try {
@@ -335,6 +341,8 @@ export function createApi(config: PageConfig) {
           r2Key,
           mime,
           bytes: file.size,
+          width: size?.width,
+          height: size?.height,
         });
       } catch (error) {
         // 上の SELECT との間に同じ名前を作られた場合だけ 409。それ以外
@@ -346,7 +354,7 @@ export function createApi(config: PageConfig) {
         throw error;
       }
 
-      await c.env.MEDIA.put(r2Key, await file.arrayBuffer(), {
+      await c.env.MEDIA.put(r2Key, data, {
         httpMetadata: { contentType: file.type },
       });
 

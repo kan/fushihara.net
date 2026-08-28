@@ -8,6 +8,7 @@ import { exportArchive } from '../../src/core/transfer/export.ts';
 import { importArchive } from '../../src/core/transfer/import.ts';
 import { createZip, readZip } from '../../src/core/transfer/zip.ts';
 import { db, resetDb } from '../db/helpers.ts';
+import { pngHeader } from '../fixtures/png.ts';
 import {
   api,
   getRoot,
@@ -265,6 +266,23 @@ describe('import', () => {
     expect(post?.published_at).toBe('2026-08-23T00:00:00.000Z');
     expect(post?.body_md).toBe('本文。\n');
     expect((await listAllPosts(db))[0]?.canonical_path).toBe('start-blog');
+  });
+
+  it('添付の寸法を読んで body_html の <img> に出す', async () => {
+    // 移行で入る記事もこの経路を通る。ここで読まないと、全記事が width / height の
+    // 無い <img> になり、画像が届くまで本文が飛ぶ。
+    const result = await importFiles({
+      'posts/p/index.md': postFile(['title: あ', 'date: 2026-08-23'], '![図](./sample.png)\n'),
+      'posts/p/sample.png': pngHeader(96, 48),
+    });
+    expect(result.failed).toEqual([]);
+
+    const post = await getPostByPublicId(db, result.imported[0]?.publicId as string);
+    expect((await listMediaByPost(db, post?.id as number))[0]).toMatchObject({
+      width: 96,
+      height: 48,
+    });
+    expect(post?.body_html).toContain('width="96" height="48" loading="lazy" decoding="async"');
   });
 
   it('updated が無い記事は公開日を更新日にする (取り込み時刻を入れない)', async () => {

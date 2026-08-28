@@ -1,9 +1,11 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { getMediaByPublicId } from '../../src/core/db/media.ts';
 import { getPostByPublicId } from '../../src/core/db/posts.ts';
 import { resolvePath } from '../../src/core/db/post-paths.ts';
 import { db, resetDb } from '../db/helpers.ts';
 import { api, apiJson, getRoot, json, setStubUser } from '../routes/helpers.ts';
+import { pngHeader } from '../fixtures/png.ts';
 
 beforeEach(resetDb);
 afterEach(() => setStubUser(null));
@@ -359,6 +361,31 @@ describe('添付', () => {
     const after = await getPostByPublicId(db, post.publicId);
     expect(after?.body_html).toContain('lily-media://');
     expect((await getRoot(uploaded.media.url)).status).toBe(200);
+  });
+
+  it('寸法を読んで <img> の width / height に出す', async () => {
+    // **属性が無いと画像が届くまで高さが 0 で、本文が飛ぶ。**
+    const post = await createPost({ bodyMd: '![図](./sample.png)\n' });
+    const form = new FormData();
+    form.append('file', new File([pngHeader(96, 48)], 'sample.png', { type: 'image/png' }));
+    const res = await api(`/api/posts/${post.publicId}/media`, { method: 'POST', body: form });
+    expect(res.status).toBe(201);
+
+    const { media } = await json(res);
+    expect(await getMediaByPublicId(db, media.publicId)).toMatchObject({ width: 96, height: 48 });
+
+    const after = await getPostByPublicId(db, post.publicId);
+    expect(after?.body_html).toContain('width="96" height="48" loading="lazy" decoding="async"');
+  });
+
+  it('寸法が読めない添付でも受け付ける (属性が出ないだけ)', async () => {
+    const post = await createPost({ bodyMd: '![図](./sample.png)\n' });
+    const res = await api(`/api/posts/${post.publicId}/media`, { method: 'POST', body: filePayload() });
+    expect(res.status).toBe(201);
+
+    const after = await getPostByPublicId(db, post.publicId);
+    expect(after?.body_html).toContain('loading="lazy"');
+    expect(after?.body_html).not.toContain('width=');
   });
 
   it('解決できない参照を警告として返す', async () => {
