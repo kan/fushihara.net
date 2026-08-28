@@ -17,6 +17,7 @@ import {
   findByPostAndFilename,
   getMediaByPublicId,
   listMediaByPost,
+  mediaR2Key,
 } from '../db/media.ts';
 import { addAlias, changeCanonicalPath, removePath } from '../db/post-paths.ts';
 import {
@@ -36,10 +37,12 @@ import {
 import { applyTags, listTagsWithCounts, resolveTags } from '../db/tags.ts';
 import type { PostRow } from '../db/types.ts';
 import { fetchLinkTitle } from '../link-title.ts';
+import { ALLOWED_MIME } from '../media/formats.ts';
 import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
 import { hashPreviewToken, newPreviewToken } from '../tokens.ts';
+import { bytesBody, exportArchive, importArchive, ZipError } from '../transfer/index.ts';
 import { uniqueViolationTarget } from '../db/errors.ts';
 import { apiError } from './errors.ts';
 import {
@@ -63,16 +66,6 @@ export type ApiEnv = {
   Variables: { user: AuthUser };
 };
 
-/** 添付として受け付ける形式。**任意の Content-Type を配らせない。** */
-const ALLOWED_MIME = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-  'image/avif',
-  'image/svg+xml',
-]);
-
 /** 添付の上限。R2 は大きくても置けるが、記事の挿し絵にこれ以上は要らない。 */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -81,6 +74,12 @@ const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
  * Workers の subrequest の上限に当たらない範囲に抑える。
  */
 const RERENDER_BATCH = 50;
+
+/**
+ * 取り込める書庫の上限。**展開したものを丸ごとメモリに載せる**ので、
+ * Workers の 128MB に対して余裕を持たせてある。
+ */
+const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 
 export function createApi(config: PageConfig) {
   const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
@@ -315,7 +314,7 @@ export function createApi(config: PageConfig) {
         return c.json(...apiError('filename-taken', filename.value));
       }
 
-      const r2Key = `posts/${post.public_id}/${filename.value}`;
+      const r2Key = mediaR2Key(post.public_id, filename.value);
       let media;
       try {
         media = await createMedia(db, {
@@ -357,6 +356,69 @@ export function createApi(config: PageConfig) {
       const owner = media.post_id === null ? null : await getPostById(db, media.post_id);
       const unresolvedMedia = owner ? await renderAndStore(db, owner) : [];
       return c.json({ deleted: media.public_id, unresolvedMedia });
+    })
+
+    /**
+     * portable export。**記事の Markdown と添付を 1 つの zip にする。**
+     *
+     * D1 の dump (運用復旧用) とは別物で、こちらは lily を捨てても読める形。
+     * 実体が無い添付は書庫に入らないが、**export 自体は止めない**
+     * (書庫が作れないことで、R2 から消えている事実を隠さない)。
+     */
+    .get('/export', async (c) => {
+      const result = await exportArchive(c.env.DB, c.env.MEDIA);
+      for (const warning of result.warnings) {
+        console.warn(`lily export: ${warning.reason} ${warning.postPath}/${warning.filename}`);
+      }
+      // 日付は UTC。core は配信先のタイムゾーンを知らないうえ、書庫の名前は
+      // 読み手に見せる日付ではない。
+      const name = `lily-export-${new Date().toISOString().slice(0, 10)}.zip`;
+      return new Response(bytesBody(result.archive), {
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="${name}"`,
+          'Cache-Control': 'no-store',
+          'X-Lily-Posts': String(result.posts),
+          'X-Lily-Media': String(result.media),
+          'X-Lily-Warnings': String(result.warnings.length),
+        },
+      });
+    })
+
+    /**
+     * portable import。**記事ごとに独立して取り込み、失敗した記事だけを返す。**
+     *
+     * 1 本の frontmatter が壊れていたせいで書庫まるごと入らない、という形には
+     * しない (移行の途中で必ず起きるうえ、どれが悪いのか分からなくなる)。
+     * 既にある `public_id` は上書きせず、その記事を失敗として返す。
+     */
+    .post('/import', async (c) => {
+      // **body を読む前に大きさを見る。** formData() は全部をメモリに載せるので、
+      // 読んでから測るのでは MAX_IMPORT_BYTES が memory を守れない
+      // (Content-Length が無いときは測れないので、下の file.size でもう一度見る)。
+      const declared = Number(c.req.header('Content-Length') ?? '0');
+      if (declared > MAX_IMPORT_BYTES) return c.json(...apiError('file-too-large'));
+
+      let file: File | string | null;
+      try {
+        file = (await c.req.formData()).get('file');
+      } catch {
+        // multipart として読めない body。入力の誤りなので 400 にする
+        // (投げっぱなしにすると 500 になり、他の入力の誤りと扱いが揃わない)。
+        return c.json(...apiError('invalid-form'));
+      }
+      if (!(file instanceof File)) return c.json(...apiError('file-required'));
+      if (file.size === 0) return c.json(...apiError('file-empty'));
+      if (file.size > MAX_IMPORT_BYTES) return c.json(...apiError('file-too-large'));
+
+      try {
+        const archive = new Uint8Array(await file.arrayBuffer());
+        return c.json(await importArchive(c.env.DB, c.env.MEDIA, archive));
+      } catch (error) {
+        // 壊れた書庫は入力の誤りなので 400。それ以外は投げ直す。
+        if (error instanceof ZipError) return c.json(...apiError('invalid-archive', error.message));
+        throw error;
+      }
     })
 
     /**

@@ -18,6 +18,7 @@
 - `AuthAdapter` と Cloudflare Access アダプタ、`<mount>/api/*` と
   `<mount>/admin/*` の保護境界
 - 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
+- portable な import / export（Markdown 一式の zip。往復で identity と URL が保たれる）
 - Vue の管理画面（一覧・編集・プレビュー・画像 D&D・パス変更・プレビュー URL・
   公開日時・タグ補完・ページング）
 
@@ -60,6 +61,7 @@ src/
     feed/     RSS 2.0 と Atom。どちらも全文
     media/    画像の最適化（任意。無くても原本で配れる）
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
+    transfer/ portable な import / export。frontmatter・zip・往復の規則
     routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、
               feeds.ts が機械向け、media.ts が添付、api.ts が保護境界
     theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
@@ -99,7 +101,8 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
   `--shiki-light` / `--shiki-dark` だけを出させて CSS の `light-dark()` に渡す。
   `'light'` にすると `!important` が要るようになる
 - 載せる言語は `render/highlighter.ts` の `LANGS`。**バンドルに入る**ので、
-  書かない言語は入れない（現在 18 言語 + 2 テーマで Worker 全体が gzip 267 KiB）
+  書かない言語は入れない（Worker 全体は gzip 約 410 KiB で、その大半がこれ）。
+  測るときは `npx wrangler deploy -c ./wrangler.jsonc --dry-run` の Total Upload
 - Astro は `pre.astro-code` を出していたが、Shiki 素のクラス名は `pre.shiki`。
   CSS を移植するときに読み替えること
 
@@ -118,6 +121,9 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 | 「記事は常に public_id で引ける」 | `core/db/post-paths.ts` |
 | 生成済み HTML の後処理を開始タグに限る | `core/render/html.ts` の `mapOpenTags` |
 | 画像記法の組み立て（空白を含む名前の `<…>`） | `core/render/markdown.ts` |
+| 添付の R2 キーの決め方 | `core/db/media.ts` の `mediaR2Key` |
+| portable な形式（frontmatter のキーと並び） | `core/transfer/format.ts` |
+| その形式の YAML をどこまで読むか | `core/transfer/frontmatter.ts` |
 | 日時の JST 変換 | `shared/date.ts` |
 | 見た目・文言・OGP（差し替え点） | `core/theme.ts` の `Theme` を `site/` が実装 |
 | キャッシュ方針 | `core/routes/cache.ts` |
@@ -259,6 +265,100 @@ Cloudflare Images は**任意の層**。「後から有効にすると配信が�
 `private` なので Cloudflare のキャッシュには載らず、毎回 Images を通る。
 **アクセスが増えて問題になったら `caches.default` に形式込みのキーで載せる**
 （それまでは入れない）。
+
+## portable な import / export
+
+**入れられる形と出せる形が同じ。** 今の `blog/content/posts/` のレイアウトそのもの。
+
+```
+posts/<canonical-path>/index.md    frontmatter + 本文（相対参照のまま）
+posts/<canonical-path>/sample.png  添付
+```
+
+D1 の dump（運用復旧用）とは別物。あちらは D1 / R2 という構成に依存するが、
+こちらは Markdown と画像なので、**lily を捨てても記事が残る。**
+
+口は `GET <mount>/api/export`（zip を返す）と `POST <mount>/api/import`
+（multipart の `file`）。どちらも管理 API なので `AuthAdapter` の内側にある。
+
+### frontmatter
+
+| キー | export | import | 中身 |
+|---|---|---|---|
+| `title` | 必ず書く | 必須 | |
+| `date` | 公開済みなら書く | 公開済みなら必須 | 公開日時。UTC ISO8601 |
+| `updated` | 必ず書く | 省略可 | `updated_at` |
+| `description` | あれば書く | 省略可 | |
+| `tags` | あれば書く | 省略可 | 名前の配列 |
+| `draft` | 下書きなら書く | 省略可 | 既定は公開済み |
+| `public_id` | **必ず書く** | 省略可（採番する） | 不変の identity |
+| `paths` | 必ず書く | 省略可 | canonical + alias |
+| `media` | あれば書く | 省略可 | ファイル名 → 添付の `public_id` |
+
+- **`public_id` を落とさない。** 落とすと再 import で記事の identity が変わり、
+  URL も購読者側の同一性も壊れる。`media` を持っているのも同じ理由で、
+  無いと `<mount>/media/<public_id>/…` が往復で変わる
+- **`public_id` は記事のパスと同じ規則で検査する** (`normalizePostPath`)。
+  素通しすると `public_id: admin` が `post_paths` に入って route を食う
+  （createPost は identity 行を無検査で INSERT するので、止めるのはここだけ）
+- **canonical はディレクトリ名が正**、`paths` は「その記事が持つ全パス」。
+  ディレクトリを rename すると旧 canonical が alias として残る
+  （`changeCanonicalPath` と同じ挙動）
+- `created_at` と `bluesky_uri` は**持たない**。前者は表示に使わないので
+  `date` → `updated` の順で当て、後者は D1 の dump 側の担当
+  （portable な Markdown に lily 固有の状態を混ぜない）
+- `public_id` / `paths` / `media` を省いた形（＝ Astro 版の frontmatter そのもの）が
+  そのまま読める。**移行はこの経路**
+
+### YAML は自前で読み書きする
+
+汎用の YAML パーサを入れていない。この形式が lily の契約そのもので、書く側も
+こちらなので、往復で形が変わらないことを自分で保証できるため。読み書きできるのは
+スカラ・引用符付き・ブロック / フローの並び・1 段のマッピングだけで、**対応して
+いない記法は黙って別物として解釈せず拒否する**（`src/core/transfer/frontmatter.ts`
+の doc comment が対応表）。汎用の YAML が要るようになったら、差し替えるのは
+このファイル 1 つ。
+
+書く側は「このパーサが読み戻せるか」だけでは引用を決めない。**標準の YAML パーサが
+真偽値や数値として読んでしまう文字列も引用する**（`#tag` / `true` / `0.5` /
+引用符で始まる値）。export した Markdown は他の道具にも読まれうる。
+
+### zip は書くとき無圧縮、読むとき deflate も
+
+書く側を stored に固定しているのは、**同じ中身なら必ず同じバイト列になる**から。
+圧縮の出力は実装に依存するので、往復の検証を「同じ書庫になるか」で書けなくなる。
+記事は小さく添付は既に圧縮済みの画像なので、代償はほとんど無い。
+
+そのために日時もデータ由来にしてある（記事は `updated_at`、添付は `created_at`）。
+**実行時刻を入れてはいけない。** なお MS-DOS の日時は 2 秒刻みなので、
+「2 回 export して比べる」だけでは実行時刻が混ざっていても通ってしまう
+（`test/transfer/transfer.test.ts` はローカルヘッダの日時を直接見ている）。
+
+読む側で deflate も受けるのは、**手元で普通に zip した書庫を取り込めるように**
+するため。CRC は毎回検算する（壊れた書庫を黙って取り込むと、記事が欠けたことに
+後から気付けない）。zip64 は未対応。
+
+### 取り込みの規則
+
+- **記事ごとに独立して取り込み、失敗した記事だけを返す。** 1 本の frontmatter が
+  壊れていたせいで書庫まるごと入らない形にはしない（移行の途中で必ず起きるうえ、
+  どれが悪いのか分からなくなる）
+- **既にある `public_id` は上書きしない。** 上書きの意味は「本文だけ」「パスも」
+  「消えた添付も」で変わり、取り違えると記事が壊れる。復旧（空の DB へ入れ直す）と
+  移行にはこれで足りるので、必要になってから決める
+- **タグは記事を作る前に解決する**（管理 API と同じ理由）
+- **添付を入れてから描く。** 逆にすると `./sample.png` が解決できず、貼ってある
+  はずの画像が公開ページから消える
+- 書庫に Content-Type は無いので、**添付の形式は拡張子で決める**（管理 API が
+  受け付ける範囲と同じ）。それ以外は警告にして記事は取り込む
+- `index.md` が無いディレクトリは記事ではない。記事の下のさらに下にあるファイルも
+  添付にできない（`media.filename` に `/` を入れられないため）
+
+### 増えたときに効く上限
+
+書庫は**丸ごとメモリに載る**。import は 50MB までにしてあるが、Workers の 128MB と
+subrequest の上限（添付 1 つにつき R2 が 1 回）に当たる日が先に来る。記事が数百を
+超えたら、範囲を指定して分けて出す形が要る。
 
 ## 増えてから壊れるもの
 

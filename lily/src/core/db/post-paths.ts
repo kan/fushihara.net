@@ -7,6 +7,7 @@
 import { normalizePostPath, type PathErrorCode } from '../paths.ts';
 import { err, ok, type Result } from '../result.ts';
 import { nowIso } from '../ids.ts';
+import { queryInChunks } from './chunk.ts';
 import { uniqueViolationTarget } from './errors.ts';
 import { postColumns, type PostPathRow, type ResolvedPathRow } from './types.ts';
 
@@ -48,15 +49,45 @@ export async function resolvePath(db: D1Database, path: string): Promise<Resolve
     .first<ResolvedPathRow>();
 }
 
+/**
+ * パスの並び。**canonical が先頭、以下 path 昇順。**
+ *
+ * 1 件版とまとめ取得で別々に書くと、export の frontmatter が「記事の取り方」で
+ * 変わってしまう (`paths` の先頭が canonical でなくなる)。
+ */
+const PATH_ORDER = 'is_canonical DESC, path ASC';
+
 export async function listPaths(db: D1Database, postId: number): Promise<PostPathRow[]> {
   const { results } = await db
     .prepare(
       `SELECT path, post_id, is_canonical, created_at
-         FROM post_paths WHERE post_id = ?1 ORDER BY is_canonical DESC, path ASC`,
+         FROM post_paths WHERE post_id = ?1 ORDER BY ${PATH_ORDER}`,
     )
     .bind(postId)
     .all<PostPathRow>();
   return results;
+}
+
+/**
+ * 複数記事のパスをまとめて引く。export が記事の数だけ問い合わせないようにするため。
+ * 並びは 1 記事版と同じ (`PATH_ORDER`)。
+ */
+export async function listPathsForPosts(
+  db: D1Database,
+  postIds: number[],
+): Promise<PostPathRow[]> {
+  return await queryInChunks(postIds, async (chunk) => {
+    const placeholders = chunk.map((_, i) => `?${i + 1}`).join(', ');
+    const { results } = await db
+      .prepare(
+        `SELECT path, post_id, is_canonical, created_at
+           FROM post_paths WHERE post_id IN (${placeholders})
+          ORDER BY post_id ASC, ${PATH_ORDER}`,
+      )
+      .bind(...chunk)
+      .all<PostPathRow>();
+    return results;
+  });
 }
 
 export async function getCanonicalPath(db: D1Database, postId: number): Promise<string | null> {

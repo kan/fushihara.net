@@ -10,6 +10,16 @@ import { MEDIA_COLUMNS, type MediaRow } from './types.ts';
 
 const MEDIA_SELECT = MEDIA_COLUMNS.join(', ');
 
+/**
+ * R2 のキー。**(記事, ファイル名) から決まる。**
+ *
+ * 管理画面からのアップロードと import の両方がここを通る。片方だけ規則を変えると、
+ * 同じ添付が 2 つのキーに散り、消したはずの実体が残る。
+ */
+export function mediaR2Key(postPublicId: string, filename: string): string {
+  return `posts/${postPublicId}/${filename}`;
+}
+
 export type CreateMediaInput = {
   postId: number | null;
   filename: string;

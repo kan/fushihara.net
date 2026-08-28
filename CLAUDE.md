@@ -614,3 +614,7 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 - `wrangler` を叩くときは `-c ./wrangler.jsonc` が要る（`blog/` と同じ理由）
 - **`d1_databases[].database_id` はまだ placeholder。** ローカルは見ないので
   テストと `--local` のマイグレーションは通るが、本番の D1 を作ったら差し替える
+- **記事の出し入れは portable な zip（`lily/src/core/transfer/`）。** 形は
+  `posts/<canonical>/index.md` + 添付で、今の `blog/content/posts/` と同じ。
+  Astro 版の frontmatter がそのまま読めるので、**移行はこの経路**を通す
+  （`blog/content/` を直に読む移行スクリプトを別に作らない）
