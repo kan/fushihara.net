@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { isoDate } from '../../../../shared/date.ts';
 import { client, errorMessage, MOUNT } from '../api.ts';
 import { go } from '../router.ts';
 
@@ -60,9 +61,15 @@ watch([offset, status], load);
 
 onMounted(load);
 
-/** 表示は日付まで。時刻の細かさは一覧で要らない。 */
+/**
+ * 表示は日付まで。時刻の細かさは一覧で要らない。
+ *
+ * **JST で切り出す。** `published_at` は UTC の ISO8601 なので、頭を 10 文字
+ * 取ると 9 時間ぶんずれる（JST の 0:00〜8:59 に公開した記事が前日として並ぶ。
+ * 公開ページと編集画面は JST なので、一覧だけ 1 日違うことになる。実際に踏んだ）。
+ */
 function day(value: string | null): string {
-  return value ? value.slice(0, 10) : '—';
+  return value ? isoDate(new Date(value)) : '—';
 }
 </script>
 
