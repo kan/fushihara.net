@@ -18,7 +18,13 @@ export default defineConfig({
   webServer: {
     // 記事ではなく test-content/ のフィクスチャに対して回す。実記事に依存させると、
     // 記事を書き換えるたびにテストが落ちる (blog/test-content/README.md 参照)。
-    command: `BLOG_CONTENT_DIR=./test-content/posts npm run build && npx wrangler dev -c ./wrangler.jsonc --port ${PORT}`,
+    //
+    // **BLOG_CONTENT_DIR は env で渡す。** コマンドの先頭に置くと `npm run build` に
+    // しか効かず、後ろの wrangler dev からは見えない。wrangler.jsonc の
+    // build.command が check:no-fixtures を呼ぶので、見えないと「フィクスチャが
+    // 混ざっている」と判定されてサーバーが起動しない (実際に CI で落ちた)。
+    command: `npm run build && npx wrangler dev -c ./wrangler.jsonc --port ${PORT}`,
+    env: { BLOG_CONTENT_DIR: './test-content/posts' },
     url: `${baseURL}/blog/`,
     reuseExistingServer: false,
     timeout: 120_000,

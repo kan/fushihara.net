@@ -9,6 +9,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# **フィクスチャを配ると分かっている場面では検査しない。**
+# E2E は test-content/ に対してビルドして wrangler dev で配るので、そこで止めると
+# テストが起動できない。デプロイの経路が BLOG_CONTENT_DIR を立てることはないので、
+# 「素のビルドに混ざっていないか」という本来の問いはこれで保たれる。
+if [ -n "${BLOG_CONTENT_DIR:-}" ]; then
+  echo "BLOG_CONTENT_DIR が指定されているので検査しない ($BLOG_CONTENT_DIR)"
+  exit 0
+fi
+
 dist_root='dist/blog'
 [ -d "$dist_root" ] || { echo "$dist_root がありません。先にビルドしてください" >&2; exit 1; }
 
