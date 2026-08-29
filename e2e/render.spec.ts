@@ -152,6 +152,24 @@ test('リンクが新しいタブで開く形になっている', async ({ page 
   await expect(link).toHaveAttribute('target', '_blank');
 });
 
+test('rel=me が Social 付箋のアカウントと一致する', async ({ page }) => {
+  // 「このアカウントは自分だ」の宣言。**相互リンクで初めて意味を持つ**ので、
+  // 付箋のリンクと 1 文字でも違うと黙って効かなくなる。どちらも
+  // `src/board-data.ts` の `SOCIAL_LINKS` から出ているが、片方を手書きに
+  // 戻した日にここで気付けるよう、実際に配信された HTML で突き合わせる。
+  await gotoAndSettle(page);
+
+  const declared = await page.locator('head link[rel="me"]').evaluateAll((links) =>
+    links.map((link) => (link as HTMLLinkElement).getAttribute('href')),
+  );
+  const shown = await page
+    .locator('[data-note-id="social"] a')
+    .evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).getAttribute('href')));
+
+  expect(shown.length).toBeGreaterThan(0);
+  expect(declared).toEqual(shown);
+});
+
 test('API が全滅しても静的な内容は残る', async ({ page }) => {
   await page.route('**/api/**', (r) => r.fulfill({ status: 500, body: 'boom' }));
 

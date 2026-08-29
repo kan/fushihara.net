@@ -28,6 +28,24 @@ const wemaIcon = (href: string) => {
 export const GITHUB_USER = 'kan';
 
 /**
+ * Social 付箋に出すアカウント。**`<link rel="me">` もここから作る**
+ * （`vite.config.ts` がビルド時に `<head>` へ差し込む）。
+ *
+ * 「このアカウントは自分だ」の宣言を、付箋と `<head>` の 2 箇所に手で書くと
+ * 片方だけ古くなる。`rel="me"` は相互リンクで初めて意味を持つ仕組みなので、
+ * URL が 1 文字違うだけで黙って効かなくなる。
+ *
+ * 並び順はそのまま付箋のアイコンの並びになる。
+ */
+export const SOCIAL_LINKS: readonly { readonly icon: { path: string }; readonly url: string }[] = [
+  { icon: siBluesky, url: 'https://bsky.app/profile/kan.fushihara.net' },
+  { icon: siX, url: 'https://twitter.com/__kan' },
+  { icon: siGithub, url: 'https://github.com/kan' },
+  { icon: siFacebook, url: 'https://www.facebook.com/kan.fushihara' },
+  { icon: siInstagram, url: 'https://www.instagram.com/kanf' },
+];
+
+/**
  * OSS 付箋に出すリポジトリ。**順番どおりに出る。**
  *
  * 自動で選ばせない理由: `pushed` 順だと star のある古い資産が全部漏れ、star 順だと
@@ -98,11 +116,7 @@ export const boardData: WemaBoardData = {
       width: 220, height: 110,
       text: [
         '<b>Social</b><br><br>',
-        siIcon(siBluesky, 'https://bsky.app/profile/kan.fushihara.net'),
-        siIcon(siX, 'https://twitter.com/__kan'),
-        siIcon(siGithub, 'https://github.com/kan'),
-        siIcon(siFacebook, 'https://www.facebook.com/kan.fushihara'),
-        siIcon(siInstagram, 'https://www.instagram.com/kanf'),
+        ...SOCIAL_LINKS.map(({ icon, url }) => siIcon(icon, url)),
       ].join(''),
       color: C.social,
       zIndex: 1,
