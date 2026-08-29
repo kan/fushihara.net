@@ -100,8 +100,9 @@ export async function layout(
     <meta property="og:image" content="${urls.asset(ASSET.ogp, { absolute: true })}" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <!-- カードの形だけ指定する。**どのアカウントのものかは示さない**
+         (twitter:site は Astro から引き継いだだけで、何も担っていなかった)。 -->
     <meta name="twitter:card" content="summary_large_image" />
-    ${site.twitter ? html`<meta name="twitter:site" content="${site.twitter}" />` : ''}
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

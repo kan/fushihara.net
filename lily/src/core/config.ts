@@ -14,8 +14,6 @@ export type SiteConfig = {
   readonly name: string;
   readonly description: string;
   readonly author: string;
-  /** OGP の `twitter:site`。無ければ出さない。 */
-  readonly twitter?: string;
 };
 
 /**

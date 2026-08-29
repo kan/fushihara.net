@@ -19,5 +19,4 @@ export const SITE = {
   name: 'ふしはらねっとのぶろぐ',
   description: `${AUTHOR} のブログ`,
   author: AUTHOR,
-  twitter: '@__kan',
 } as const;

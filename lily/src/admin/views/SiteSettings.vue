@@ -12,7 +12,7 @@ import { go } from '../router.ts';
 import { MOUNT_LABEL, SITE } from '../site.ts';
 
 /**
- * 表示する項目。値が無いものは出さない (Twitter は任意)。
+ * 表示する項目。
  *
  * `mount` を持つ行は、値のうしろにそれを太字で足す。**公開 URL とマウントを
  * 別々の行にすると、実際に配信されている URL がどれなのか読み取れない。**
@@ -21,7 +21,6 @@ const rows: { label: string; value: string; mount?: string }[] = [
   { label: 'サイト名', value: SITE.name },
   { label: '説明', value: SITE.description },
   { label: '著者', value: SITE.author },
-  ...(SITE.twitter ? [{ label: 'Twitter', value: SITE.twitter }] : []),
   // origin は差し込む側で正規化済み (`core/paths.ts` の `siteOrigin`)。
   // ここで整形し直すと、配信されている URL と設定画面の表示がずれる。
   { label: '公開 URL', value: SITE.url, mount: MOUNT_LABEL },
