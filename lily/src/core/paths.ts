@@ -116,6 +116,29 @@ function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/');
 }
 
+/**
+ * サイトの origin。**末尾スラッシュを落とす。**
+ *
+ * 設定に `https://example.com/` と書かれても `//blog` にならないようにする。
+ * 表示のために origin を出すところ (管理画面の設定) も必ずこれを通す。
+ */
+export function siteOrigin(siteUrl: string): string {
+  return siteUrl.replace(/\/+$/, '');
+}
+
+/**
+ * 管理画面 (SPA) の画面を指すハッシュ。**組む側と解く側がここを見る。**
+ *
+ * 公開ページから編集画面へ直行するリンク (`src/site/layout.ts`) と、ハッシュを
+ * 解いて画面を決めるルータ (`src/admin/router.ts`) が同じ形を知っている必要がある。
+ * 食い違っても一覧が開くだけで気付けないので、形はここだけに置く。
+ */
+export const ADMIN_HASH = { postPrefix: '/posts/' } as const;
+
+export function adminPostHash(publicId: string): string {
+  return `#${ADMIN_HASH.postPrefix}${encodeURIComponent(publicId)}`;
+}
+
 export type UrlOptions = { readonly absolute?: boolean };
 
 /**
@@ -151,6 +174,8 @@ export interface Urls {
   feed(kind: FeedKind, options?: UrlOptions): string;
   preview(token: string, options?: UrlOptions): string;
   admin(sub?: string, options?: UrlOptions): string;
+  /** 管理画面でこの記事を開く URL。**ハッシュの形は `ADMIN_HASH` が持つ。** */
+  adminPost(publicId: string, options?: UrlOptions): string;
   postsJson(options?: UrlOptions): string;
   sitemap(options?: UrlOptions): string;
   /** サイトマップの中身。index から指す 1 本。 */
@@ -163,7 +188,7 @@ export interface Urls {
 
 export function createUrls(config: UrlsConfig): Urls {
   const mountPath = normalizeMountPath(config.mountPath);
-  const origin = config.siteUrl.replace(/\/+$/, '');
+  const origin = siteOrigin(config.siteUrl);
 
   const build = (relative: string, options?: UrlOptions): string => {
     const path = `${mountPath}${relative}`;
@@ -187,6 +212,7 @@ export function createUrls(config: UrlsConfig): Urls {
     feed: (kind, o) => build(`/${ROUTE[kind]}`, o),
     preview: (token, o) => build(`/${ROUTE.preview}/${encodeURIComponent(token)}`, o),
     admin: (sub, o) => build(sub === undefined ? `/${ROUTE.admin}/` : `/${ROUTE.admin}/${sub}`, o),
+    adminPost: (publicId, o) => build(`/${ROUTE.admin}/${adminPostHash(publicId)}`, o),
     postsJson: (o) => build(`/${ROUTE.postsJson}`, o),
     sitemap: (o) => build(`/${ROUTE.sitemap}`, o),
     sitemapUrls: (o) => build(`/${ROUTE.sitemapUrls}`, o),

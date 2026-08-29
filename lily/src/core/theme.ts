@@ -27,7 +27,17 @@ export type PostSummaryView = {
 };
 
 /** 記事ページ。`html` は placeholder を解決済みの、そのまま出せる HTML。 */
-export type PostView = PostSummaryView & { readonly html: string };
+export type PostView = PostSummaryView & {
+  readonly html: string;
+  /**
+   * 管理画面でこの記事を開く URL。**組むのは core**（`urls.adminPost()`）で、
+   * テーマは出すかどうかだけを決める。
+   *
+   * identity ではなく完成した URL を渡すのは、テーマに「管理画面のハッシュの形」を
+   * 知らせないため。別のテーマに差し替えても、同じ機能をそのまま作れる。
+   */
+  readonly adminUrl: string;
+};
 
 export type PageContext = {
   readonly site: SiteConfig;

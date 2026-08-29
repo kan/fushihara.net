@@ -196,11 +196,77 @@ export async function countPublishedPostsByTagSlug(db: D1Database, slug: string)
   return row?.n ?? 0;
 }
 
-/** 管理画面のページャ用。status で絞ったときはその件数。 */
-export async function countPosts(db: D1Database, status?: PostStatus): Promise<number> {
+/**
+ * 管理画面の絞り込み。**一覧と件数が同じ条件を見るための型。**
+ *
+ * 2 つのクエリに別々に条件を書くと、片方だけ直した日にページャが嘘をつく
+ * (`total` は全件のまま、行だけ絞られる)。条件の組み立ては `postFilter()` 1 箇所。
+ */
+export type PostFilter = {
+  status?: PostStatus;
+  /** タグの slug。`tags.slug` は UNIQUE なので 1 つに定まる。 */
+  tag?: string;
+  /** タイトル・説明・本文の部分一致。空文字は絞り込み無しと同じ。 */
+  q?: string;
+};
+
+/**
+ * LIKE のパターンに使えない文字を無害にする。
+ *
+ * **これをしないと `_` を含む語がほぼ全件に一致する** (LIKE の `_` は任意の
+ * 1 文字)。`%` も同様。エスケープ文字自身が先。
+ */
+function likePattern(q: string): string {
+  return `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * WHERE 句と bind する値を組む。**`p` の別名を前提**にする。
+ *
+ * 番号付きの placeholder は使わず `?` を並べる。値の順番と並びが 1 対 1 で
+ * 対応するので、条件を足したときに番号を振り直す必要がない。
+ */
+function postFilter(filter: PostFilter): { where: string; values: (string | null)[] } {
+  const conditions: string[] = [];
+  const values: (string | null)[] = [];
+
+  if (filter.status) {
+    conditions.push('p.status = ?');
+    values.push(filter.status);
+  }
+  if (filter.tag) {
+    // JOIN ではなく EXISTS。JOIN だと (将来 slug 以外で絞ったときに) 同じ記事が
+    // タグの数だけ並び、LIMIT と件数が食い違う。
+    conditions.push(
+      `EXISTS (SELECT 1 FROM post_tags pt JOIN tags t ON t.id = pt.tag_id
+                WHERE pt.post_id = p.id AND t.slug = ?)`,
+    );
+    values.push(filter.tag);
+  }
+  if (filter.q) {
+    // 本文まで見る。「あの記事どこだっけ」で引けないと検索の意味が薄いので、
+    // 全走査になることは承知で入れてある (数百本までは D1 でも一瞬)。
+    const pattern = likePattern(filter.q);
+    conditions.push(
+      `(p.title LIKE ? ESCAPE '\\'
+        OR coalesce(p.description, '') LIKE ? ESCAPE '\\'
+        OR p.body_md LIKE ? ESCAPE '\\')`,
+    );
+    values.push(pattern, pattern, pattern);
+  }
+
+  return {
+    where: conditions.length === 0 ? '1 = 1' : conditions.join(' AND '),
+    values,
+  };
+}
+
+/** 管理画面のページャ用。**一覧と同じ絞り込みを渡すこと。** */
+export async function countPosts(db: D1Database, filter: PostFilter = {}): Promise<number> {
+  const { where, values } = postFilter(filter);
   const row = await db
-    .prepare('SELECT count(*) AS n FROM posts WHERE (?1 IS NULL OR status = ?1)')
-    .bind(status ?? null)
+    .prepare(`SELECT count(*) AS n FROM posts p WHERE ${where}`)
+    .bind(...values)
     .first<{ n: number }>();
   return row?.n ?? 0;
 }
@@ -208,18 +274,19 @@ export async function countPosts(db: D1Database, status?: PostStatus): Promise<n
 /** 管理画面と export 用。下書きも含めて全部返す。 */
 export async function listAllPosts(
   db: D1Database,
-  options: ListOptions & { status?: PostStatus } = {},
+  options: ListOptions & PostFilter = {},
 ): Promise<PostWithPathRow[]> {
+  const { where, values } = postFilter(options);
   const { results } = await db
     .prepare(
       `SELECT ${postColumns('p')}, c.path AS canonical_path
          FROM posts p
          JOIN post_paths c ON c.post_id = p.id AND c.is_canonical = 1
-        WHERE (?1 IS NULL OR p.status = ?1)
+        WHERE ${where}
         ORDER BY coalesce(p.published_at, p.created_at) DESC, p.public_id ASC
-        LIMIT ?2 OFFSET ?3`,
+        LIMIT ? OFFSET ?`,
     )
-    .bind(options.status ?? null, options.limit ?? -1, options.offset ?? 0)
+    .bind(...values, options.limit ?? -1, options.offset ?? 0)
     .all<PostWithPathRow>();
   return results;
 }

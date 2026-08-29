@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createUrls, normalizeMountPath, normalizePostPath } from '../src/core/paths.ts';
+import {
+  ADMIN_HASH,
+  createUrls,
+  normalizeMountPath,
+  normalizePostPath,
+  siteOrigin,
+} from '../src/core/paths.ts';
 import type { PathErrorCode } from '../src/core/paths.ts';
 import { isReservedSegment, ROUTE } from '../src/core/routes/fixed.ts';
 
@@ -180,6 +186,25 @@ describe('createUrls', () => {
     expect(urls.post('ratatoskr/1')).toBe('/ratatoskr/1/');
     expect(urls.feed('rss')).toBe('/rss.xml');
     expect(urls.post('ratatoskr/1', { absolute: true })).toBe('https://blog.example.com/ratatoskr/1/');
+  });
+
+  it('管理画面で記事を開く URL を組める', () => {
+    // ハッシュの形は `ADMIN_HASH` が正。**組む側と、解く側 (`src/admin/router.ts`)
+    // が同じものを見る**ので、ここで形を固定しておく。
+    const urls = createUrls(site);
+    expect(urls.adminPost('abc')).toBe(`/blog/admin/#${ADMIN_HASH.postPrefix}abc`);
+    expect(urls.adminPost('abc')).toBe('/blog/admin/#/posts/abc');
+    expect(createUrls(root).adminPost('abc')).toBe('/admin/#/posts/abc');
+  });
+
+  it('origin の末尾スラッシュは落とす (// にならない)', () => {
+    expect(siteOrigin('https://fushihara.net/')).toBe('https://fushihara.net');
+    expect(siteOrigin('https://fushihara.net///')).toBe('https://fushihara.net');
+    expect(siteOrigin('https://fushihara.net')).toBe('https://fushihara.net');
+    // createUrls も同じものを通す。
+    expect(
+      createUrls({ siteUrl: 'https://fushihara.net/', mountPath: '/blog' }).index({ absolute: true }),
+    ).toBe('https://fushihara.net/blog/');
   });
 
   it('保存されているパスはセグメント単位でエンコードする', () => {

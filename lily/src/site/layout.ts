@@ -5,7 +5,7 @@ import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import { STATIC_ASSETS } from '../core/routes/fixed.ts';
 import type { PageContext, Pagination } from '../core/theme.ts';
-import { THEME_INIT, THEME_TOGGLE } from './client.ts';
+import { ADMIN_LINK, THEME_INIT, THEME_TOGGLE } from './client.ts';
 
 /**
  * mount root 直下に出す静的アセット。実体は本体サイトと共有の `shared/public`。
@@ -32,6 +32,11 @@ export type LayoutOptions = {
   readonly brandIsHeading?: boolean;
   /** 一覧のページ送り。前後のページを `<link rel>` で示すのに使う。 */
   readonly pagination?: Pagination;
+  /**
+   * 管理画面のリンクの行き先。省略すると管理画面のトップに向く。
+   * **リンク自体は常に出て、hidden 属性で隠してある。**
+   */
+  readonly adminUrl?: string;
 };
 
 /** トップはサイト名だけ、下層は「ページ名 | サイト名」。 */
@@ -48,6 +53,8 @@ export async function layout(
   const title = pageTitle(site.name, options.page);
   const description = options.description ?? site.description;
   const brand = options.brandIsHeading ? 'h1' : 'p';
+  // 記事ページからは編集画面へ直行する (URL は core が組む)。
+  const adminUrl = options.adminUrl ?? urls.admin();
 
   return String(await html`<!doctype html>
 <html lang="ja">
@@ -115,6 +122,12 @@ export async function layout(
         </${brand}>
         <nav>
           <a href="${urls.feed('rss')}">RSS</a>
+          <!-- 管理画面へのリンク。**全員に同じ HTML を配り**、管理画面を開いた
+               ことがある端末でだけ client.ts が hidden 属性を外す。訪問者ごとに
+               HTML を変えると、共有キャッシュに載ったそれが読者に配られる。 -->
+          <a class="admin-link" href="${adminUrl}" rel="nofollow" hidden
+            >${options.adminUrl ? 'この記事を編集' : '管理'}</a
+          >
           <!-- ここに書けるのは中立な文言まで。サーバー側では訪問者のテーマが
                分からないため。読み込み後に client.ts が方向つきラベルへ差し替える
                (JS が動かない環境ではこのまま)。 -->
@@ -133,6 +146,7 @@ export async function layout(
 
     <script>
       ${raw(THEME_TOGGLE)}
+      ${raw(ADMIN_LINK)}
     </script>
   </body>
 </html>

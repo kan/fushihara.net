@@ -34,7 +34,8 @@ import {
   unpublishPost,
   updatePost,
 } from '../db/posts.ts';
-import { applyTags, listTagsWithCounts, resolveTags } from '../db/tags.ts';
+import { applyTags, getTagsForPosts, listTagsWithCounts, resolveTags } from '../db/tags.ts';
+import { groupByPost } from '../view.ts';
 import type { PostRow } from '../db/types.ts';
 import { fetchLinkTitle } from '../link-title.ts';
 import { imageDimensions } from '../media/dimensions.ts';
@@ -55,7 +56,7 @@ import {
   renderSchema,
   updatePostSchema,
 } from './schema.ts';
-import { toMediaView, toPostView } from './view.ts';
+import { toMediaView, toPostView, toTagRefs } from './view.ts';
 
 /**
  * API が要求する形。**バインディングでジェネリックにしない。**
@@ -109,10 +110,13 @@ export function createApi(config: PageConfig) {
       });
     })
 
-    /** タグの補完に使う。件数の多い順。 */
+    /** タグの補完と一覧の絞り込みに使う。件数の多い順。 */
     .get('/tags', async (c) => {
       const tags = await listTagsWithCounts(c.env.DB);
-      return c.json({ tags: tags.map((tag) => ({ name: tag.name, count: tag.post_count })) });
+      // slug も返す。絞り込みは slug で行う (名前は表示のため)。
+      return c.json({
+        tags: tags.map((tag) => ({ name: tag.name, slug: tag.slug, count: tag.post_count })),
+      });
     })
 
     /**
@@ -125,12 +129,17 @@ export function createApi(config: PageConfig) {
 
     .get('/posts', zValidator('query', listPostsSchema), async (c) => {
       const db = c.env.DB;
-      const { status, limit, offset } = c.req.valid('query');
+      const { status, limit, offset, tag, q } = c.req.valid('query');
+      // **行と件数に同じ絞り込みを渡す。** 片方だけ絞ると総件数が食い違い、
+      // ページャが「次がある」と言い続ける。
+      const filter = { status, tag, q };
       // 総件数も返す。無いと管理画面が「次のページがあるか」を出せない。
       const [posts, total] = await Promise.all([
-        listAllPosts(db, { status, limit, offset }),
-        countPosts(db, status),
+        listAllPosts(db, { ...filter, limit, offset }),
+        countPosts(db, filter),
       ]);
+      // タグはまとめて引く (1 行ずつ引くと 1 ページで 30 クエリになる)。
+      const tags = groupByPost(await getTagsForPosts(db, posts.map((post) => post.id)));
       return c.json({
         total,
         limit,
@@ -144,6 +153,7 @@ export function createApi(config: PageConfig) {
           updatedAt: post.updated_at,
           canonicalPath: post.canonical_path,
           url: urls.post(post.canonical_path),
+          tags: toTagRefs(tags.get(post.id) ?? []),
         })),
       });
     })

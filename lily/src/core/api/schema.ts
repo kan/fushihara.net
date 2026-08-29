@@ -57,8 +57,22 @@ export const pathSchema = z.object({
   path: z.string().min(1),
 });
 
+/**
+ * 絞り込みの語。**空文字は「絞り込み無し」。** 画面の入力欄を空にしたときに
+ * `?q=` が付いて飛んでくるので、それを「空文字に一致する記事」と読まない。
+ */
+const filterWord = z
+  .string()
+  .trim()
+  .transform((value) => (value === '' ? undefined : value))
+  .optional();
+
 export const listPostsSchema = z.object({
   status: z.enum(['draft', 'published']).optional(),
+  /** タグの slug。 */
+  tag: filterWord,
+  /** タイトル・説明・本文の部分一致。 */
+  q: filterWord,
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

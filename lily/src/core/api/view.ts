@@ -8,7 +8,7 @@
 import { listMediaByPost } from '../db/media.ts';
 import { listPaths } from '../db/post-paths.ts';
 import { getTagsForPost } from '../db/tags.ts';
-import type { MediaRow, PostRow } from '../db/types.ts';
+import type { MediaRow, PostRow, TagRow } from '../db/types.ts';
 import type { Urls } from '../paths.ts';
 
 export type MediaView = {
@@ -34,9 +34,16 @@ export type PostView = {
   canonicalPath: string;
   url: string;
   paths: { path: string; isCanonical: boolean }[];
-  tags: { name: string; slug: string }[];
+  tags: TagRef[];
   media: MediaView[];
 };
+
+/** レスポンスに載せるタグ。**一覧と個別取得で同じ形にする。** */
+export type TagRef = { name: string; slug: string };
+
+export function toTagRefs(tags: readonly TagRow[]): TagRef[] {
+  return tags.map((tag) => ({ name: tag.name, slug: tag.slug }));
+}
 
 export function toMediaView(urls: Urls, media: MediaRow): MediaView {
   return {
@@ -71,7 +78,7 @@ export async function toPostView(db: D1Database, urls: Urls, post: PostRow): Pro
     canonicalPath: canonical,
     url: urls.post(canonical),
     paths: paths.map((p) => ({ path: p.path, isCanonical: p.is_canonical === 1 })),
-    tags: tags.map((t) => ({ name: t.name, slug: t.slug })),
+    tags: toTagRefs(tags),
     media: media.map((m) => toMediaView(urls, m)),
   };
 }

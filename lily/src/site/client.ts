@@ -7,6 +7,7 @@
  * try/catch) はこの文字列の中に短く書き直してある。**この 20 行を守るのは
  * `e2e/` のテーマの節**で、ブラウザで実際に動かして確かめる。
  */
+import { ADMIN_HINT } from '../core/admin-contract.ts';
 import { STORAGE_KEY } from '../../../shared/theme.ts';
 
 const KEY = JSON.stringify(STORAGE_KEY);
@@ -43,4 +44,22 @@ button.setAttribute('aria-label',label);button.title=label}
 apply(theme);
 button.addEventListener('click',function(){chosen=true;var next=theme==='dark'?'light':'dark';write(next);apply(next)});
 mql.addEventListener('change',function(e){if(!chosen)apply(e.matches?'dark':'light')});
+})();`;
+
+/**
+ * 管理画面へのリンクを出す。**リンクの実体は最初から HTML にあり、`hidden` で
+ * 隠してあるだけ。** ここがするのは目印の cookie を見て外すことだけ。
+ *
+ * 訪問者ごとに HTML を変えないのがこの形の眼目で、公開ページを共有キャッシュに
+ * 載せたまま (`s-maxage`) 管理者にだけリンクを見せられる。cookie を立てるのは
+ * `core/routes/admin.ts` で、**名前と値は `core/admin-contract.ts` から埋め込む**。
+ *
+ * 目印が Access のセッションより長生きすることはある。そのときリンクを押すと
+ * ログイン画面に行くだけで、押した人に見えるものは変わらない。
+ */
+export const ADMIN_LINK = `(function(){
+var link=document.querySelector('.admin-link');
+if(!link)return;
+var has=document.cookie.split(';').some(function(part){return part.trim()===${JSON.stringify(ADMIN_HINT)}});
+if(has)link.hidden=false;
 })();`;

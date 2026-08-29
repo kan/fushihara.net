@@ -95,7 +95,12 @@ export function indexPage(
 export function postPage(context: PageContext, post: PostView): Promise<string> {
   return layout(
     context,
-    { page: post.title, description: post.description ?? undefined, ogType: 'article' },
+    {
+      page: post.title,
+      description: post.description ?? undefined,
+      ogType: 'article',
+      adminUrl: post.adminUrl,
+    },
     html`<article>
       ${postMeta(post, { updated: true })}
       <h1 class="post-title">${post.title}</h1>

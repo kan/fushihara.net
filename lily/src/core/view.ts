@@ -35,7 +35,11 @@ export function toPostView(
   tags: readonly TagRow[],
   html: string,
 ): PostView {
-  return { ...toPostSummary(urls, { ...row, canonical_path: canonicalPath }, tags), html };
+  return {
+    ...toPostSummary(urls, { ...row, canonical_path: canonicalPath }, tags),
+    html,
+    adminUrl: urls.adminPost(row.public_id),
+  };
 }
 
 /**

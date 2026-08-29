@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <meta name="robots" content="noindex" />
+    <!-- サイト設定の受け皿。**配信時に core/routes/admin.ts が content を埋める。**
+         ここが空のまま (vite の生成物をそのまま開いたとき) は src/admin/site.ts の
+         既定値に落ちる。 -->
+    <meta name="lily:site" content="" />
+    <!-- 題も配信時に「<サイト名> - lily」へ差し替わる。これは差し替え前の既定値。 -->
     <title>lily</title>
   </head>
   <body>

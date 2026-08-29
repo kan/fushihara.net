@@ -163,6 +163,22 @@ label > input, label > textarea, label > select { display: block; margin-top: 0.
 
 .filter { width: auto; padding: 0.25rem 0.5rem; font-size: 0.85rem; }
 
+/* 絞り込みの行。見出しの列に混ぜると窮屈で、どれが検索欄か分からなくなる。 */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.filters .search { flex: 1; min-width: 12rem; width: auto; font-size: 0.85rem; }
+.filters button { font-size: 0.85rem; }
+
+/* 一覧の行に出すタグ。押すとそのタグで絞り込む。 */
+.post-row .chip { border: 0; font-size: 0.75rem; }
+.post-row .chip:hover { color: var(--accent); }
+
 .pager {
   display: flex;
   align-items: center;
@@ -171,6 +187,26 @@ label > input, label > textarea, label > select { display: block; margin-top: 0.
   margin-top: 1.5rem;
   font-size: 0.85rem;
 }
+
+/* === 設定 (表示のみ) === */
+.settings {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.1rem 1.25rem;
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 0.9rem;
+}
+
+.settings dt { color: var(--text-muted); }
+/* 長い URL や説明で表が横に伸びないようにする。 */
+.settings dd { overflow-wrap: anywhere; }
+
+.settings-note { margin-top: 0.8rem; }
+.settings-note code { font-family: var(--font-mono); }
 
 /* === 編集 ===
  * 上段に記事についての情報、その下に本文とプレビューを並べ、書き終わってから

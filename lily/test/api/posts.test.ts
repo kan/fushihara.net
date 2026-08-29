@@ -112,6 +112,85 @@ describe('作成と取得', () => {
   });
 });
 
+describe('一覧の絞り込み', () => {
+  it('タグで絞ると、行も総件数もその分になる', async () => {
+    const tagged = await createPost({ path: 'a', tags: ['dev'] });
+    await createPost({ path: 'b', tags: ['日記'] });
+    await createPost({ path: 'c' });
+
+    const res = await apiJson('GET', '/api/posts?tag=dev');
+    expect(res.body.posts.map((p: { publicId: string }) => p.publicId)).toEqual([tagged.publicId]);
+    // **総件数も絞る。** 行だけ絞ると、ページャが「次がある」と言い続ける。
+    expect(res.body.total).toBe(1);
+  });
+
+  it('一覧の行にタグを載せる (絞り込みの手がかりになる)', async () => {
+    await createPost({ path: 'a', tags: ['dev', '日記'] });
+    const res = await apiJson('GET', '/api/posts');
+    expect(res.body.posts[0].tags).toEqual([
+      { name: 'dev', slug: 'dev' },
+      { name: '日記', slug: '日記' },
+    ]);
+  });
+
+  it('キーワードはタイトル・説明・本文を見る', async () => {
+    const byTitle = await createPost({ path: 'a', title: '合言葉の話' });
+    const byDescription = await createPost({ path: 'b', title: 'b', description: '合言葉について' });
+    const byBody = await createPost({ path: 'c', title: 'c', bodyMd: 'ここに合言葉がある' });
+    await createPost({ path: 'd', title: 'd', bodyMd: '関係の無い話' });
+
+    const res = await apiJson('GET', '/api/posts?q=' + encodeURIComponent('合言葉'));
+    expect(res.body.total).toBe(3);
+    expect(res.body.posts.map((p: { publicId: string }) => p.publicId).sort()).toEqual(
+      [byTitle.publicId, byDescription.publicId, byBody.publicId].sort(),
+    );
+  });
+
+  it('LIKE のワイルドカードを含む語でも、その語として探す', async () => {
+    // **エスケープしないと `_` が「任意の 1 文字」になり、`a_b` が `axb` にも当たる。**
+    const literal = await createPost({ path: 'a', title: 'a_b' });
+    await createPost({ path: 'b', title: 'axb' });
+
+    const res = await apiJson('GET', '/api/posts?q=a_b');
+    expect(res.body.posts.map((p: { publicId: string }) => p.publicId)).toEqual([literal.publicId]);
+
+    // `%` も同じ。単独で渡しても全件にはならない。
+    await createPost({ path: 'c', title: '100%達成' });
+    expect((await apiJson('GET', '/api/posts?q=' + encodeURIComponent('%'))).body.total).toBe(1);
+  });
+
+  it('空の絞り込みは絞り込み無しと同じ', async () => {
+    // 画面の入力欄を空にすると `?q=` が付いて飛んでくる。空文字に一致する記事を
+    // 探しに行かせない。
+    await createPost({ path: 'a' });
+    await createPost({ path: 'b' });
+    expect((await apiJson('GET', '/api/posts?q=&tag=')).body.total).toBe(2);
+    // 空白だけのときも同じ。
+    expect((await apiJson('GET', '/api/posts?q=%20%20')).body.total).toBe(2);
+  });
+
+  it('絞り込みを重ねると AND になる', async () => {
+    const both = await createPost({ path: 'a', title: '合言葉', tags: ['dev'] });
+    await apiJson('POST', `/api/posts/${both.publicId}/publish`, {});
+    await createPost({ path: 'b', title: '合言葉', tags: ['日記'] });
+    const draft = await createPost({ path: 'c', title: '合言葉', tags: ['dev'] });
+
+    const res = await apiJson('GET', '/api/posts?tag=dev&status=published&q=' + encodeURIComponent('合言葉'));
+    expect(res.body.posts.map((p: { publicId: string }) => p.publicId)).toEqual([both.publicId]);
+    expect(res.body.total).toBe(1);
+    // 下書きは status で落ちている
+    expect(res.body.posts.map((p: { publicId: string }) => p.publicId)).not.toContain(draft.publicId);
+  });
+
+  it('無いタグで絞ると 0 件 (エラーにはしない)', async () => {
+    await createPost({ path: 'a', tags: ['dev'] });
+    const res = await apiJson('GET', '/api/posts?tag=nope');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ total: 0 });
+    expect(res.body.posts).toEqual([]);
+  });
+});
+
 describe('副作用', () => {
   it('取得は書き込まない', async () => {
     // GET のたびに body_html を書き直すと、一覧→詳細を開くだけで D1 に書き込む。
@@ -155,10 +234,11 @@ describe('タグの補完', () => {
     await createPost({ path: 'b', tags: ['まだ下書き'] });
 
     const res = await apiJson('GET', '/api/tags');
+    // slug も返す。一覧の絞り込みは name ではなく slug で行う。
     expect(res.body.tags).toEqual([
-      { name: 'dev', count: 1 },
-      { name: '日記', count: 1 },
-      { name: 'まだ下書き', count: 0 },
+      { name: 'dev', slug: 'dev', count: 1 },
+      { name: '日記', slug: '日記', count: 1 },
+      { name: 'まだ下書き', slug: 'まだ下書き', count: 0 },
     ]);
   });
 });

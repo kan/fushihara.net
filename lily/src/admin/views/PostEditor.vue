@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { fromDateTimeInput, toDateTimeInput } from '../../../../shared/date.ts';
 import { client, errorMessage, MOUNT } from '../api.ts';
-import { go } from '../router.ts';
+import { go, postRoute } from '../router.ts';
 import DateTimeInput from './DateTimeInput.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import TagInput from './TagInput.vue';
@@ -117,7 +117,7 @@ async function save(): Promise<void> {
       const created = await res.json();
       unresolved.value = created.unresolvedMedia;
       fill(created.post);
-      go(`/posts/${created.post.publicId}`);
+      go(postRoute(created.post.publicId));
       return;
     }
     const res = await client.posts[':publicId'].$patch({ param: { publicId: id }, json });
