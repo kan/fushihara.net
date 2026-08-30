@@ -1,24 +1,44 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { STORAGE_KEY } from '../../shared/theme';
-import { SITE_NAME, SITE_URL, pageTitle } from '../src/lib/site';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { STORAGE_KEY } from '../../shared/theme.ts';
+import { SITE } from '../src/site/meta.ts';
+import { ID, MOUNT, ORIGIN, url } from './helpers.ts';
 
 /**
- * このファイルは「Astro のテスト」ではなく「ブログの契約のテスト」。
+ * このファイルは「lily のテスト」ではなく**ブログの契約のテスト**。
  *
- * 対象は content/ の実記事ではなく test-content/ のフィクスチャ。実記事に依存させると
- * 記事を書き換えるたびにテストが落ちるため (playwright.config.ts の BLOG_CONTENT_DIR)。
- * CONTRACT.md に書いた URL / RSS / 404 / テーマの取り決めだけを検査していて、
- * Astro 固有の API には一切触れていない。将来生成器を自作 OSS に置き換えるとき、
- * そのまま合否判定に使えることを狙っている。
+ * Astro 版の `blog/e2e/blog.spec.ts` をそのまま引き継いでいる。生成器を差し替えても
+ * 入出力の契約は変わらない、というのが `CONTRACT.md` の趣旨で、今回がその出番。
+ * だからここには lily 固有の API (D1 のスキーマ、query layer、Hono) を持ち込まない。
+ * HTTP と DOM から見えるものだけで合否を出す。
+ *
+ * 対象は実記事ではなく `e2e/fixtures/` の固定物。実記事に依存させると、記事を
+ * 1 本書くたびにテストが落ちる。
  */
 
-const POST = '/blog/rendering-sample/';
+const SITE_NAME: string = SITE.name;
+const SITE_URL: string = SITE.url;
+
+/** `<title>` の組み立て。`src/site/layout.ts` と同じ規則を 1 行だけ持つ。 */
+const pageTitle = (page: string) => `${page} | ${SITE_NAME}`;
+
+/**
+ * ブラウザがデコードした実寸。**EXIF の回転を反映した値**が返る (読み込みが
+ * 終わるまでは 0)。属性の検証はこれと突き合わせる。
+ */
+async function naturalSize(img: Locator): Promise<{ width: number; height: number }> {
+  return await img.evaluate((el: HTMLImageElement) => ({
+    width: el.naturalWidth,
+    height: el.naturalHeight,
+  }));
+}
+
+const POST = url.post('rendering-sample');
 const POST_TITLE = '描画サンプル';
 
 const ICONS = [
-  { selector: 'link[rel="icon"][sizes="32x32"]', href: '/blog/favicon.ico' },
-  { selector: 'link[rel="icon"][type="image/svg+xml"]', href: '/blog/favicon.svg' },
-  { selector: 'link[rel="apple-touch-icon"]', href: '/blog/apple-touch-icon.png' },
+  { selector: 'link[rel="icon"][sizes="32x32"]', href: url.asset('favicon.ico') },
+  { selector: 'link[rel="icon"][type="image/svg+xml"]', href: url.asset('favicon.svg') },
+  { selector: 'link[rel="apple-touch-icon"]', href: url.asset('apple-touch-icon.png') },
 ];
 
 /**
@@ -28,7 +48,7 @@ const ICONS = [
  * CDATA や数値実体を吐く生成器に替わった日に**黙って通る側へ倒れる**。
  */
 async function feedHtml(page: Page, request: APIRequestContext, title: string) {
-  const xml = await (await request.get('/blog/rss.xml')).text();
+  const xml = await (await request.get(url.asset('rss.xml'))).text();
 
   const feed = await page.evaluate(
     ([source, wanted]) => {
@@ -64,41 +84,55 @@ async function themeState(page: Page) {
   }));
 }
 
+/** 追わずに 1 回だけ投げる。308 の飛び先そのものを見たいときに使う。 */
+async function noRedirect(request: APIRequestContext, path: string) {
+  return await request.get(path, { maxRedirects: 0 });
+}
+
 test.describe('URL 設計', () => {
   test('一覧が記事へリンクする', async ({ page }) => {
-    await page.goto('/blog/');
+    await page.goto(url.index());
     const link = page.getByRole('link', { name: POST_TITLE });
-    await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', POST);
   });
 
-  test('記事は /blog/<slug>/ で開ける', async ({ page }) => {
-    const res = await page.goto(POST);
-    expect(res?.status()).toBe(200);
-    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
-      'href',
-      `${SITE_URL}${POST}`,
-    );
-    await expect(page.getByRole('heading', { level: 1, name: POST_TITLE })).toBeVisible();
+  test('記事は <mount>/<path>/ で開ける', async ({ page }) => {
+    await page.goto(POST);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(POST_TITLE);
   });
 
-  test('末尾スラッシュ無しは付きへ寄せられる', async ({ page }) => {
-    await page.goto('/blog/rendering-sample');
-    expect(new URL(page.url()).pathname).toBe(POST);
+  test('末尾スラッシュ無しは付きへ寄せられる', async ({ request }) => {
+    const res = await noRedirect(request, POST.replace(/\/$/, ''));
+    expect(res.status()).toBe(308);
+    expect(new URL(res.headers()['location'] as string, ORIGIN).pathname).toBe(POST);
+  });
+
+  // ここから下は lily で足した取り決め。identity と URL を分けたので、
+  // 「記事は常に public_id で引ける」「旧 URL は生き続ける」が成立している。
+  test('public_id でも引けて、canonical へ寄せられる', async ({ request }) => {
+    const res = await noRedirect(request, url.post(ID.renderingSample));
+    expect(res.status()).toBe(308);
+    expect(new URL(res.headers()['location'] as string, ORIGIN).pathname).toBe(POST);
+  });
+
+  test('旧 URL は alias として残り、canonical へ寄せられる', async ({ request }) => {
+    const res = await noRedirect(request, url.post('old-home'));
+    expect(res.status()).toBe(308);
+    expect(new URL(res.headers()['location'] as string, ORIGIN).pathname).toBe(
+      url.post('aliased'),
+    );
   });
 
   test('存在しないパスは 404 ページを返す', async ({ page }) => {
-    const res = await page.goto('/blog/no-such-post/');
+    const res = await page.goto(url.post('no-such-post'));
     expect(res?.status()).toBe(404);
-    await expect(page.getByRole('heading', { level: 1, name: '404' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('404');
   });
 
-  test('404 ページはインデックスさせない', async ({ page }) => {
-    // /blog/404 は素直に辿ると 200 を返せてしまう。canonical で指すと実在ページとして
-    // 拾われるので、canonical を出さず noindex を立てる。
-    await page.goto('/blog/no-such-post/');
-    await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex');
-    await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
+  test('404 ページはインデックスさせない', async ({ request }) => {
+    const res = await request.get(url.post('no-such-post'));
+    expect(res.status()).toBe(404);
+    expect(await res.text()).toContain('noindex');
   });
 });
 
@@ -108,11 +142,14 @@ test.describe('ナビゲーション', () => {
   test('記事からポートフォリオと一覧に戻れる', async ({ page }) => {
     await page.goto(POST);
     await expect(page.getByRole('link', { name: 'fushihara.net' })).toHaveAttribute('href', '/');
-    await expect(page.getByRole('link', { name: 'blog', exact: true })).toHaveAttribute('href', '/blog/');
+    await expect(page.getByRole('link', { name: 'blog', exact: true })).toHaveAttribute(
+      'href',
+      url.index(),
+    );
   });
 
   test('見出しは一覧ではパンくず、記事では記事名', async ({ page }) => {
-    await page.goto('/blog/');
+    await page.goto(url.index());
     await expect(page.getByRole('heading', { level: 1 })).toContainText('blog');
 
     await page.goto(POST);
@@ -121,23 +158,27 @@ test.describe('ナビゲーション', () => {
 });
 
 test.describe('並び順と日付', () => {
-  test('新しい順。date が同じときは slug の昇順', async ({ page }) => {
-    await page.goto('/blog/');
+  // **Astro 版の「同日なら slug 昇順」から変えた仕様。** 同時刻のときは
+  // public_id 昇順で、内部 id ではないので export / import で振り直されても並びが変わらない。
+  test('新しい順。同時刻のときは public_id の昇順', async ({ page }) => {
+    await page.goto(url.index());
     const paths = await page
       .locator('.post-list h2 a')
       .evaluateAll((els) => els.map((el) => new URL((el as HTMLAnchorElement).href).pathname));
 
     expect(paths).toEqual([
-      '/blog/rendering-sample/', // 8/23
-      '/blog/order-time-z/', // 8/20 21:00 — slug は a より後ろだが時刻で勝つ
-      '/blog/order-time-a/', // 8/20 08:00
-      '/blog/order-tie-a/', // 8/19 — date が同じなので slug 昇順
-      '/blog/order-tie-b/', // 8/19
+      url.post('rendering-sample'), // 8/23
+      url.post('aliased'), // 8/21
+      url.post('order-time-z'), // 8/20 21:00 — 名前は a より後ろだが時刻で勝つ
+      url.post('order-time-a'), // 8/20 08:00
+      // 8/19 の 2 本。**名前の順は a → b だが public_id は b の方が小さい。**
+      url.post('order-tie-b'),
+      url.post('order-tie-a'),
     ]);
   });
 
   test('早朝 JST の記事が前日にならない', async ({ page }) => {
-    await page.goto('/blog/order-time-a/');
+    await page.goto(url.post('order-time-a'));
     // frontmatter は 2026-08-20T08:00:00+09:00。UTC で切り出すと 8/19 になってしまう
     const time = page.locator('article time').first();
     await expect(time).toHaveAttribute('datetime', '2026-08-20');
@@ -163,10 +204,45 @@ test.describe('記事の描画', () => {
 
     const img = page.getByAltText('サンプル画像');
     await expect(img).toBeVisible();
-    // 壊れた img は naturalWidth が 0 になる
-    expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+    // **描画されたことと読み込めたことは別。** width / height を出すようになって
+    // からは img が読み込み前から箱を持つので、toBeVisible() が通った時点では
+    // まだデコードが終わっていない (属性を足した日にここが 0 で落ちた)。
+    // 壊れた img は naturalWidth が 0 のままになる。
+    await expect.poll(() => naturalSize(img)).not.toEqual({ width: 0, height: 0 });
 
     await expect(page.locator('blockquote')).toContainText('引用も使える');
+  });
+
+  /**
+   * **`width` / `height` が無いと、画像が届くまで高さが 0 で本文が飛ぶ。**
+   *
+   * 属性は添付を受け取った時点でヘッダから読んだ値なので、ブラウザがデコードした
+   * 実寸と突き合わせる。フィクスチャの寸法を書き写すと、読み違えていても通る。
+   * 2 枚目は EXIF の回転情報を持つ写真で、**格納値をそのまま書いていると
+   * 縦横が入れ替わって落ちる**。
+   */
+  test('画像の寸法が実寸と一致し、遅延読み込みになる', async ({ page }) => {
+    await page.goto(POST);
+
+    for (const alt of ['サンプル画像', '回転情報つきの写真']) {
+      const img = page.getByAltText(alt);
+      await expect.poll(() => naturalSize(img)).not.toEqual({ width: 0, height: 0 });
+      const natural = await naturalSize(img);
+
+      await expect(img, alt).toHaveAttribute('width', String(natural.width));
+      await expect(img, alt).toHaveAttribute('height', String(natural.height));
+      await expect(img, alt).toHaveAttribute('loading', 'lazy');
+      await expect(img, alt).toHaveAttribute('decoding', 'async');
+    }
+  });
+
+  // 本文には `./sample.png` としか書いていない。配信時に解決されるので、
+  // ページから見える URL は media のもの。
+  test('本文の相対参照が配信 URL に解決される', async ({ page }) => {
+    await page.goto(POST);
+    const src = await page.getByAltText('サンプル画像').getAttribute('src');
+    expect(src).toMatch(new RegExp(`^${MOUNT}/media/[^/]+/sample\\.png$`));
+    expect(src).not.toContain('lily-media://');
   });
 });
 
@@ -199,25 +275,49 @@ test.describe('コードハイライト', () => {
   });
 });
 
+// lily で足した口。Astro 版には無かった。
+test.describe('タグ', () => {
+  test('記事のタグからタグページへ行ける', async ({ page }) => {
+    await page.goto(POST);
+    await page.locator('.post-meta').getByRole('link', { name: 'sample' }).click();
+    await expect(page).toHaveURL(url.tag('sample'));
+  });
+
+  test('そのタグの記事だけを並べる', async ({ page }) => {
+    // sample が付いているのは描画サンプルだけ。fixture は全部 fixture タグを持つ。
+    await page.goto(url.tag('sample'));
+    await expect(page.locator('.post-list h2 a')).toHaveText([POST_TITLE]);
+
+    await page.goto(url.tag('fixture'));
+    await expect(page.locator('.post-list h2 a').first()).toHaveText(POST_TITLE);
+    expect(await page.locator('.post-list h2 a').count()).toBeGreaterThan(1);
+  });
+
+  test('下書きはタグページにも出ない', async ({ page }) => {
+    await page.goto(url.tag('fixture'));
+    await expect(page.getByRole('link', { name: '下書きの例' })).toHaveCount(0);
+  });
+});
+
 test.describe('配信物', () => {
   // 画面には出ないので目視では気付けない。名前の置き場所が 1 箇所に保たれて
   // いるかを見る (値そのものは好みなので、ずれていないことだけを検査する)。
   test('title と RSS の名前が揃っている', async ({ page, request }) => {
-    await page.goto('/blog/');
+    await page.goto(url.index());
     await expect(page).toHaveTitle(SITE_NAME);
 
     await page.goto(POST);
     await expect(page).toHaveTitle(pageTitle(POST_TITLE));
 
-    const xml = await (await request.get('/blog/rss.xml')).text();
+    const xml = await (await request.get(url.asset('rss.xml'))).text();
     expect(xml).toContain(`<title>${SITE_NAME}</title>`);
   });
 
   test('og:image が実体を指している', async ({ page, request }) => {
     // 実体は本体サイトと共有の shared/public。画面に出ないので消えても気付けない。
-    await page.goto('/blog/');
+    await page.goto(url.index());
     const href = await page.locator('meta[property="og:image"]').getAttribute('content');
-    expect(href).toBe(`${SITE_URL}/blog/ogp.png`);
+    expect(href).toBe(`${SITE_URL}${url.asset('ogp.png')}`);
 
     const res = await request.get(new URL(href!).pathname);
     expect(res.status()).toBe(200);
@@ -225,7 +325,7 @@ test.describe('配信物', () => {
   });
 
   test('RSS が絶対 URL の記事リンクを持つ', async ({ request }) => {
-    const res = await request.get('/blog/rss.xml');
+    const res = await request.get(url.asset('rss.xml'));
     expect(res.status()).toBe(200);
     const xml = await res.text();
     expect(xml).toContain(`<link>${SITE_URL}${POST}</link>`);
@@ -258,9 +358,9 @@ test.describe('配信物', () => {
 
     // 絶対 URL は本番のホストを指すので、パスだけ取り出してテストサーバーに投げる
     // (そのまま request.get すると本番を叩いてしまう)。
-    const url = new URL(image!);
-    expect(url.origin, '絶対化の起点が配信するサイト').toBe(SITE_URL);
-    expect((await request.get(url.pathname)).status()).toBe(200);
+    const target = new URL(image!);
+    expect(target.origin, '絶対化の起点が配信するサイト').toBe(SITE_URL);
+    expect((await request.get(target.pathname)).status()).toBe(200);
   });
 
   test('RSS の本文が CSS 変数に頼らない', async ({ page, request }) => {
@@ -273,7 +373,7 @@ test.describe('配信物', () => {
   });
 
   // 後処理が書き換えてよいのはタグの中の属性だけ。本文に書いた HTML まで書き換えると
-  // 記事とリーダーで中身が食い違う (理由は blog/src/lib/feed-html.ts の doc comment)。
+  // 記事とリーダーで中身が食い違う。
   test('RSS が本文中の HTML を書き換えない', async ({ page, request }) => {
     const feed = await feedHtml(page, request, POST_TITLE);
 
@@ -283,15 +383,36 @@ test.describe('配信物', () => {
   });
 
   test('sitemap がある', async ({ request }) => {
-    const res = await request.get('/blog/sitemap-index.xml');
+    const res = await request.get(url.asset('sitemap-index.xml'));
     expect(res.status()).toBe(200);
   });
 
-  // favicon の実体はリポジトリ直下の shared/public にあり、astro.config.mjs の
-  // publicDir 経由で dist/blog に入る。本体サイトと 1 つのファイルを共有するための
-  // 配線なので、設定を触ると link タグを残したまま実体だけが消える。
+  /**
+   * 本体サイトの Blog 付箋が読む口。**RSS を正規表現で解析するのをやめるための
+   * 出力**なので、公開記事だけが新しい順に、canonical の絶対 URL で並ぶこと。
+   */
+  test('posts.json が公開記事を新しい順に返す', async ({ request }) => {
+    const res = await request.get(url.asset('posts.json'));
+    expect(res.status()).toBe(200);
+
+    const { posts } = (await res.json()) as {
+      posts: { id: string; title: string; url: string; published_at: string }[];
+    };
+    expect(posts.length).toBeGreaterThan(0);
+    expect(posts[0]?.title).toBe(POST_TITLE);
+    expect(posts[0]?.url).toBe(`${SITE_URL}${POST}`);
+    expect(posts.map((post) => post.title)).not.toContain('下書きの例');
+
+    // 新しい順。日付は UTC ISO8601 で、文字列のまま比べられる。
+    const dates = posts.map((post) => post.published_at);
+    expect([...dates].sort().reverse()).toEqual(dates);
+  });
+
+  // favicon の実体はリポジトリ直下の shared/public にあり、ビルドで dist に入る。
+  // 本体サイトと 1 つのファイルを共有するための配線なので、設定を触ると link タグを
+  // 残したまま実体だけが消える。
   test('favicon の link が 3 つとも実体を指している', async ({ page, request }) => {
-    await page.goto('/blog/');
+    await page.goto(url.index());
 
     const bodies = new Map<string, Buffer>();
     await Promise.all(
@@ -309,60 +430,112 @@ test.describe('配信物', () => {
 
     // favicon.svg は XML なので、コメントにハイフン 2 個を書くだけで壊れる (実際に
     // 踏んだ)。壊れたファイルも 200 で配信されるので、パースが通ることまで見る。
-    // 実体は本体サイトと同じファイルだが、生成器を差し替えた日にここだけで合否を
-    // 出せるよう、この節でも独立に見る。
     const root = await page.evaluate((src) => {
       const doc = new DOMParser().parseFromString(src, 'image/svg+xml');
       return doc.querySelector('parsererror') ? 'parsererror' : doc.documentElement.tagName;
-    }, bodies.get('/blog/favicon.svg')!.toString());
+    }, bodies.get(url.asset('favicon.svg'))!.toString());
     expect(root).toBe('svg');
   });
 
   test('一覧が RSS を autodiscovery で指す', async ({ page }) => {
-    await page.goto('/blog/');
+    await page.goto(url.index());
     await expect(page.locator('link[type="application/rss+xml"]')).toHaveAttribute(
       'href',
-      '/blog/rss.xml',
+      url.asset('rss.xml'),
     );
   });
 });
 
 test.describe('下書き', () => {
-  // draft: true が本番ビルドから落ちることを守る。ここが唯一の担保なので、
-  // test-content/posts/draft-example/ を消すとこの検査も無効になる。
   test('一覧に出ない', async ({ page }) => {
-    await page.goto('/blog/');
+    await page.goto(url.index());
     await expect(page.getByRole('link', { name: '下書きの例' })).toHaveCount(0);
   });
 
-  test('ページが生成されない', async ({ page }) => {
-    const res = await page.goto('/blog/draft-example/');
+  test('ページが出ない', async ({ page }) => {
+    const res = await page.goto(url.post('draft-example'));
     expect(res?.status()).toBe(404);
   });
 
   test('RSS に載らない', async ({ request }) => {
-    const xml = await (await request.get('/blog/rss.xml')).text();
+    const xml = await (await request.get(url.asset('rss.xml'))).text();
     expect(xml).not.toContain('下書きの例');
+  });
+
+  test('sitemap に載らない', async ({ request }) => {
+    const xml = await (await request.get(url.asset('sitemap-0.xml'))).text();
+    expect(xml).not.toContain('draft-example');
+  });
+});
+
+/**
+ * プレビュー URL。**状態を変えるので 1 プロジェクトだけで走らせる**
+ * (desktop と mobile は同じサーバーを共有していて、片方の失効がもう片方に効く)。
+ */
+test.describe('下書きのプレビュー', () => {
+  // 条件付き skip はフィクスチャしか受け取らないので、testInfo が要るものは
+  // beforeEach で判定する。
+  test.beforeEach(({}, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'desktop',
+      'トークンを発行・失効させるので、同じサーバーに 2 プロジェクトからは掛けない',
+    );
+  });
+
+  /** 発行するたびに前のトークンは無効になる。生のトークンが返るのはこの 1 回だけ。 */
+  async function issue(request: APIRequestContext): Promise<string> {
+    const res = await request.post(`${MOUNT}/api/posts/${ID.draft}/preview`, {
+      headers: { Origin: ORIGIN },
+    });
+    expect(res.status(), await res.text()).toBe(200);
+    return ((await res.json()) as { path: string }).path;
+  }
+
+  test('発行した URL でだけ下書きが見える', async ({ page, request }) => {
+    const path = await issue(request);
+    await page.goto(path);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('下書きの例');
+  });
+
+  test('プレビューは保存させず、検索にも載せない', async ({ page, request }) => {
+    const path = await issue(request);
+    const res = await request.get(path);
+
+    expect(res.headers()['cache-control']).toContain('no-store');
+    expect(res.headers()['x-robots-tag']).toContain('noindex');
+    // ヘッダを落とす経路 (保存された HTML を共有される等) でも伝わるよう本文にも出す
+    await page.goto(path);
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
+  });
+
+  test('失効させると開けなくなる', async ({ request }) => {
+    const path = await issue(request);
+    expect((await request.get(path)).status()).toBe(200);
+
+    const revoked = await request.delete(`${MOUNT}/api/posts/${ID.draft}/preview`, {
+      headers: { Origin: ORIGIN },
+    });
+    expect(revoked.status()).toBe(200);
+    expect((await request.get(path)).status()).toBe(404);
   });
 });
 
 test.describe('テーマ', () => {
   test('既定はダーク', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.goto('/blog/');
+    await page.goto(url.index());
     expect((await themeState(page)).attr).toBe('dark');
   });
 
   test('切り替えると背景色まで変わる', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.goto('/blog/');
+    await page.goto(url.index());
     const before = await themeState(page);
 
     await page.locator('.theme-toggle').click();
 
     expect((await themeState(page)).attr).toBe('light');
-    // 背景色には 0.25s の transition が乗っている。クリック直後に読むと
-    // まだ遷移前の値が返るので、確定するまで待つ。
+    // 背景色には transition が乗っている。クリック直後に読むとまだ遷移前の値が返る。
     await expect
       .poll(async () => (await themeState(page)).bg, { timeout: 5_000 })
       .not.toBe(before.bg);
@@ -370,7 +543,7 @@ test.describe('テーマ', () => {
 
   test('ラベルが押した先を伝える', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.goto('/blog/');
+    await page.goto(url.index());
     const button = page.locator('.theme-toggle');
 
     // 静的 HTML の中立な文言は、読み込み後に方向つきへ差し替わる
@@ -381,7 +554,7 @@ test.describe('テーマ', () => {
 
   test('選択は本体サイトと同じキーに保存される', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.goto('/blog/');
+    await page.goto(url.index());
     await page.locator('.theme-toggle').click();
 
     // キーがずれると / と /blog/ を行き来したときにテーマが引き継がれない
@@ -393,7 +566,7 @@ test.describe('テーマ', () => {
     await page.addInitScript((k) => localStorage.setItem(k, 'light'), STORAGE_KEY);
 
     // head のインラインスクリプトの仕事なので、モジュールが動く前に確定していること
-    await page.goto('/blog/', { waitUntil: 'commit' });
+    await page.goto(url.index(), { waitUntil: 'commit' });
     await page.waitForFunction(() => document.body !== null);
     expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light');
   });

@@ -18,7 +18,7 @@
   // リクエストは origin へ向かい、fushihara.net に origin は無いので 522 になる
   // (本番で踏んだ)。ローカル dev は素の外向き fetch なので気付けない。
   "services": [
-    { "binding": "BLOG", "service": "fushihara-net-lily" }
+    { "binding": "BLOG", "service": "fushihara-blog" }
   ],
 
   "observability": { "enabled": true }

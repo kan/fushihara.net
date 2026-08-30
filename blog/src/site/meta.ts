@@ -8,7 +8,10 @@
  * 逆に言うと**ここに import を足すと E2E が起動しなくなる**。
  */
 
-/** マウント位置。**切り替えのときにここを触る** (`/blog-next` → `/blog`)。 */
+/**
+ * マウント位置。**mount を変えるときに触るのはここ 1 行**（ユニットテストも E2E も
+ * ここから引く）。`/blog-next` で並走していたときは、この 1 行の往復で済んでいた。
+ */
 export const MOUNT_PATH = '/blog';
 
 const AUTHOR = 'KAN Fushihara (伏原 幹)';

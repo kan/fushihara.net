@@ -1,32 +1,81 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "fushihara-net-blog",
+  "name": "fushihara-blog",
+  "main": "./src/index.ts",
   "compatibility_date": "2026-08-23",
-  // main を持たない静的アセット専用の Worker。Astro のビルド成果物をそのまま配る。
-  "assets": {
-    "directory": "./dist",
-    "not_found_handling": "404-page",
-    "html_handling": "auto-trailing-slash"
-  },
-  // 本体は Custom Domain (fushihara.net) で、route はそれより優先される。
+
+  // **末尾の `*` は必須。** route はクエリ文字列まで含めて URL 全体と突き合わせ、
+  // パターンに `?` は書けないので、`*` で終わらせないとクエリ付きの URL
+  // (`/blog?utm_source=…`) に一致せず本体 Worker へ落ちる (本体で実際に踏んだ)。
   //
-  // 末尾の `*` は必須。route はクエリ文字列まで含めて URL 全体と突き合わせるうえ、
-  // パターンに `?` は書けないので、`*` で終わらせないとクエリ付き URL に一致しない。
-  // `fushihara.net/blog` と書いていたときは、共有リンクに付いた
-  // `/blog?utm_source=...` が本体 Worker に落ちて真っ白な 404 になっていた (実測)。
+  // 同じ route を 2 つの Worker が持てない。この Worker 名を変えるときは、
+  // 旧 Worker の route を dashboard で消してから新しい名前でデプロイすること
+  // (**設定から消すのでは外れない**。wrangler は設定に無い既存の route を残す)。
+  // その順序は強制されるので、あいだの数分は `/blog*` が本体 Worker に落ちて
+  // 素の 404 になる。Astro → lily と fushihara-net-lily → fushihara-blog の
+  // 2 回、どちらもこれを通っている (`SWITCHOVER.md`)。
+  "routes": [{ "pattern": "fushihara.net/blog*", "zone_name": "fushihara.net" }],
+
+  // D1 と R2 は binding 名で参照する。lily を OSS として配ったときに
+  // 「リソース ID を手で埋める」前提にしないため、コードは DB / MEDIA しか知らない。
   //
-  // 代償として /blogfoo もこの Worker に届くが、見え方は変わらない。404-page 解決は
-  // リクエストパスから上へ 404.html を探すので、/blogfoo では dist/404.html を見に行き、
-  // 存在しないため本文の無い素の 404 になる (本体 Worker が返す 404 と同じ)。
-  // ブログの 404 ページが出るのは dist/blog/404.html に辿り着ける /blog/... のときだけ。
-  // 将来 /blogroll のようなパスを本体に足すなら、より長い route を足せば優先される。
-  "routes": [
-    { "pattern": "fushihara.net/blog*", "zone_name": "fushihara.net" }
+  // **`fushihara-net-lily` という名前はここに残る。** Worker 名を変えたときに
+  // 揃えたくなるが、D1 と R2 の改名は中身の引っ越しであって、名前を揃えるだけの
+  // ために記事と添付を移す理由はない。
+  //
+  // ローカル (miniflare / vitest) はこの値を見ないので、テストと --local の
+  // マイグレーションは database_id が何であっても通る。
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fushihara-net-lily",
+      "database_id": "d2588105-bed3-4baa-94ba-1140241e494e",
+      "migrations_dir": "./migrations"
+    }
   ],
-  // **配信物の検査を wrangler 側に置く。** npm run deploy にだけ入れていると、
-  // `npx wrangler deploy` を直に叩いたときに素通りする。実際にそれをやって、
-  // E2E のフィクスチャビルドを 12 分間本番に出した (2026-08-28)。
-  "build": { "command": "npm run check:no-fixtures" },
+  // 静的アセットの合流点。`npm run build` が作る (shared/public のコピー +
+  // 管理画面のビルド成果物)。**ビルドしていないと wrangler も vitest も動かない。**
+  //
+  // 静的アセットの URL はディレクトリ直下からの相対 (`/favicon.svg`) になるので、
+  // `<mount>/favicon.svg` や `<mount>/admin/…` へは Worker が binding 経由で
+  // 読み替えて出す。そのため run_worker_first: true で全部いったん Worker に通す。
+  // **route を張るとローカルの host まで実ドメインになる。** wrangler dev は
+  // リクエストの origin を route のゾーン (fushihara.net) として渡すので、
+  // localhostOnly が「ローカルではない host」として拒否し、管理画面も E2E の
+  // フィクスチャ投入も通らなくなる (実際に踏んだ)。ローカルでは localhost を
+  // origin として扱わせる。**デプロイには影響しない。**
+  "dev": { "host": "localhost" },
+
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist",
+    "run_worker_first": true
+  },
+  // 画像の最適化。**任意の層**で、無くても添付は R2 の原本で配れる
+  // (Deploy to Cloudflare が Images を自動で用意しないので、無い前提を保つ)。
+  "images": { "binding": "IMAGES" },
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "fushihara-net-lily-media" }
+  ],
+
+  // CSS は Worker がバンドルした文字列として配る。site/ が @import ではなく
+  // 連結して 1 本にするので、ブラウザから見えるのは <mount>/styles.css だけ。
+  "rules": [
+    { "type": "Text", "globs": ["**/*.css"] }
+  ],
+
+  // Cloudflare Access の設定。**秘密ではない**が deployment ごとに違うので、
+  // コードではなくここに置く。空のままだと src/config.ts が localhostOnly
+  // アダプタに落ちる (本番は開かないが、Access で守られている状態とは別物)。
+  // どちらが選ばれたかは起動時にログへ出る。
+  //
+  // Access のアプリケーションは /blog/admin と /blog/api の 2 本だけを守る。
+  // **バラの `blog` を指定しないこと。** ワイルドカード無しのパスは前方一致なので、
+  // 公開ブログごと締め出す (並走を始めるときに実際にやった)。
+  "vars": {
+    "ACCESS_TEAM": "kanf",
+    "ACCESS_AUD": "5f36e8cb80f216e06cf2557fa4b140e2c11ad9ba1b49ea63fe7ab422da1cd542"
+  },
 
   "observability": { "enabled": true }
 }

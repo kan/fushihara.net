@@ -1,10 +1,15 @@
-# lily
+# blog（lily）
 
-`/blog` を Astro（ファイルベース）から置き換える、D1 を正とする自作 CMS。
-まずこのリポジトリ内の Worker として作り、コアは将来 OSS（`lily`）として切り出す。
+`fushihara.net/blog` を配っている、D1 を正とする自作 CMS。中身の名前は **lily** で、
+`src/core/` は将来 OSS として切り出す。まずこのリポジトリ内の Worker として動かしている。
+
+Worker 名は `fushihara-blog`、ディレクトリは `blog/`、コアの名前が `lily`。
+**D1（`fushihara-net-lily`）と R2（`fushihara-net-lily-media`）だけ古い名前のまま**で、
+これは改名が中身の引っ越しになるため（名前を揃えるために記事と添付を移す理由はない）。
 
 設計の全体像と決定事項は
-[issue #5](https://github.com/kan/fushihara.net/issues/5) が正本。
+[issue #5](https://github.com/kan/fushihara.net/issues/5) が正本。守るべき外向きの
+契約（URL・フィード・記事の出し入れの形）は [`CONTRACT.md`](./CONTRACT.md)。
 
 ## 今できていること
 
@@ -28,9 +33,9 @@
 - 説明（description）の自動生成。手で書いていなければ本文の冒頭を配信時に出す
 - 公開ページの管理リンク（管理画面を開いたことがある端末にだけ出る）
 
-**`/blog-next*` で並走中。** 実記事 8 本を移行済みで、公開側・フィード・管理画面が
-本番の D1 / R2 / Access の上で動いている。切り替え（route を `/blog*` へ）はまだ。
-詳細は「`/blog-next` での並走」の節。
+**2026-08-29 に `/blog` を Astro から引き継いだ。** 2026-08-30 に Astro
+（`blog/` と `fushihara-net-blog` Worker）を消し、`lily/` をこの `blog/` に改名した。
+経緯と踏んだ穴は [`SWITCHOVER.md`](./SWITCHOVER.md)。
 
 ## コマンド
 
@@ -102,8 +107,8 @@ body_md ──renderMarkdown()──▶ body_html（保存。mount を知らな�
 
 保存する HTML には `lily-media://<public_id>/<filename>` という placeholder が
 入っていて、実際の URL は配信時に組む。**この分離があるので `mountPath` を
-変えても `body_html` の再生成が要らない**（`/blog-next` と `/blog` が同じ D1 を
-見て同時に正しい URL を出せる）。
+変えても `body_html` の再生成が要らない**（並走していたころ、`/blog-next` と
+`/blog` が同じ D1 を見て同時に正しい URL を出せた）。
 
 - **`rehype-raw` は使わない。** HTML を parse5 で読み直すので、表の中の改行が
   foster parenting で表の外へ追い出される（`</pre>` と `<table>` の間に空行が
@@ -298,7 +303,7 @@ const { post } = await res.json();  // 型は handler から
 `<mount>/admin/`。Vue の SPA で、Worker とは別のビルド（`vite build`）。
 
 - **`base: './'` と、mount をパスから割り出す。** 同じ成果物が `/blog` でも
-  `/blog-next` でも動く（deployment の設定をビルドに焼き付けない）
+  別の mount でも動く（deployment の設定をビルドに焼き付けない）
 - **プレビューは `POST /api/render`。** 公開ページと同じ renderer を通すので、
   書きながら見ているものと出るものが食い違わない。管理画面に Markdown の
   パーサを 2 本目として持ち込まずに済む
@@ -554,11 +559,16 @@ D1 の dump（運用復旧用）とは別物。あちらは D1 / R2 という構
 subrequest の上限（添付 1 つにつき R2 が 1 回）に当たる日が先に来る。記事が数百を
 超えたら、範囲を指定して分けて出す形が要る。
 
-## Astro からの移行
+## Astro からの移行（済）
 
-**`blog/content/posts/` を zip にして `<mount>/api/import` に投げるだけ。**
-`public_id` / `paths` / `media` を省いた frontmatter がそのまま読めるので、
-移行用のコードを別に書かない。
+2026-08-29 に完了し、Astro 側（`blog/content/posts/` と `fushihara-net-blog` Worker）は
+翌日に消した。**記事の原本は D1 だけ**で、Markdown を読み返したいときは
+`git show 1361402:blog/content/posts/<slug>/index.md`。以下は当時の記録。
+
+**やったのは `blog/content/posts/` を zip にして `<mount>/api/import` に投げること
+だけ。** `public_id` / `paths` / `media` を省いた frontmatter がそのまま読めるので、
+移行用のコードを別に書かずに済んだ。**この形は今も入口として生きている**ので、
+別のところから記事を持ち込むときも同じ道を通す（`CONTRACT.md`）。
 
 ```bash
 npm run db:migrate:local && npm run build && npm run dev   # 別の端末で
@@ -595,25 +605,33 @@ RSS の全文（`content:encoded`）は、XML として解析すれば上記以�
 「`<img>` の属性」）。Astro が付けていたものとの差は、寸法を読めない添付
 （AVIF や `viewBox` の無い SVG）で `width` / `height` が出ないことだけ。
 
-## `/blog-next` での並走
+## 本番の配線
 
-`fushihara.net/blog-next*` に route を張り、Cloudflare Access で丸ごと守った状態で
-動かしている。**公開側もログインしないと見えない**ので、`/blog` と重複した内容が
-検索に載る余地が無い。切り替えのときに Access を `/blog/admin` と `/blog/api` へ絞る。
+| 何 | 値 |
+|---|---|
+| Worker | `fushihara-blog` |
+| route | `fushihara.net/blog*`（**末尾の `*` は必須**。無いとクエリ付き URL に一致しない） |
+| Access | `blog/admin` と `blog/api` の 2 本（**ワイルドカード無し**） |
+| D1 / R2 | `fushihara-net-lily` / `fushihara-net-lily-media` |
+| 本体からの参照 | ルート `wrangler.jsonc` の `services`（`BLOG` → `fushihara-blog`） |
+
+デプロイは `.github/workflows/deploy-blog.yml` が main への push で行う
+（`blog/**` `shared/**` と自分自身が変わったときだけ）。**マイグレーションが先、
+`wrangler deploy` が後。** 逆にすると新しい列を読むコードが古いスキーマに当たる。
 
 mount を変えるのは `src/site/meta.ts` の `MOUNT_PATH` 1 行。テストも E2E も
-そこから引いているので、`/blog-next` ↔ `/blog` の往復で spec を書き換えずに済む。
+そこから引いているので、mount の往復で spec を書き換えずに済む。
 
-**切り替えの手順は `SWITCHOVER.md`。** 順序を間違えると公開ブログを締め出すので、
+**配線を動かす手順は `SWITCHOVER.md`。** 順序を間違えると公開ブログを締め出すので、
 その場で考えずにあれを読むこと。
 
 ### ここで踏んだ罠
 
 - **Access のパスは文字列の前方一致。** アプリのパスに `blog` を入れると
   `/blog` だけでなく **`/blog-next` も掴む**。並走を始めるときにこれをやって、
-  **現行ブログを読者ごと締め出した**（RSS も含めて全部 Access のログインへ 302 した）。
-  切り替えで `/blog` に絞るときも同じ罠があり、将来 `/blogroll` のようなパスを
-  足すと巻き添えになる
+  **当時の公開ブログを読者ごと締め出した**（RSS も含めて全部 Access のログインへ
+  302 した）。`/blog/admin` に絞った今も、将来 `/blogroll` のようなパスを足すと
+  巻き添えになる
 - **`routes` を書くと `wrangler dev` のリクエスト host が実ドメインになる。**
   route のゾーン（`fushihara.net`）を origin として渡すので、`localhostOnly` が
   「ローカルではない host」として拒否し、**管理画面も E2E のフィクスチャ投入も
@@ -635,15 +653,15 @@ mount を変えるのは `src/site/meta.ts` の `MOUNT_PATH` 1 行。テスト�
 通った JWT が要る**ので、`cloudflared` で人としてログインしてから叩く。
 
 ```bash
-cloudflared access login https://fushihara.net/blog-next/
-cloudflared access curl https://fushihara.net/blog-next/api/import \
+cloudflared access login https://fushihara.net/blog/
+cloudflared access curl https://fushihara.net/blog/api/import \
   -X POST -H 'Origin: https://fushihara.net' -F 'file=@/tmp/migrate.zip'
 ```
 
 **サービストークンでは通らない。** Access がサービストークンに出す JWT は `sub` が
 空文字で（識別子は `common_name` に入る）、`core/auth/access.ts` は `sub` が無いものを
-拒否する。バックアップ cron のように機械から叩く口が要るようになったら、そこで
-対応を決めること。
+拒否する。だから**機械から叩く口は作らず**、バックアップは Access の外側
+（Worker 自身の Cron Trigger）から D1 と R2 を直に読む形にしてある（「バックアップ」の節）。
 
 ## E2E
 

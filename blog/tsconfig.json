@@ -1,5 +1,40 @@
 {
-  "extends": "astro/tsconfigs/strict",
-  "include": [".astro/types.d.ts", "**/*", "../shared/**/*"],
-  "exclude": ["dist"]
+  // src/ と test/ はどちらも Workers ランタイム上で動くので 1 プロジェクトで見る。
+  // 分けるのは管理画面 (src/admin/) を足すとき。あちらは Vue で DOM を触るので、
+  // Workers ランタイム型と同じプロジェクトに入れると Request / Response / caches の
+  // 型が衝突する (本体リポジトリで踏んだ)。そのときは tsconfig.admin.json を足す。
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "skipLibCheck": true,
+    "types": ["@cloudflare/vitest-plugin/types", "./worker-configuration.d.ts"],
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true
+  },
+  // shared/ はプロジェクト外 (リポジトリ直下) にあるので、参照するファイルを
+  // 明示的に足す必要がある。core/ からは読まない (サイト固有を知らないため)。
+  "include": [
+    "src",
+    "test",
+    "vitest.config.ts",
+    "worker-configuration.d.ts",
+    "../shared/theme.ts",
+    "../shared/tokens.css"
+  ],
+  "exclude": ["src/admin"]
 }

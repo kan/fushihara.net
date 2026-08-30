@@ -1,6 +1,8 @@
-# 切り替え手順（`/blog-next` → `/blog`）
+# 配線を動かす手順
 
-並走中の lily を本番の `/blog` に据え、Astro を下ろすまでの手順。
+lily を本番の `/blog` に据え、Astro を下ろし、Worker 名を寄せるまでの記録。
+**2026-08-29 に切り替え、8/30 に後始末まで済んだ。** 以下は済んだ手順の記録として
+残してある（次に同じことをするときの元にする）。
 
 **この文書は作業のたびに書き換える。** 済んだ手順を消すのではなく、実際に起きたこと
 （想定と違った点・追加で要った操作）を追記すること。次に同じことをするのは
@@ -167,16 +169,44 @@ npm run typecheck && npm test && npm run test:e2e && npm run deploy
 - [ ] 購読者のリーダーで記事が重複していない
 - [ ] 管理画面から記事を 1 本書いて、公開まで通る（dogfood）
 
-## 5. 後始末
+## 5. 後始末（2026-08-30）
 
-- [ ] Access のアプリから `blog-next` の行を削除
-- [ ] `fushihara-net-blog` Worker を削除
-- [ ] `blog/` を削除し、`lily/` を `blog/` に改名
-      （`lily/wrangler.jsonc` の `name` と CI の working-directory も一緒に）
-- [ ] `.github/workflows/deploy-blog.yml` を削除、`lily.yml` を `deploy-blog.yml` に寄せる
-- [ ] ルートの `CLAUDE.md` の route の節を書き換える
-- [ ] `blog/CONTRACT.md` を書き換える（issue #5 の最後の項目）
-- [ ] `lily/README.md` の「`/blog-next` での並走」の節を畳む
+- [x] Access のアプリから `blog-next` の行を削除
+- [x] `fushihara-net-blog` Worker を削除
+- [x] `blog/`（Astro）を削除し、`lily/` を `blog/` に改名
+- [x] Worker 名を `fushihara-net-lily` → `fushihara-blog` に（下記 5-1）
+- [x] `.github/workflows/deploy-blog.yml` を削除、`lily.yml` を `deploy-blog.yml` に寄せる
+- [x] ルートの `CLAUDE.md` の route の節を書き換える
+- [x] `blog/CONTRACT.md` を「生成器を何に替えても守るもの」に書き換える
+- [x] `blog/README.md` の「`/blog-next` での並走」の節を「本番の配線」に畳む
+
+**消す前に D1 と R2 を手元へ落とした。**
+
+```bash
+npx wrangler d1 export DB -c ./wrangler.jsonc --remote --output ~/backup/…/lily-d1-<日付>.sql
+# 添付は media テーブルの r2_key を回して wrangler r2 object get
+```
+
+### 5-1. Worker 名の変更（`fushihara-net-lily` → `fushihara-blog`）
+
+**これも route の付け替えなので、手順 2 と同じ制約を受ける。** 同じ route を 2 つの
+Worker が持てないので、順序が強制され、あいだの数分は `/blog*` が本体 Worker に落ちて
+404 になる。
+
+1. dashboard で `fushihara-net-lily` から `fushihara.net/blog*` を削除
+   （**設定から消しても外れない**。手順 2-1 と同じ）
+2. `/blog/` が 404 になることを確認（`?cb=$RANDOM` を付ける。キャッシュに騙される）
+3. `blog/wrangler.jsonc` の `name` を `fushihara-blog` にして `npm run deploy`。
+   出力に `fushihara.net/blog*` が出ることを確認
+4. `/blog/` が 200 に戻ることを確認
+5. **本体の `services`（`BLOG`）を `fushihara-blog` に向けて本体をデプロイ。**
+   これを忘れると、トップの Blog 付箋が「存在しない Worker」を呼んで空になる
+6. `/api/blog` が切り替え前と一致することを確認
+7. `fushihara-net-lily` Worker を削除
+
+**D1 と R2 の名前は変えない。** `fushihara-net-lily` / `fushihara-net-lily-media` の
+ままにしてある。改名は中身の引っ越しであって、名前を揃えるためだけに記事と添付を
+移す理由がない。
 
 ## 実施記録
 

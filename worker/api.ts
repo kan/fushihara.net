@@ -137,7 +137,7 @@ export const githubLanguages = forAllowedUser(async (url, user) => {
 
 // --- ブログ (/blog) の記事一覧 ---
 
-// ブログは別 Worker (fushihara-net-lily) が fushihara.net/blog* で配っている。
+// ブログは別 Worker (fushihara-blog) が fushihara.net/blog* で配っている。
 //
 // **素の fetch で叩いてはいけない。** 同一ゾーンの URL へのサブリクエストは Worker
 // ルートを再実行せず origin へ向かうので、origin を持たないこのゾーンでは 522 に
