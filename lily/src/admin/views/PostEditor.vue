@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { fromDateTimeInput, toDateTimeInput } from '../../../../shared/date.ts';
-import { client, errorMessage, MOUNT } from '../api.ts';
+import { apiFetch, client, errorMessage, MOUNT } from '../api.ts';
 import { go, postRoute } from '../router.ts';
+import { onSessionLost, stash, unstash } from '../session.ts';
 import DateTimeInput from './DateTimeInput.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import TagInput from './TagInput.vue';
@@ -40,6 +41,13 @@ const loadedPublishedAt = ref('');
 function publishedAtChanged(): boolean {
   return publishedAt.value !== loadedPublishedAt.value;
 }
+
+/**
+ * 説明を空のままにしたときに出るもの。**組み立てるのはサーバー**（`POST /api/render`
+ * が本文と一緒に返す）。ここで作ると、解析器を管理画面のバンドルへ運ぶことになり、
+ * しかも打つたびに走る。
+ */
+const autoDescription = ref('');
 
 const html = ref('');
 const unresolved = ref<readonly string[]>([]);
@@ -221,7 +229,7 @@ async function upload(file: File): Promise<string | null> {
   let filename: string | null = null;
   await run(async () => {
     const url = client.posts[':publicId'].media.$url({ param: { publicId: id } });
-    const res = await fetch(url, { method: 'POST', body: form });
+    const res = await apiFetch(url, { method: 'POST', body: form });
     if (!res.ok) return await fail(res);
 
     const uploaded = (await res.json()) as { media: Detail['media'][number] };
@@ -251,6 +259,57 @@ async function removeMedia(mediaId: string): Promise<void> {
 }
 
 /**
+ * セッションが切れて読み込み直すときの控え。**保存前の編集内容はここにしかない。**
+ *
+ * 記事ごとに分けるのは、読み込み直したあとに別の記事を開いても混ざらないため。
+ * mount を混ぜるのは `/blog` と `/blog-next` を同じブラウザで開くから。
+ */
+type StashedDraft = {
+  title: string;
+  description: string;
+  tags: string[];
+  bodyMd: string;
+  publishedAt: string;
+};
+
+const STASH_KEY = `lily:draft:${MOUNT}:${props.publicId ?? 'new'}`;
+
+/**
+ * 記事を読み込めたか。**読めていない画面の空欄を退避しない**ため。
+ *
+ * 読み込み直した直後にもう一度切れると、まだ `load()` が終わっていない空の
+ * 状態を控えとして書くことになる（新規は読むものが無いので最初から真）。
+ */
+const loaded = computed(() => props.publicId === null || post.value !== null);
+
+onUnmounted(
+  onSessionLost(() => {
+    if (!loaded.value) return;
+    stash(STASH_KEY, {
+      title: title.value,
+      description: description.value,
+      tags: tags.value,
+      bodyMd: bodyMd.value,
+      publishedAt: publishedAt.value,
+    } satisfies StashedDraft);
+  }),
+);
+
+const restored = ref(false);
+
+/** 読み込み直す前の編集内容を戻す。**読み込みが終わってから上書きする。** */
+function restore(): void {
+  const draft = unstash<StashedDraft>(STASH_KEY);
+  if (draft === null) return;
+  title.value = draft.title;
+  description.value = draft.description;
+  tags.value = draft.tags;
+  bodyMd.value = draft.bodyMd;
+  publishedAt.value = draft.publishedAt;
+  restored.value = true;
+}
+
+/**
  * プレビュー。**公開ページと同じ renderer を通す**ので、書きながら見ているものと
  * 出るものが食い違わない。打つたびに投げないよう少し待つ。
  */
@@ -268,12 +327,16 @@ watch(
       const rendered = await res.json();
       html.value = rendered.html;
       unresolved.value = rendered.unresolvedMedia;
+      autoDescription.value = rendered.autoDescription ?? '';
     }, 300);
   },
   { immediate: true },
 );
 
-onMounted(load);
+onMounted(async () => {
+  await load();
+  restore();
+});
 </script>
 
 <template>
@@ -291,6 +354,9 @@ onMounted(load);
   </header>
 
   <p v-if="error" class="notice error">{{ error }}</p>
+  <p v-if="restored" class="notice">
+    セッションが切れる前の編集内容を復元した。保存するまで記事には入っていない。
+  </p>
   <p v-if="unresolved.length" class="notice">
     解決できない画像の参照: {{ unresolved.join(', ') }}
   </p>
@@ -303,8 +369,8 @@ onMounted(load);
       <input v-model="title" type="text" />
     </label>
     <label class="wide">
-      説明（一覧と OGP に出る）
-      <input v-model="description" type="text" />
+      説明（一覧と OGP に出る。空なら本文の冒頭から作る）
+      <input v-model="description" type="text" :placeholder="autoDescription" />
     </label>
     <label>
       タグ

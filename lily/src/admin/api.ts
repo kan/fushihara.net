@@ -6,6 +6,7 @@
  */
 import { hc } from 'hono/client';
 import type { LilyApi } from '../core/api/index.ts';
+import { sessionLost, sessionRestored } from './session.ts';
 
 /**
  * マウント位置。管理画面は `<mount>/admin/` に置かれるので、そこから割り出す。
@@ -19,7 +20,22 @@ export const MOUNT = location.pathname.replace(/\/admin(\/.*)?$/, '');
  * base は**絶対 URL**にする。`$url()` が URL を組み立てるのに要るので、相対だと
  * 画像のアップロード (multipart で `$url()` を使う経路) が `Invalid URL` で落ちる。
  */
-export const client = hc<LilyApi>(`${location.origin}${MOUNT}/api`);
+/**
+ * API を叩く口。**認証の切れ目をここで拾う。**
+ *
+ * Access の JWT が切れると、以後の呼び出しは 403 で返り続ける（画面から直す手段が
+ * ない）。1 箇所で見て読み込み直す。multipart の口も `hc` を通さないだけで同じ
+ * 保護の下にあるので、**画像のアップロードもこれを使う**。
+ */
+export const apiFetch: typeof fetch = async (input, init) => {
+  const response = await fetch(input, init);
+  if (response.status === 401 || response.status === 403) sessionLost();
+  // 通ったなら切れていない。読み込み直しの回数を数え直す。
+  else if (response.ok) sessionRestored();
+  return response;
+};
+
+export const client = hc<LilyApi>(`${location.origin}${MOUNT}/api`, { fetch: apiFetch });
 
 /**
  * API のエラーを人に見せる文にする。

@@ -561,3 +561,21 @@ describe('再描画', () => {
     expect(result.body.warnings[0].unresolvedMedia).toEqual(['./missing.png']);
   });
 });
+
+describe('プレビューの描画', () => {
+  it('本文と一緒に、説明を空にしたときに出るものを返す', async () => {
+    // 管理画面の説明欄はこれを placeholder に出す。**組み立てるのはサーバー**で、
+    // 解析器を管理画面のバンドルへ運ばないため（配信側と同じ関数を通る）。
+    const result = await apiJson('POST', '/api/render', {
+      bodyMd: ['## 見出し', '', '本文の書き出し。', '', '次の段落。'].join('\n'),
+    });
+    expect(result.status).toBe(200);
+    expect(result.body.html).toContain('<h2>見出し</h2>');
+    expect(result.body.autoDescription).toBe('本文の書き出し。');
+  });
+
+  it('文章の無い本文では null（空の説明を見せない）', async () => {
+    const result = await apiJson('POST', '/api/render', { bodyMd: '# 題だけ\n' });
+    expect(result.body.autoDescription).toBeNull();
+  });
+});

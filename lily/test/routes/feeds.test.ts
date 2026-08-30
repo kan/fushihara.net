@@ -85,6 +85,12 @@ describe('RSS', () => {
     expect(xml).toContain('<pubDate>Sat, 01 Aug 2026 00:00:00 GMT</pubDate>');
   });
 
+  it('説明が空なら本文の冒頭を description にする', async () => {
+    await seedPost({ path: 'auto', description: null, bodyMd: '本文の書き出し。' });
+    const xml = await (await get(`${MOUNT}/rss.xml`)).text();
+    expect(xml).toContain('<description>本文の書き出し。</description>');
+  });
+
   it('description は要約のまま、本文は全文を content:encoded に入れる', async () => {
     await seedRichPost();
     const xml = await (await get(`${MOUNT}/rss.xml`)).text();
@@ -274,6 +280,14 @@ describe('posts.json', () => {
     expect(await count('?limit=999')).toBe(20);
     expect(await count('?limit=0')).toBe(5);
     expect(await count('?limit=abc')).toBe(5);
+  });
+
+  it('説明が空なら本文の冒頭を載せる (本体サイトの付箋が空にならない)', async () => {
+    await seedPost({ path: 'auto', description: null, bodyMd: '本文の書き出し。' });
+    const { posts } = (await (await get(`${MOUNT}/posts.json`)).json()) as {
+      posts: { description: string | null }[];
+    };
+    expect(posts[0]?.description).toBe('本文の書き出し。');
   });
 
   it('タグと説明も載せる', async () => {

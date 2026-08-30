@@ -32,7 +32,10 @@ function add(name: string): void {
   const tag = name.trim();
   if (tag !== '' && !model.value.includes(tag)) model.value = [...model.value, tag];
   draft.value = '';
-  open.value = false;
+  // **閉じない。** 候補は `mousedown.prevent` で拾っていて blur が起きないので、
+  // ここで閉じると 2 つ目以降を選ぶために一度どこかへ外して戻る必要が出る
+  // (`focus()` は既に当たっている入力欄には focus イベントを出さない)。
+  open.value = true;
   input.value?.focus();
 }
 
@@ -89,6 +92,7 @@ function onBackspace(event: KeyboardEvent): void {
       @blur="open = false"
       @keydown.enter.prevent="add(suggestions[0] && draft.trim() === '' ? suggestions[0].name : draft)"
       @keydown.delete="onBackspace"
+      @keydown.escape="open = false"
     />
 
     <!-- blur より先に click を取るため mousedown で拾う -->

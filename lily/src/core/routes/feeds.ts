@@ -17,6 +17,7 @@ import { createUrls, type Urls } from '../paths.ts';
 import type { RenderMedia } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
 import { buildSitemap, buildSitemapIndex } from '../sitemap.ts';
+import { postDescription } from '../summary.ts';
 import { groupByPost } from '../view.ts';
 import { LONG_EDGE, SHORT_EDGE } from './cache.ts';
 import { STATIC_ASSETS } from './fixed.ts';
@@ -96,7 +97,7 @@ export function feedRoutes(config: PageConfig): Hono<Env> {
           url: urls.post(post.canonical_path, { absolute: true }),
           // 公開記事なので published_at は必ずある (DB の CHECK)。
           published_at: post.published_at as string,
-          description: post.description,
+          description: postDescription(post),
           tags: (tags.get(post.id) ?? []).map((tag) => tag.name),
         })),
       },
@@ -142,7 +143,7 @@ async function feedEntries(db: D1Database, urls: Urls): Promise<FeedEntry[]> {
       return {
         publicId: post.public_id,
         title: post.title,
-        description: post.description,
+        description: postDescription(post),
         url,
         // 公開記事なので published_at は必ずある (DB の CHECK)。
         publishedAt: new Date(post.published_at as string),

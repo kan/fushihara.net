@@ -211,6 +211,33 @@ function countPosts(html: string): number {
   return (html.match(/<li>\s*<div class="post-meta">/g) ?? []).length;
 }
 
+describe('説明', () => {
+  // 手で書いていない記事でも、一覧と OGP に本文の冒頭が出る。
+  const BODY = ['## 見出し', '', '本文の書き出し。ここが説明になる。'].join('\n');
+
+  it('空なら本文の冒頭が一覧に出る', async () => {
+    await seedPost({ path: 'auto', description: null, bodyMd: BODY });
+    const body = await (await get(`${MOUNT}/`)).text();
+    expect(body).toContain('<p class="post-summary">本文の書き出し。ここが説明になる。</p>');
+  });
+
+  it('空なら本文の冒頭が記事の meta と OGP に出る', async () => {
+    await seedPost({ path: 'auto', description: null, bodyMd: BODY });
+    const body = await (await get(`${MOUNT}/auto/`)).text();
+    expect(body).toContain('<meta name="description" content="本文の書き出し。ここが説明になる。" />');
+    expect(body).toContain(
+      '<meta property="og:description" content="本文の書き出し。ここが説明になる。" />',
+    );
+  });
+
+  it('手で書いた説明が勝つ', async () => {
+    await seedPost({ path: 'manual', description: '手で書いた', bodyMd: BODY });
+    const body = await (await get(`${MOUNT}/`)).text();
+    expect(body).toContain('<p class="post-summary">手で書いた</p>');
+    expect(body).not.toContain('本文の書き出し。');
+  });
+});
+
 describe('タグ', () => {
   it('そのタグの公開記事だけが出る', async () => {
     await seedPost({ title: '開発の記事', path: 'a', tags: ['dev'] });

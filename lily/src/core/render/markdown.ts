@@ -21,3 +21,19 @@ export function imageMarkdown(filename: string, alt = ''): string {
   const target = `./${filename}`;
   return `![${alt}](${NEEDS_BRACKETS.test(filename) ? `<${target}>` : target})`;
 }
+
+/**
+ * カーソルがリンク記法・画像記法の URL 部分 (`](` と `)` のあいだ) にいるか。
+ *
+ * 直前の `](` を探して、そこから先に閉じ括弧も改行も無ければ中にいる。**閉じ括弧が
+ * 無いまま行が終わる書きかけ**も中と見なすので、`[題](` まで打った続きに貼る形が通る。
+ *
+ * 判定がここにあるのは `imageMarkdown` と同じ理由で、「どこが URL 欄か」が記法の
+ * 知識だから。エディタ側に置くと記法を変えたときに追随し忘れる。
+ */
+export function inLinkUrl(text: string, at: number): boolean {
+  const open = text.lastIndexOf('](', at);
+  // `at` が `]` と `(` のあいだなら、まだ URL 部分に入っていない。
+  if (open < 0 || open + 2 > at) return false;
+  return !/[)\n]/.test(text.slice(open + 2, at));
+}

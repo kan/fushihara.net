@@ -6,6 +6,7 @@
  */
 import type { PostRow, PostWithPathRow, TagRow } from './db/types.ts';
 import type { Urls } from './paths.ts';
+import { postDescription } from './summary.ts';
 import type { PostSummaryView, PostView, TagView } from './theme.ts';
 
 export function toTagView(urls: Urls, tag: TagRow): TagView {
@@ -19,7 +20,8 @@ export function toPostSummary(
 ): PostSummaryView {
   return {
     title: row.title,
-    description: row.description,
+    // 空なら本文の冒頭から作る。**出す側は全部 postDescription を通す。**
+    description: postDescription(row),
     publishedAt: row.published_at === null ? null : new Date(row.published_at),
     updatedAt: new Date(row.updated_at),
     url: urls.post(row.canonical_path),

@@ -166,3 +166,171 @@ test.describe('公開ページの管理リンク', () => {
     await expect(link).toHaveAttribute('href', `${MOUNT}/admin/`);
   });
 });
+
+test.describe('編集画面', () => {
+  /** 下書きのフィクスチャ。タグが付いていないので候補が全部出る。 */
+  async function openDraft(page: import('@playwright/test').Page): Promise<void> {
+    await page.goto(`${MOUNT}/admin/#/posts/${ID.draft}`);
+    await expect(page.locator('input[type="text"]').first()).toHaveValue('下書きの例');
+  }
+
+  test('タグの候補は 2 つ目以降も選べる', async ({ page }) => {
+    // 選んだあとに候補を閉じると、`focus()` では focus イベントが出ない (既に
+    // 当たっているため) ので、2 つ目を選ぶのに一度どこかへ外して戻る必要が出る。
+    await openDraft(page);
+
+    const draft = page.locator('.tag-input input');
+    const suggestions = page.locator('.tag-input .suggest li');
+    await draft.click();
+    await expect(suggestions).toHaveCount(2);
+
+    await suggestions.first().click();
+    await expect(page.locator('.tag-input .chip')).toHaveCount(1);
+
+    // ここで閉じていたら、続けて選べない。
+    await expect(suggestions).toHaveCount(1);
+    await suggestions.first().click();
+    await expect(page.locator('.tag-input .chip')).toHaveCount(2);
+  });
+
+  test('リンクの URL 欄に貼った URL は展開しない', async ({ page }) => {
+    await openDraft(page);
+    const area = page.locator('.dropzone textarea');
+
+    // 題を取りに行く先は止める。外へ出ると遅くなるうえ、相手の応答で結果が変わる。
+    await page.route(`**${MOUNT}/api/link-title`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '{"title":null}' }),
+    );
+
+    /** カーソルを `at` に置いて URL を貼り、**既定の貼り付けを止めたか**を返す。 */
+    async function paste(body: string, at: number): Promise<boolean> {
+      await area.fill(body);
+      return await area.evaluate((element, index) => {
+        const textarea = element as HTMLTextAreaElement;
+        textarea.focus();
+        textarea.setSelectionRange(index, index);
+        const data = new DataTransfer();
+        data.setData('text/plain', 'https://example.com/x');
+        const event = new ClipboardEvent('paste', {
+          clipboardData: data,
+          bubbles: true,
+          cancelable: true,
+        });
+        textarea.dispatchEvent(event);
+        return event.defaultPrevented;
+      }, at);
+    }
+
+    // `[題](https://)` の URL 欄。包むと `[題]([url](url))` になる。合成した
+    // イベントでは既定の貼り付けが起きないので、**止めなかったこと**で見る。
+    expect(await paste('[題](https://)', '[題]('.length)).toBe(false);
+    await expect(area).toHaveValue('[題](https://)');
+
+    // 本文の途中なら今までどおり `[url](url)` に包む。
+    expect(await paste('ここに ', 4)).toBe(true);
+    await expect(area).toHaveValue('ここに [https://example.com/x](https://example.com/x)');
+  });
+
+  test('説明を空にすると本文の冒頭が下に見える', async ({ page }) => {
+    // 見えているものが、そのまま一覧・OGP・フィードに出る (配信側と同じ関数)。
+    await openDraft(page);
+    const description = page.locator('label', { hasText: '説明' }).locator('input');
+    await description.fill('');
+    await page.locator('.dropzone textarea').fill('自動で出る書き出し。\n\n次の段落。');
+    await expect(description).toHaveAttribute('placeholder', '自動で出る書き出し。');
+  });
+
+  test('セッションが切れたら書きかけを退避して読み込み直す', async ({ page }) => {
+    await openDraft(page);
+    await page.locator('.dropzone textarea').fill('セッションが切れる直前の本文。');
+
+    // 保存の 1 往復だけ Access が切れた形にする。読み込み直したあとの取得は通す。
+    await page.route(`**${MOUNT}/api/posts/**`, (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'forbidden' }),
+      }),
+      { times: 1 },
+    );
+
+    await page.getByRole('button', { name: '保存' }).click();
+
+    // 読み込み直したうえで、保存できていなかった本文が戻っている。
+    await expect(page.locator('.notice', { hasText: '復元した' })).toBeVisible();
+    await expect(page.locator('.dropzone textarea')).toHaveValue('セッションが切れる直前の本文。');
+
+    // 通ったなら数え直す。次に切れたときもまた 1 回目から読み込み直せる。
+    await expect
+      .poll(() => page.evaluate(() => sessionStorage.getItem('lily:reload-attempt')))
+      .toBeNull();
+  });
+
+  test('読み込み直しても直らなければ止まる（無限に読み込み直さない）', async ({ page }) => {
+    // リロードで直らない拒否 (Access のポリシーから外れた / AUD 設定違い) を
+    // 時間で見分けようとすると、ログインの往復が長いだけで判定が失効する。
+    await page.route(`**${MOUNT}/api/**`, (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'forbidden' }),
+      }),
+    );
+
+    await page.goto(`${MOUNT}/admin/#/posts/${ID.draft}`);
+    // 読み込み直しが止まっていなければ、この文字は出る前に流れ続ける。
+    await expect(page.locator('.notice.error')).toContainText('forbidden');
+
+    // **時間ではなく回数で覚えている。** 経過時間で見分けると、Access の
+    // ログイン (MFA を含む) が長引いただけで判定が失効して数え直しになる。
+    expect(await page.evaluate(() => sessionStorage.getItem('lily:reload-attempt'))).toBe('1');
+  });
+
+  test('読み込み直しても直らないときでも書きかけは戻ってくる', async ({ page }) => {
+    await openDraft(page);
+    await page.locator('.dropzone textarea').fill('直らない側の本文。');
+
+    await page.route(`**${MOUNT}/api/**`, (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'forbidden' }),
+      }),
+    );
+    await page.getByRole('button', { name: '保存' }).click();
+
+    // 読み込み直した先でも 403 なので記事は出ない。**それでも控えは残る。**
+    await expect(page.locator('.notice.error')).toContainText('forbidden');
+    await expect(page.locator('.dropzone textarea')).toHaveValue('直らない側の本文。');
+  });
+
+  test('退避した画面は 1 度しか使わない（あとで開いた管理画面を乗っ取らない）', async ({
+    page,
+  }) => {
+    // `location.reload()` はフラグメントを保つので、退避が消費されないまま
+    // 残ることがある。
+    await page.goto(`${MOUNT}/admin/#/settings`);
+    await page.evaluate((hash) => sessionStorage.setItem('lily:route', hash), `/posts/${ID.draft}`);
+
+    // ハッシュ付きで開いた回では、退避は使われない (が、消費はされる)。
+    // **公開ページを挟む。** ハッシュだけ違う URL へ移っても読み込み直さない。
+    await page.goto(url.index());
+    await page.goto(`${MOUNT}/admin/#/settings`);
+    await expect(page).toHaveURL(`${MOUNT}/admin/#/settings`);
+
+    await page.goto(url.index());
+    await page.goto(`${MOUNT}/admin/`);
+    await expect(page).toHaveURL(`${MOUNT}/admin/`);
+  });
+
+  test('読み込み直しでフラグメントが落ちても開いていた画面へ戻る', async ({ page }) => {
+    // Access のログインを経由すると `#` はサーバーへ送られないので、戻ってきた
+    // URL は `<mount>/admin/` になる。退避しておいた画面へ寄せ直す。
+    await page.goto(`${MOUNT}/admin/`);
+    await page.evaluate((hash) => sessionStorage.setItem('lily:route', hash), `/posts/${ID.draft}`);
+
+    await page.goto(`${MOUNT}/admin/`);
+    await expect(page).toHaveURL(`${MOUNT}/admin/#/posts/${ID.draft}`);
+    await expect(page.locator('input[type="text"]').first()).toHaveValue('下書きの例');
+  });
+});

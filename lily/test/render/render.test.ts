@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown, type RenderMedia } from '../../src/core/render/index.ts';
-import { imageMarkdown } from '../../src/core/render/markdown.ts';
+import { imageMarkdown, inLinkUrl } from '../../src/core/render/markdown.ts';
 
 const MEDIA: readonly RenderMedia[] = [
   { public_id: 'MEDIA-ID', filename: 'sample.png', width: 96, height: 48 },
@@ -252,5 +252,37 @@ describe('相対参照の解決', () => {
     const media = [{ public_id: 'JP', filename: '日本語.png' }];
     const out = await html('![図](./%E6%97%A5%E6%9C%AC%E8%AA%9E.png)', media);
     expect(out).toContain('lily-media://JP/%E6%97%A5%E6%9C%AC%E8%AA%9E.png');
+  });
+});
+
+describe('inLinkUrl (貼り付けで URL を展開してよいか)', () => {
+  /** `|` の位置をカーソルとして読む。 */
+  function at(withCursor: string): boolean {
+    const cursor = withCursor.indexOf('|');
+    return inLinkUrl(withCursor.replace('|', ''), cursor);
+  }
+
+  it('リンクの URL 欄の中にいる', () => {
+    expect(at('[題](|)')).toBe(true);
+    expect(at('[リンク](https://|)')).toBe(true);
+    // 閉じ括弧をまだ打っていない書きかけ
+    expect(at('[題](|')).toBe(true);
+    // 画像記法も同じ
+    expect(at('![図](|)')).toBe(true);
+  });
+
+  it('本文の途中では中にいない', () => {
+    expect(at('|')).toBe(false);
+    expect(at('ここに貼る |')).toBe(false);
+    // 閉じたリンクの後ろ
+    expect(at('[題](https://example.com) |')).toBe(false);
+    // 題を書いている途中
+    expect(at('[|]')).toBe(false);
+    // `]` と `(` のあいだ
+    expect(at('[題]|(https://example.com)')).toBe(false);
+  });
+
+  it('行をまたいだ `](` は見ない', () => {
+    expect(at('[題](\n|')).toBe(false);
   });
 });

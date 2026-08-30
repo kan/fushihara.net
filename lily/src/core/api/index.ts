@@ -43,6 +43,7 @@ import { mimeForFilename } from '../media/formats.ts';
 import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
+import { summarize } from '../summary.ts';
 import { hashPreviewToken, newPreviewToken } from '../tokens.ts';
 import { bytesBody, exportArchive, importArchive, ZipError } from '../transfer/index.ts';
 import { uniqueViolationTarget } from '../db/errors.ts';
@@ -107,6 +108,10 @@ export function createApi(config: PageConfig) {
       return c.json({
         html: resolveMediaUrls(rendered.html, urls),
         unresolvedMedia: rendered.unresolvedMedia,
+        // 説明を空のままにしたときに出るもの。**配信側と同じ関数**なので、
+        // 管理画面が見せている控えと実際に出るものが食い違わない。ここに載せる
+        // のは、解析器を管理画面のバンドルへ運ばずに済ませるため。
+        autoDescription: summarize(bodyMd),
       });
     })
 

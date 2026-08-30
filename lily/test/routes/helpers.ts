@@ -79,7 +79,8 @@ export async function getRootRequest(request: Request): Promise<Response> {
 export type SeedOptions = {
   title?: string;
   bodyMd?: string;
-  description?: string;
+  /** null を渡すと説明を空にする (本文から自動で作る経路を見る)。 */
+  description?: string | null;
   path?: string;
   publishedAt?: string;
   tags?: string[];
@@ -93,7 +94,7 @@ export async function seedPost(options: SeedOptions = {}): Promise<PostRow> {
   const created = await createPost(db, {
     title: options.title ?? 'はじめての記事',
     bodyMd: options.bodyMd ?? '## 見出し\n\n本文。\n',
-    description: options.description ?? 'ためしに書いた',
+    description: options.description === undefined ? 'ためしに書いた' : options.description,
     path: options.path ?? 'start-blog',
   });
   if (!created.ok) throw new Error(`seedPost に失敗した: ${created.error.code}`);

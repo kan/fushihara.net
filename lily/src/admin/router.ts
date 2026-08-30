@@ -6,8 +6,9 @@
  */
 import { computed, ref } from 'vue';
 import { ADMIN_HASH } from '../core/paths.ts';
+import { takeStashedRoute } from './session.ts';
 
-const hash = ref(currentHash());
+const hash = ref(openingHash());
 
 addEventListener('hashchange', () => {
   hash.value = currentHash();
@@ -15,6 +16,30 @@ addEventListener('hashchange', () => {
 
 function currentHash(): string {
   return location.hash.slice(1) || '/';
+}
+
+/**
+ * 開くときのハッシュ。
+ *
+ * セッションが切れて読み込み直したときは、**Access のリダイレクトでフラグメントが
+ * 落ちて**一覧に戻ってしまう（`#` はサーバーへ送られないので、リダイレクト先に
+ * 引き継ぎようがない）。開いていた画面を退避してあるならそこへ戻す。
+ *
+ * 履歴には積まない。読み込み直しは操作ではないので、「戻る」で一覧に落ちるより
+ * 開いていた画面のままの方が辻褄が合う。
+ */
+function openingHash(): string {
+  // **先に消費する。** `location.reload()` はフラグメントを保つし、Access の
+  // リダイレクトも引き継ぐことがある。残したままにすると、あとで
+  // `<mount>/admin/` を開いた瞬間（公開ページの管理リンク等）に、無関係な
+  // 古い記事の編集画面へ勝手に飛ぶ。
+  const stashed = takeStashedRoute();
+
+  const current = currentHash();
+  if (current !== '/') return current;
+  if (stashed === null || stashed === '/') return '/';
+  history.replaceState(null, '', `#${stashed}`);
+  return stashed;
 }
 
 export type Route =

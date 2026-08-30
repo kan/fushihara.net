@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue';
 import { client } from '../api.ts';
-import { imageMarkdown } from '../../core/render/markdown.ts';
+import { imageMarkdown, inLinkUrl } from '../../core/render/markdown.ts';
 import Icon from './Icon.vue';
 
 const props = defineProps<{
@@ -191,8 +191,13 @@ async function onPaste(event: ClipboardEvent): Promise<void> {
   const text = event.clipboardData?.getData('text/plain')?.trim() ?? '';
   if (!isHttpUrl(text)) return;
 
-  event.preventDefault();
   const { start, end } = selection();
+  // リンクの URL 欄に貼っているなら、素の貼り付けに任せる。ここで `[…](…)` に
+  // 包むと `[題]([url](url))` になる (ツールバーのリンクボタンで出る
+  // `[リンク](https://)` の続きを埋める操作がまさにこれ)。
+  if (inLinkUrl(props.modelValue, start)) return;
+
+  event.preventDefault();
   const selected = props.modelValue.slice(start, end);
 
   // 取りに行くあいだも書き続けられるよう、まず URL のままの形で入れておく。
