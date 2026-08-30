@@ -31,6 +31,7 @@ Worker 名は `fushihara-blog`、ディレクトリは `blog/`、コアの名前
   公開日時・タグ補完・ページング・タグ / キーワードでの絞り込み・設定の確認・
   セッション切れからの復帰）
 - 説明（description）の自動生成。手で書いていなければ本文の冒頭を配信時に出す
+- 毎日の控え取り（Cron Trigger → portable な zip を別の R2 バケットへ 30 世代）
 - 公開ページの管理リンク（管理画面を開いたことがある端末にだけ出る）
 
 **2026-08-29 に `/blog` を Astro から引き継いだ。** 2026-08-30 に Astro
@@ -187,6 +188,7 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 | 管理画面と配信側の契約（meta の名前・目印の cookie） | `core/admin-contract.ts` |
 | 管理画面のハッシュ URL の形 | `core/paths.ts` の `ADMIN_HASH` |
 | 一覧の絞り込み条件（行と件数で同じもの） | `core/db/posts.ts` の `postFilter` |
+| 控えの置き場所と世代の切り方 | `core/backup.ts` |
 
 ## 説明（description）
 
@@ -559,6 +561,54 @@ D1 の dump（運用復旧用）とは別物。あちらは D1 / R2 という構
 subrequest の上限（添付 1 つにつき R2 が 1 回）に当たる日が先に来る。記事が数百を
 超えたら、範囲を指定して分けて出す形が要る。
 
+## バックアップ
+
+**毎日 1 回、記事と添付を portable な zip にして別の R2 バケットへ置く。**
+Worker 自身の Cron Trigger（`wrangler.jsonc` の `triggers.crons`、UTC 18:30 = JST 3:30）
+から `src/index.ts` の `scheduled` が走り、中身は `core/backup.ts`。
+
+- **中身は `<mount>/api/export` と同じ書庫。** D1 の dump（`wrangler d1 export`）は
+  D1 という構成に依存するが、こちらは Markdown と画像なので **lily を捨てても
+  記事が残る**。控えの経路に別実装を挟まないので、往復の検証（`test/transfer/`）が
+  そのまま控えにも効く
+- **置き場所は別バケット**（`fushihara-net-lily-backup`）。添付と同じバケットに
+  prefix を分けて入れると、バケットごとの誤削除やライフサイクル規則の事故で
+  本体と控えが同時に消える。控えの意味は「別の場所に置くこと」
+- **保持は 30 世代。日数で切らない。** 「n 日より古いものを消す」にすると、cron が
+  止まっているあいだに全部が古くなり、**残っている控えを全部消す**。数で切れば
+  最後に取れたものは必ず残る
+- 名前は `archives/lily-<UTC の ISO8601 から記号を落としたもの>.zip`。辞書順が時刻順に
+  なるので、世代の判定に日付の解析が要らない（R2 の `list` は key の昇順）
+- 何が入っているかは `customMetadata`（`posts` / `media` / `warnings`）に載せる。
+  書庫を開かずに R2 の一覧から読める
+- **Access の外側から動く。** 管理 API は Access の内側にあり、サービストークンの
+  JWT は `sub` が空文字なので `auth/access.ts` が拒否する（「記事の入れ方」）。
+  機械が通れる口を開けるより、Worker 自身から D1 と R2 を直に読む方が穴が 1 つ少ない
+- **`waitUntil` に逃がさず await する。** 逃がすとハンドラは成功したことになり、
+  失敗をログまで見に行かないと気付けない
+
+**最初の 1 回が走ったかは翌朝に確かめる。** Workers の cron は手で発火させられないので、
+`npx wrangler r2 object list fushihara-net-lily-backup --remote --prefix archives/` で
+書庫が増えているかを見る（ログは `npx wrangler tail` か dashboard の Observability）。
+手元で配線だけ試すなら `npx wrangler dev -c ./wrangler.jsonc --test-scheduled` の
+`/__scheduled` を叩く（ローカルの D1 / R2 に対して走る）。
+
+**この書庫が持たないもの**: `bluesky_uri` と `created_at`（portable な形式が持たない。
+「portable な import / export」の節）。D1 を失って書庫だけから戻すと、**告知済みかどうかが
+消える**ので、`bluesky_uri` が担っている二重投稿の抑止が効かなくなる。そこまで含めて
+戻したいときは D1 の dump が要る（下記。こちらは手動）。
+
+```bash
+# 控えを手元へ。**`--remote` が要る。** r2 object 系はローカルの模擬ストレージが既定で、
+# 付け忘れると本物のバケットを見に行かず「キーが無い」とだけ言われる
+# （`r2 bucket list` は remote が既定という非対称がある。実際に踏みかけた）
+npx wrangler r2 object get fushihara-net-lily-backup/archives/lily-<stamp>.zip \
+  --remote --file /tmp/restore.zip
+
+# 運用復旧用の D1 dump（bluesky_uri と created_at を含む）
+npx wrangler d1 export DB -c ./wrangler.jsonc --remote --output <file>
+```
+
 ## Astro からの移行（済）
 
 2026-08-29 に完了し、Astro 側（`blog/content/posts/` と `fushihara-net-blog` Worker）は
@@ -610,10 +660,23 @@ RSS の全文（`content:encoded`）は、XML として解析すれば上記以�
 | 何 | 値 |
 |---|---|
 | Worker | `fushihara-blog` |
+| cron | `30 18 * * *`（UTC。JST 3:30 に控えを取る） |
 | route | `fushihara.net/blog*`（**末尾の `*` は必須**。無いとクエリ付き URL に一致しない） |
-| Access | `blog/admin` と `blog/api` の 2 本（**ワイルドカード無し**） |
-| D1 / R2 | `fushihara-net-lily` / `fushihara-net-lily-media` |
+| Access | アプリ `fushihara-blog`。パスは `blog/admin` と `blog/api` の 2 本（**ワイルドカード無し**） |
+| AUD | `wrangler.jsonc` の `ACCESS_AUD`。**アプリを作り直すと変わる**（名前の変更では変わらない） |
+| D1 / R2 | `fushihara-net-lily` / `fushihara-net-lily-media`（控えは別バケット `fushihara-net-lily-backup`） |
 | 本体からの参照 | ルート `wrangler.jsonc` の `services`（`BLOG` → `fushihara-blog`） |
+
+**Zero Trust のダッシュボードはメニュー名が変わった。** 旧「Access」は
+**Access controls** で、その下に Applications / Policies / Access settings が並ぶ。
+AUD タグはアプリを開いた先の **Additional settings の一番下**（かつての Overview では
+ない）。セッションの長さは 3 箇所（グローバル / アプリ / ポリシー）にあり、**延ばしたい
+なら Access settings の「Set your global session duration」**（既定 24 時間）。優先順位は
+ポリシー > アプリ > グローバルだが、グローバルは再ログインの頻度そのものなので、
+アプリだけ延ばしてもグローバルが切れれば再ログインになる。
+
+**AUD が合っているかは管理画面を開けば分かる。** ずれていると Access のログインは
+通っても lily が JWT を拒否して 403 になるので、記事一覧まで出た時点で一致している。
 
 デプロイは `.github/workflows/deploy-blog.yml` が main への push で行う
 （`blog/**` `shared/**` と自分自身が変わったときだけ）。**マイグレーションが先、

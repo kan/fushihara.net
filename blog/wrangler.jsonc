@@ -17,7 +17,8 @@
   "routes": [{ "pattern": "fushihara.net/blog*", "zone_name": "fushihara.net" }],
 
   // D1 と R2 は binding 名で参照する。lily を OSS として配ったときに
-  // 「リソース ID を手で埋める」前提にしないため、コードは DB / MEDIA しか知らない。
+  // 「リソース ID を手で埋める」前提にしないため、コードが知っているのは
+  // DB / MEDIA と、控えを置く BACKUP（**任意**。無ければ cron は何もしない）だけ。
   //
   // **`fushihara-net-lily` という名前はここに残る。** Worker 名を変えたときに
   // 揃えたくなるが、D1 と R2 の改名は中身の引っ越しであって、名前を揃えるだけの
@@ -55,8 +56,16 @@
   // (Deploy to Cloudflare が Images を自動で用意しないので、無い前提を保つ)。
   "images": { "binding": "IMAGES" },
   "r2_buckets": [
-    { "binding": "MEDIA", "bucket_name": "fushihara-net-lily-media" }
+    { "binding": "MEDIA", "bucket_name": "fushihara-net-lily-media" },
+    // 控えの置き場。**添付と同じバケットに入れない。** バケットごとの誤削除や
+    // ライフサイクル規則の事故で、本体と控えが同時に消えるため。
+    { "binding": "BACKUP", "bucket_name": "fushihara-net-lily-backup" }
   ],
+
+  // 毎日 1 回、記事と添付を portable な zip にして BACKUP へ置く (src/index.ts)。
+  // **cron は UTC** なので、これは JST の 03:30。書いている最中を避けたいだけで、
+  // 厳密な静止点ではない (D1 の読みはトランザクションで囲っていない)。
+  "triggers": { "crons": ["30 18 * * *"] },
 
   // CSS は Worker がバンドルした文字列として配る。site/ が @import ではなく
   // 連結して 1 本にするので、ブラウザから見えるのは <mount>/styles.css だけ。

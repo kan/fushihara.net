@@ -38,6 +38,19 @@ export type ExportResult = {
   readonly warnings: readonly ExportWarning[];
 };
 
+/**
+ * 書庫に入れられなかった添付を記録する。**export 自体は止めない**ので、
+ * DB に行があるのに R2 の実体が無い事実をログにだけ残す。
+ *
+ * 呼ぶ側が 2 つある（`/api/export` と毎日の控え）ので、文の形をここに 1 つ置く。
+ * `source` はどちらから出たものかの目印。
+ */
+export function logExportWarnings(source: string, warnings: readonly ExportWarning[]): void {
+  for (const warning of warnings) {
+    console.warn(`lily ${source}: ${warning.reason} ${warning.postPath}/${warning.filename}`);
+  }
+}
+
 export async function exportArchive(db: D1Database, bucket: R2Bucket): Promise<ExportResult> {
   // 下書きも含めて全部。portable export は「記事が残る」ためのものなので、
   // 公開したものだけでは足りない。

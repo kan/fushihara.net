@@ -45,7 +45,13 @@ import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
 import { summarize } from '../summary.ts';
 import { hashPreviewToken, newPreviewToken } from '../tokens.ts';
-import { bytesBody, exportArchive, importArchive, ZipError } from '../transfer/index.ts';
+import {
+  bytesBody,
+  exportArchive,
+  importArchive,
+  logExportWarnings,
+  ZipError,
+} from '../transfer/index.ts';
 import { uniqueViolationTarget } from '../db/errors.ts';
 import { apiError } from './errors.ts';
 import {
@@ -402,9 +408,7 @@ export function createApi(config: PageConfig) {
      */
     .get('/export', async (c) => {
       const result = await exportArchive(c.env.DB, c.env.MEDIA);
-      for (const warning of result.warnings) {
-        console.warn(`lily export: ${warning.reason} ${warning.postPath}/${warning.filename}`);
-      }
+      logExportWarnings('export', result.warnings);
       // 日付は UTC。core は配信先のタイムゾーンを知らないうえ、書庫の名前は
       // 読み手に見せる日付ではない。
       const name = `lily-export-${new Date().toISOString().slice(0, 10)}.zip`;

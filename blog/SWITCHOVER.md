@@ -172,6 +172,8 @@ npm run typecheck && npm test && npm run test:e2e && npm run deploy
 ## 5. 後始末（2026-08-30）
 
 - [x] Access のアプリから `blog-next` の行を削除
+- [x] Access のアプリ名を `blog-next` → `fushihara-blog` に（**AUD は変わらない**。
+      変わっていたら `wrangler.jsonc` の `ACCESS_AUD` も直す）
 - [x] `fushihara-net-blog` Worker を削除
 - [x] `blog/`（Astro）を削除し、`lily/` を `blog/` に改名
 - [x] Worker 名を `fushihara-net-lily` → `fushihara-blog` に（下記 5-1）
@@ -248,7 +250,11 @@ route を消した直後は 200 が返ることがあるので、`?cb=$RANDOM` �
 | いつ | 何をする |
 |---|---|
 | 手順 1 で公開側が 302 になった | Access のパスから広すぎる行を消す（それだけで戻る） |
-| 手順 2 で `/blog` が壊れた | dashboard で `/blog*` を `fushihara-net-blog` に戻す → `cd blog && npm run deploy`（**`npx wrangler deploy` ではない**）→ lily の route を `/blog-next*` に戻して deploy |
-| 手順 3 で付箋が空になった | `services` の `BLOG` を `fushihara-net-blog` に戻して deploy |
+| 手順 2 で `/blog` が壊れた | dashboard で route を元の Worker に戻す → その Worker を deploy し直す |
+| 手順 3 で付箋が空になった | 本体の `services` の `BLOG` を元の Worker 名に戻して deploy |
+
+**2026-08-30 の後始末で、戻し先の Worker（`fushihara-net-blog` / `fushihara-net-lily`）は
+消した。** 今ロールバックが要るなら、戻すのは配線ではなく**中身**（`git revert` して
+`fushihara-blog` を出し直す）。記事は D1 と R2 に残っているので、どちらの向きでも消えない。
 
 **D1 と R2 は触らない。** 戻しても記事は消えない。
