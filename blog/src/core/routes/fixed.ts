@@ -31,6 +31,16 @@ export const ROUTE = {
 export const FIXED_ROUTES: readonly string[] = Object.values(ROUTE);
 
 /**
+ * OGP に出す絵。**Bluesky のリンクカードのサムネも同じものを使う。**
+ *
+ * 公式クライアントが URL から組むカードは OGP を読んで作られるので、API から
+ * 投げるときも同じ絵にしないと、貼り方によって見え方が変わる。名前を 2 箇所に
+ * 書かないよう、配信する側 (`routes/feeds.ts`) とサムネを読む側 (`api/`) が
+ * これを見る。
+ */
+export const OGP_ASSET = 'ogp.png';
+
+/**
  * mount root 直下に出す静的アセット (現行の出力を維持する)。
  *
  * **これだけはサイト側の都合が core に入っている。** lily として切り出すときは
@@ -42,7 +52,7 @@ export const STATIC_ASSETS = [
   'favicon.svg',
   'favicon.ico',
   'apple-touch-icon.png',
-  'ogp.png',
+  OGP_ASSET,
 ] as const;
 
 export const RESERVED: ReadonlySet<string> = new Set<string>([...FIXED_ROUTES, ...STATIC_ASSETS]);

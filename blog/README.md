@@ -33,6 +33,7 @@ Worker 名は `fushihara-blog`、ディレクトリは `blog/`、コアの名前
 - 説明（description）の自動生成。手で書いていなければ本文の冒頭を配信時に出す
 - 毎日の控え取り（Cron Trigger → portable な zip を別の R2 バケットへ 30 世代）
 - 公開ページの管理リンク（管理画面を開いたことがある端末にだけ出る）
+- Bluesky への告知（管理画面のボタン。二重投稿は `bluesky_uri` で防ぐ）
 
 **2026-08-29 に `/blog` を Astro から引き継いだ。** 2026-08-30 に Astro
 （`blog/` と `fushihara-net-blog` Worker）を消し、`lily/` をこの `blog/` に改名した。
@@ -187,6 +188,10 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 | D1 のバインドパラメータ上限（100）への対処 | `core/db/chunk.ts` |
 | 管理画面と配信側の契約（meta の名前・目印の cookie） | `core/admin-contract.ts` |
 | 管理画面のハッシュ URL の形 | `core/paths.ts` の `ADMIN_HASH` |
+| 告知の投稿の組み立て（本文・facet・リンクカード） | `core/bluesky.ts` |
+| 配信する中身の言語（`<html lang>` と告知の `langs`） | `SiteConfig.lang`（`src/site/meta.ts`） |
+| AT-URI → bsky.app で開ける URL | `core/bluesky.ts` の `blueskyPostUrl` |
+| OGP とリンクカードに出す絵の名前 | `core/routes/fixed.ts` の `OGP_ASSET` |
 | 一覧の絞り込み条件（行と件数で同じもの） | `core/db/posts.ts` の `postFilter` |
 | 控えの置き場所と世代の切り方 | `core/backup.ts` |
 
@@ -432,6 +437,76 @@ git の履歴・レビュー・ロールバックの外に出る。今どうな�
   **食い違うと一覧が開くだけで気付けない**ので、E2E がリンクを実際に押して
   編集画面が出ることまで見る
 
+## Bluesky 告知
+
+**記事の URL を Bluesky へ投げる。管理画面の「告知する」ボタンからだけ。**
+中身は `core/bluesky.ts`（XRPC を 3 本叩くだけなので **SDK は入れていない**）と、
+`POST <mount>/api/posts/<public_id>/bluesky`。
+
+- **公開とは別の操作にしてある。** 公開は何度でもやり直せる（下書きに戻して直して
+  また公開する、公開日時を入れ直す）。そこに投稿を混ぜると、やり直すたびに同じ
+  記事がタイムラインへ流れる
+- **二重投稿の抑止は `posts.bluesky_uri`。** 告知済みなら AT-URI が入っていて、
+  2 回目は 409。**押す前に見る**ので、上流を叩いてから気付くことはない
+- **記録は上書きしない**（`setBlueskyUri` の `WHERE … AND bluesky_uri IS NULL`）。
+  告知は「読んで → 数秒かけて外へ投げて → 書く」なので、続けて 2 回押されると
+  どちらも空を見て**投稿が 2 本できる**。そこで上書きすると先に投げた方の AT-URI が
+  消え、**消せる場所（Bluesky 側）へ辿る手掛かりが無くなる**。入れられなかったら
+  警告をログに残す
+- **告知済みかどうかは `blueskyUri` で見る**（管理画面）。`blueskyPostUrl()` は
+  知らない形の AT-URI に null を返すので、URL の有無で判定すると告知済みの記事に
+  告知ボタンが出る
+- **やり直す口は無い。** Bluesky 側で投稿を消したときにどうするか（消えた投稿を
+  指したまま「告知済み」にするか、もう 1 本投げるか）は必要になってから決める
+- **`updated_at` を動かさない**（`setBlueskyUri`）。告知しても読者から見える中身は
+  1 バイトも変わらないので、Atom の `<updated>` と sitemap の `lastmod` が進んで
+  購読者のリーダーに記事が浮き上がってはいけない。`preview_token_hash` と同じ理由で
+  `PATCHABLE` にも入れていない
+- **リンクカードは自分で組む。** 公式クライアントは貼られた URL を取りに行って OGP
+  からカードを作るが、**API から投げた投稿にその処理は走らない**。載せるのは記事の
+  URL・タイトル・`postDescription()`（一覧と OGP に出るのと同じ説明）と、サムネに
+  `ogp.png`
+- **サムネは配信しているのと同じ実体**を `ASSETS` バインディングから読む。公開 URL を
+  fetch すると自分のゾーンへサブリクエストを出すことになる（本体サイトの `/api/blog`
+  が 522 で踏んだのと同じ罠）
+- **サムネが取れなくても告知は止めない。** 大きすぎるとき・upload が失敗したときは
+  絵の無いカードで投げる（「押しても告知できない」にしない）
+- 本文は「タイトル + 改行 + URL」で、**URL をリンクにする facet を付ける**。無いと
+  素のテキストとして出る。範囲は **UTF-8 のバイト位置**なので、日本語のタイトルが
+  入ると文字数とずれる。長さの上限は 300 **書記素**（`Intl.Segmenter` で数える。
+  `length` だと絵文字 1 つが 11 文字に見えて余計に削られ、`slice` で切ると ZWJ の
+  途中で割れて別の絵文字が出る）
+- **言語（`langs`）はサイト設定から渡す。** `core/` に `'ja'` を書くと、別の言語の
+  deployment が黙って日本語として流れる（Bluesky は言語で絞り込める）。置き場は
+  `SiteConfig.lang` で、`<html lang>` も同じ値を見る
+- **失敗の理由はそのまま画面に出す。** 押すのは管理者ひとりなので、App Password の
+  誤り（`session`）と投稿の失敗（`post`）が見分けられる方がよい（`link-title.ts` が
+  理由を返さないのは、あちらが外から来た URL を扱う口だから）。上流の失敗だけ
+  **502** で返す（こちらの入力が悪いのか外が落ちているのかで、押し直してよいかが変わる）
+
+### 資格情報
+
+| 何 | どこ |
+|---|---|
+| ハンドル | `wrangler.jsonc` の `vars.BLUESKY_IDENTIFIER` |
+| App Password | Worker の secret `BLUESKY_APP_PASSWORD` |
+
+```bash
+npx wrangler secret put BLUESKY_APP_PASSWORD -c ./wrangler.jsonc
+```
+
+**アカウントのパスワードを入れない。** App Password は Bluesky の設定
+（Settings → Privacy and security → App passwords）からいつでも失効させられる。
+
+**両方揃っているときだけ**告知できる（`src/config.ts` の `blueskyCredentials()`）。
+`.dev.vars` が両方を空にしてあるので、**手元と CI から本物のタイムラインへは流れない**
+（ボタンは押せて `bluesky-not-configured` が返る）。
+
+**テストは資格情報が空であることに安全を預けない。** ユニットテストは上流の fetch を
+スタブで止め、E2E は**告知の口そのものを `page.route()` で止める**。投げに行くのは
+Worker の中なので、手元の `.dev.vars` に本物を書いた人が E2E を回すと、素通しでは
+フィクスチャの記事が本物のタイムラインへ流れる（取り消せない）。
+
 ## 画像の最適化
 
 Cloudflare Images は**任意の層**。「後から有効にすると配信が良くなる追加機能」
@@ -665,6 +740,7 @@ RSS の全文（`content:encoded`）は、XML として解析すれば上記以�
 | Access | アプリ `fushihara-blog`。パスは `blog/admin` と `blog/api` の 2 本（**ワイルドカード無し**） |
 | AUD | `wrangler.jsonc` の `ACCESS_AUD`。**アプリを作り直すと変わる**（名前の変更では変わらない） |
 | D1 / R2 | `fushihara-net-lily` / `fushihara-net-lily-media`（控えは別バケット `fushihara-net-lily-backup`） |
+| secret | `BLUESKY_APP_PASSWORD`（`wrangler secret put`。ハンドルは `vars`） |
 | 本体からの参照 | ルート `wrangler.jsonc` の `services`（`BLOG` → `fushihara-blog`） |
 
 **Zero Trust のダッシュボードはメニュー名が変わった。** 旧「Access」は

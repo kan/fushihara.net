@@ -20,6 +20,7 @@ const FALLBACK: Site = {
   description: '',
   author: '',
   url: location.origin,
+  lang: '',
 };
 
 export const SITE: Site = read();

@@ -22,4 +22,6 @@ export const SITE = {
   name: 'ふしはらねっとのぶろぐ',
   description: `${AUTHOR} のブログ`,
   author: AUTHOR,
+  // `<html lang>` と Bluesky の告知に出る。**言語を書く場所はここだけ。**
+  lang: 'ja',
 } as const;

@@ -8,25 +8,33 @@
 export type ApiError = { readonly error: string; readonly message?: string };
 
 /**
- * この API が返す失敗はこの 3 つだけ。
+ * この API が返す失敗はこの 4 つだけ。
  *
  * **広い `ContentfulStatusCode` にしない。** Hono RPC はステータスから
  * レスポンスの型を絞るので、200 が混じった型だと管理画面側で
- * `if (res.ok)` の絞り込みが効かなくなる。
+ * `if (res.ok)` の絞り込みが効かなくなる（失敗どうしを足すぶんには効く）。
  */
-export type ApiErrorStatus = 400 | 404 | 409;
+export type ApiErrorStatus = 400 | 404 | 409 | 502;
 
-/** パスやタグの衝突は 409、形が違うものは 400、無いものは 404。 */
+/**
+ * パスやタグの衝突は 409、形が違うものは 400、無いものは 404、
+ * **上流（Bluesky）が返した失敗は 502**。
+ *
+ * 502 を分けているのは、こちらの入力が悪いのか外が落ちているのかで、押し直して
+ * よいかが変わるため。
+ */
 export function statusFor(code: string): ApiErrorStatus {
   if (code === 'post-not-found' || code === 'not-found') return 404;
   if (
     code === 'path-taken' ||
     code === 'public-id-taken' ||
     code === 'slug-taken' ||
-    code === 'filename-taken'
+    code === 'filename-taken' ||
+    code === 'already-announced'
   ) {
     return 409;
   }
+  if (code === 'bluesky-failed') return 502;
   return 400;
 }
 

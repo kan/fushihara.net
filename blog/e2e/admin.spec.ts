@@ -240,6 +240,39 @@ test.describe('編集画面', () => {
     await expect(description).toHaveAttribute('placeholder', '自動で出る書き出し。');
   });
 
+  test('Bluesky の告知は公開してから、押すと配線を通る', async ({ page }) => {
+    // 見たいのは「ボタン → API → 画面」が繋がっていること（投稿の中身は
+    // `test/bluesky.test.ts`、押せる条件は `test/api/bluesky.test.ts`）。
+    //
+    // **告知の口はブラウザ側で止める。** 通すと Worker が上流へ投げに行く経路に
+    // 入るので、手元の `.dev.vars` に本物の資格情報を書いた人が E2E を回した
+    // 瞬間に、フィクスチャの記事が本物のタイムラインへ流れる（取り消せない）。
+    // 資格情報が空だと 400 になることに安全を預けない。
+    await page.route(`**${MOUNT}/api/posts/*/bluesky`, (route) =>
+      route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'bluesky-not-configured' }),
+      }),
+    );
+
+    const panel = page.locator('.panel', { hasText: 'Bluesky' });
+    const button = panel.getByRole('button', { name: '告知する' });
+
+    await openDraft(page);
+    await expect(panel).toContainText('公開してから告知できる');
+    await expect(button).toBeDisabled();
+
+    await page.goto(`${MOUNT}/admin/#/posts/${ID.renderingSample}`);
+    await expect(button).toBeEnabled();
+
+    // confirm を通さないと何も起きない (Playwright は既定で dismiss する)。
+    page.on('dialog', (dialog) => dialog.accept());
+    await button.click();
+    // 押しても黙って何も起きない、にはしない。
+    await expect(page.locator('.notice.error')).toContainText('bluesky-not-configured');
+  });
+
   test('セッションが切れたら書きかけを退避して読み込み直す', async ({ page }) => {
     await openDraft(page);
     await page.locator('.dropzone textarea').fill('セッションが切れる直前の本文。');

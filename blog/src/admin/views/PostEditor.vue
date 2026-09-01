@@ -18,6 +18,10 @@ type Detail = {
   status: 'draft' | 'published';
   publishedAt: string | null;
   hasPreview: boolean;
+  /** 告知済みかどうかはこちらで見る（**URL は組めないことがある**）。 */
+  blueskyUri: string | null;
+  /** bsky.app で開ける URL。**組むのはサーバー**（`core/bluesky.ts`）。 */
+  blueskyUrl: string | null;
   canonicalPath: string;
   url: string;
   paths: { path: string; isCanonical: boolean }[];
@@ -196,6 +200,33 @@ async function revokePreview(): Promise<void> {
     if (!res.ok) return await fail(res);
     previewUrl.value = '';
     if (post.value) post.value = { ...post.value, hasPreview: false };
+  });
+}
+
+/**
+ * Bluesky へ告知する。**押したときだけ投げる。**
+ *
+ * 二重投稿の抑止はサーバー側（`bluesky_uri`）。押してから返るまで数秒かかるので、
+ * `busy` で押しっぱなしを防ぐ。
+ *
+ * **`fill()` を呼ばない。** 告知で記事の中身は何も変わらないので、読み直すと
+ * 保存前の書きかけを消すことになる（プレビューの発行と同じ扱い）。
+ */
+async function announce(): Promise<void> {
+  const id = props.publicId;
+  if (id === null) return;
+  if (!confirm('Bluesky に告知する。取り消せない。')) return;
+  await run(async () => {
+    const res = await client.posts[':publicId'].bluesky.$post({ param: { publicId: id } });
+    if (!res.ok) return await fail(res);
+    const announced = (await res.json()).post;
+    if (post.value) {
+      post.value = {
+        ...post.value,
+        blueskyUri: announced.blueskyUri,
+        blueskyUrl: announced.blueskyUrl,
+      };
+    }
   });
 }
 
@@ -447,6 +478,34 @@ onMounted(async () => {
           </button>
           <button v-if="post.hasPreview" :disabled="busy" @click="revokePreview">失効させる</button>
         </div>
+      </div>
+
+      <!-- 公開とは別の操作。**押したときだけ投げ、1 記事につき 1 回だけ。** -->
+      <div class="panel">
+        <h2>Bluesky</h2>
+        <!-- 判定は blueskyUri。**URL は組めないことがある**（知らない形の AT-URI）
+             ので、そちらで見ると告知済みの記事に告知ボタンが出てしまう。 -->
+        <p v-if="post.blueskyUri" class="notice">
+          告知済み
+          <a v-if="post.blueskyUrl" :href="post.blueskyUrl" target="_blank" rel="noreferrer">
+            投稿を開く
+          </a>
+          <span v-else class="muted">{{ post.blueskyUri }}</span>
+        </p>
+        <template v-else>
+          <p class="muted">
+            {{
+              post.status === 'published'
+                ? 'タイトルと URL をリンクカード付きで投稿する。'
+                : '公開してから告知できる。'
+            }}
+          </p>
+          <div class="actions">
+            <button :disabled="busy || post.status !== 'published'" @click="announce">
+              告知する
+            </button>
+          </div>
+        </template>
       </div>
     </div>
 

@@ -8,6 +8,7 @@ import {
   getPublishedPosts,
   listAllPosts,
   publishPost,
+  setBlueskyUri,
   setPreviewToken,
   setRenderedHtml,
   unpublishPost,
@@ -136,6 +137,24 @@ describe('更新と削除', () => {
     const updated = await updatePost(db, post.id, { title: '新しい題' });
     expect(updated?.title).toBe('新しい題');
     expect(updated?.updated_at).not.toBe('2020-01-01T00:00:00.000Z');
+  });
+
+  it('setBlueskyUri は 1 度しか入らず、updated_at を動かさない', async () => {
+    // 告知は「読んで → 数秒かけて外へ投げて → 書く」なので、続けて 2 回押されると
+    // 両方が空を見る。上書きすると**先に投げた方の AT-URI が消える**（消せない
+    // 投稿が DB から辿れなくなる）。
+    const post = await create({ title: 'x', bodyMd: 'y', updatedAt: '2020-01-01T00:00:00.000Z' });
+    const first = 'at://did:plc:abc/app.bsky.feed.post/first';
+
+    expect(await setBlueskyUri(db, post.id, first)).toBe(true);
+    expect(await setBlueskyUri(db, post.id, 'at://did:plc:abc/app.bsky.feed.post/second')).toBe(
+      false,
+    );
+
+    const row = await getPostById(db, post.id);
+    expect(row?.bluesky_uri).toBe(first);
+    // 読者から見える中身は変わらないので、Atom と sitemap を動かさない。
+    expect(row?.updated_at).toBe('2020-01-01T00:00:00.000Z');
   });
 
   it('publishPost は published_at を入れる (CHECK に弾かれない)', async () => {

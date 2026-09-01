@@ -5,6 +5,7 @@
  * `body_html` のような派生データを管理画面に持たせないため。ここが唯一の
  * 出口なので、列を足しても勝手に外へ出ることがない。
  */
+import { blueskyPostUrl } from '../bluesky.ts';
 import { listMediaByPost } from '../db/media.ts';
 import { listPaths } from '../db/post-paths.ts';
 import { getTagsForPost } from '../db/tags.ts';
@@ -31,6 +32,13 @@ export type PostView = {
   /** プレビュー URL を発行済みか。**トークンそのものは発行時にしか返さない。** */
   hasPreview: boolean;
   blueskyUri: string | null;
+  /**
+   * 告知した投稿を開く URL。**組むのは core。**
+   *
+   * `adminUrl` と同じ理由で、完成した URL を渡す（`at://` を bsky.app の URL に
+   * 組み替える規則を、管理画面にもテーマにも持たせない）。
+   */
+  blueskyUrl: string | null;
   canonicalPath: string;
   url: string;
   paths: { path: string; isCanonical: boolean }[];
@@ -75,6 +83,7 @@ export async function toPostView(db: D1Database, urls: Urls, post: PostRow): Pro
     createdAt: post.created_at,
     hasPreview: post.preview_token_hash !== null,
     blueskyUri: post.bluesky_uri,
+    blueskyUrl: post.bluesky_uri === null ? null : blueskyPostUrl(post.bluesky_uri),
     canonicalPath: canonical,
     url: urls.post(canonical),
     paths: paths.map((p) => ({ path: p.path, isCanonical: p.is_canonical === 1 })),

@@ -41,6 +41,19 @@ export function apiRoutes<Bindings extends LilyBindings>(
   // **中身より先に掛ける。** 未実装のパスも 403 で返るので、route を足したときに
   // 保護を忘れる余地が無い。
   app.use(`${mount}/${ROUTE.api}/*`, ...protect);
+
+  /**
+   * 告知の資格情報を context に載せる。**ここで env から取り出す。**
+   *
+   * `createApi()` が受け取る `PageConfig` はバインディングでジェネリックに
+   * していない（`api/index.ts` の `ApiEnv`）ので、`BLUESKY_*` のような
+   * deployment 固有の env を読む関数はハンドラから直接呼べない。認証と同じく、
+   * env を知っているこの層で解決して渡す。
+   */
+  app.use(`${mount}/${ROUTE.api}/*`, async (c, next) => {
+    c.set('bluesky', config.bluesky?.(c.env) ?? null);
+    await next();
+  });
   app.use(`${mount}/${ROUTE.admin}/*`, csrf(), requireAuth(config.auth, textForbidden));
 
   app.route(`${mount}/${ROUTE.api}`, createApi(config));

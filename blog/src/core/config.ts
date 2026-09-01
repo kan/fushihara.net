@@ -5,6 +5,7 @@
  * すべて呼び出し側 (`src/config.ts` と `src/site/`) が決める。
  */
 import type { AuthAdapter } from './auth/index.ts';
+import type { BlueskyCredentials } from './bluesky.ts';
 import type { Theme } from './theme.ts';
 
 export type SiteConfig = {
@@ -14,6 +15,13 @@ export type SiteConfig = {
   readonly name: string;
   readonly description: string;
   readonly author: string;
+  /**
+   * 配信する中身の言語（BCP 47）。`<html lang>` と Bluesky の告知に出る。
+   *
+   * **core に既定値を置かない。** `'ja'` を core が知っていると、別の言語の
+   * deployment が黙って日本語として配られる（Bluesky の言語での絞り込みにも効く）。
+   */
+  readonly lang: string;
 };
 
 /**
@@ -45,6 +53,14 @@ export type MediaConfig = {
  */
 export type LilyConfig<Bindings extends LilyBindings = LilyBindings> = PageConfig & {
   readonly auth: (env: Bindings) => AuthAdapter;
+  /**
+   * Bluesky の資格情報。**無ければ告知の口が「未設定」を返す**（機能ごと
+   * 落ちるのではなく、押せないことが管理画面から分かる）。
+   *
+   * `auth` と同じく関数なのは、App Password が Worker の secret にしか無く、
+   * env はリクエストのときにしか手に入らないため。
+   */
+  readonly bluesky?: (env: Bindings) => BlueskyCredentials | null;
 };
 
 /**

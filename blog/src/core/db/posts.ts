@@ -300,16 +300,16 @@ export async function listAllPosts(
  * `setRenderedHtml` に分けたのと同じ理由で、公開・取り下げは名前の付いた
  * 操作 (`publishPost` / `unpublishPost`) にする。
  *
- * **`preview_token_hash` も入れない。** 読者から見えるものは何も変わらないのに
- * `updated_at` が動くと、sitemap の lastmod と Atom の <updated> が進み、
- * 購読者のリーダーに記事が浮き上がる (`setPreviewToken` を使う)。
+ * **`preview_token_hash` と `bluesky_uri` も入れない。** 読者から見えるものは
+ * 何も変わらないのに `updated_at` が動くと、sitemap の lastmod と Atom の
+ * <updated> が進み、購読者のリーダーに記事が浮き上がる
+ * (`setPreviewToken` / `setBlueskyUri` を使う)。
  */
 const PATCHABLE = [
   'title',
   'description',
   'body_md',
   'published_at',
-  'bluesky_uri',
 ] as const;
 
 /** 値の型は PostRow から取る。列の一覧と型を二重に書かないため。 */
@@ -387,6 +387,26 @@ export async function setPreviewToken(
     .prepare('UPDATE posts SET preview_token_hash = ?1 WHERE id = ?2')
     .bind(hash, id)
     .run();
+}
+
+/**
+ * 告知した投稿の AT-URI を記録する。**二重投稿の抑止はこの列。**
+ *
+ * `setPreviewToken` と同じく **`updated_at` を動かさない**。告知しても読者から
+ * 見える中身は 1 バイトも変わらないので、Atom の `<updated>` と sitemap の
+ * `lastmod` が進んではいけない（購読者のリーダーに記事が浮き上がる）。
+ *
+ * **既に入っていたら上書きしない**（入れられたら true）。告知は「読んで →
+ * 数秒かけて外へ投げて → 書く」なので、続けて 2 回押されると両方が空を見る。
+ * 上書きすると**先に投げた方の AT-URI が消える**（消せない投稿が DB から
+ * 辿れなくなる）。呼び出し側は false を記録に残す。
+ */
+export async function setBlueskyUri(db: D1Database, id: number, uri: string): Promise<boolean> {
+  const result = await db
+    .prepare('UPDATE posts SET bluesky_uri = ?1 WHERE id = ?2 AND bluesky_uri IS NULL')
+    .bind(uri, id)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 /**

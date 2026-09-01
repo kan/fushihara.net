@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:test';
 import { createLily } from '../../src/core/app.ts';
 import type { AuthAdapter, AuthUser } from '../../src/core/auth/index.ts';
+import type { BlueskyCredentials } from '../../src/core/bluesky.ts';
 import { createPost, publishPost, setRenderedHtml } from '../../src/core/db/posts.ts';
 import { setPostTags } from '../../src/core/db/tags.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../../src/core/render/index.ts';
@@ -14,6 +15,14 @@ import { db } from '../db/helpers.ts';
 export const SITE = 'https://fushihara.net';
 
 export const ROOT_SITE = 'https://blog.example.com';
+
+/**
+ * root mount のアプリの言語。`<html lang>` と Bluesky の告知に出る。
+ *
+ * **本番（`ja`）とわざと違う値にしてある。** 同じにすると、設定を読まずに
+ * `'ja'` を焼き込んだ実装でもテストが通ってしまう。
+ */
+export const ROOT_LANG = 'en';
 /**
  * このデプロイの mount（先頭スラッシュ付き・末尾スラッシュ無し）。
  *
@@ -47,6 +56,19 @@ const stubAuth: AuthAdapter = {
     stubUser ? { ok: true, user: stubUser } : { ok: false, reason: 'スタブが拒否' },
 };
 
+/**
+ * Bluesky の資格情報のスタブ。**既定は未設定。**
+ *
+ * 本番の設定 (`src/config.ts`) は `.dev.vars` が両方を空にするので、テストからは
+ * 必ず null になる。設定されている側を見たいときだけこれで入れる（上流の fetch は
+ * 別途スタブすること。本物へ投げない）。
+ */
+export let stubBlueskyCredentials: BlueskyCredentials | null = null;
+
+export function setStubBluesky(credentials: BlueskyCredentials | null): void {
+  stubBlueskyCredentials = credentials;
+}
+
 /** root mount。core に `/blog` が焼き付いていないことを見るために使う。 */
 const rootApp = createLily({
   site: {
@@ -54,10 +76,12 @@ const rootApp = createLily({
     name: 'ルート',
     description: 'root mount',
     author: 'someone',
+    lang: ROOT_LANG,
   },
   mountPath: '/',
   theme,
   auth: () => stubAuth,
+  bluesky: () => stubBlueskyCredentials,
 });
 
 export async function getRoot(path: string): Promise<Response> {

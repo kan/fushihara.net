@@ -2,6 +2,7 @@
  * fushihara.net の設定。**`core/` はここを知らない。**
  */
 import { createLily } from './core/app.ts';
+import type { BlueskyCredentials } from './core/bluesky.ts';
 import { cloudflareAccess } from './core/auth/access.ts';
 import { localhostOnly } from './core/auth/localhost.ts';
 import { MOUNT_PATH, SITE } from './site/meta.ts';
@@ -24,7 +25,27 @@ export const lily = createLily({
   // 管理画面には入れない（fail closed のまま）。Access を手元で再現できないので、
   // これが無いと管理画面をローカルで一度も開けない。
   auth: (env: Env) => selectAuth(env),
+  // Bluesky の告知。**未設定でも動く**（管理画面のボタンが「未設定」を返す）。
+  bluesky: (env: Env) => blueskyCredentials(env),
 });
+
+/**
+ * Bluesky の資格情報。**両方揃っているときだけ**告知できる。
+ *
+ * ハンドルは秘密ではないので `wrangler.jsonc` の `vars`、App Password は
+ * `wrangler secret put BLUESKY_APP_PASSWORD`。**アカウントのパスワードを
+ * 入れない**（App Password は Bluesky の設定画面からいつでも失効させられる）。
+ *
+ * ローカルと CI では `.dev.vars` が両方を空にするので、必ず null になる
+ * （手元の操作が本物のタイムラインへ流れない）。
+ */
+export function blueskyCredentials(env: {
+  BLUESKY_IDENTIFIER?: string;
+  BLUESKY_APP_PASSWORD?: string;
+}): BlueskyCredentials | null {
+  if (!env.BLUESKY_IDENTIFIER || !env.BLUESKY_APP_PASSWORD) return null;
+  return { identifier: env.BLUESKY_IDENTIFIER, appPassword: env.BLUESKY_APP_PASSWORD };
+}
 
 /**
  * どちらのアダプタを使うか。**両方揃っているときだけ** Access。

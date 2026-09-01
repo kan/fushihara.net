@@ -57,7 +57,7 @@ export async function layout(
   const adminUrl = options.adminUrl ?? urls.admin();
 
   return String(await html`<!doctype html>
-<html lang="ja">
+<html lang="${site.lang}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

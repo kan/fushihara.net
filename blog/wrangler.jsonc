@@ -81,9 +81,15 @@
   // Access のアプリケーションは /blog/admin と /blog/api の 2 本だけを守る。
   // **バラの `blog` を指定しないこと。** ワイルドカード無しのパスは前方一致なので、
   // 公開ブログごと締め出す (並走を始めるときに実際にやった)。
+  //
+  // BLUESKY_IDENTIFIER は告知に使うハンドル。**App Password は secret** で、
+  // `npx wrangler secret put BLUESKY_APP_PASSWORD -c ./wrangler.jsonc` で入れる
+  // (ここに書かない)。片方でも欠けていれば src/config.ts が null を返し、
+  // 管理画面の告知ボタンが「未設定」と言う。
   "vars": {
     "ACCESS_TEAM": "kanf",
-    "ACCESS_AUD": "5f36e8cb80f216e06cf2557fa4b140e2c11ad9ba1b49ea63fe7ab422da1cd542"
+    "ACCESS_AUD": "5f36e8cb80f216e06cf2557fa4b140e2c11ad9ba1b49ea63fe7ab422da1cd542",
+    "BLUESKY_IDENTIFIER": "kan.fushihara.net"
   },
 
   "observability": { "enabled": true }

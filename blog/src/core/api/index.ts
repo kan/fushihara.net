@@ -9,6 +9,12 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import type { AuthUser } from '../auth/index.ts';
+import {
+  announce,
+  BlueskyError,
+  type BlueskyCredentials,
+  type BlueskyThumb,
+} from '../bluesky.ts';
 import type { LilyBindings, PageConfig } from '../config.ts';
 import { renderAndStore } from '../delivery.ts';
 import {
@@ -19,7 +25,12 @@ import {
   listMediaByPost,
   mediaR2Key,
 } from '../db/media.ts';
-import { addAlias, changeCanonicalPath, removePath } from '../db/post-paths.ts';
+import {
+  addAlias,
+  changeCanonicalPath,
+  getCanonicalPath,
+  removePath,
+} from '../db/post-paths.ts';
 import {
   countPosts,
   countPostsNeedingRender,
@@ -30,6 +41,7 @@ import {
   listAllPosts,
   listPostsNeedingRender,
   publishPost,
+  setBlueskyUri,
   setPreviewToken,
   unpublishPost,
   updatePost,
@@ -43,7 +55,8 @@ import { mimeForFilename } from '../media/formats.ts';
 import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
-import { summarize } from '../summary.ts';
+import { OGP_ASSET } from '../routes/fixed.ts';
+import { postDescription, summarize } from '../summary.ts';
 import { hashPreviewToken, newPreviewToken } from '../tokens.ts';
 import {
   bytesBody,
@@ -72,7 +85,8 @@ import { toMediaView, toPostView, toTagRefs } from './view.ts';
  */
 export type ApiEnv = {
   Bindings: LilyBindings;
-  Variables: { user: AuthUser };
+  /** `bluesky` は `routes/api.ts` が env から解決して載せる（未設定なら null）。 */
+  Variables: { user: AuthUser; bluesky: BlueskyCredentials | null };
 };
 
 /** 添付の上限。R2 は大きくても置けるが、記事の挿し絵にこれ以上は要らない。 */
@@ -252,6 +266,69 @@ export function createApi(config: PageConfig) {
       const draft = await unpublishPost(db, post.id);
       if (!draft) return c.json(...apiError('post-not-found'));
       return c.json(await save(db, urls, draft));
+    })
+
+    /**
+     * Bluesky へ告知する。**押したときだけ投げ、1 記事につき 1 回だけ。**
+     *
+     * 公開と分けてあるのは、公開が何度でもやり直せる操作だから（下書きへ戻して
+     * 直してまた公開する、公開日時を入れ直す）。自動にすると、そのたびに同じ
+     * 記事がタイムラインへ流れる。
+     *
+     * **やり直す口は作っていない。** 告知済みの記事は 409 で断る。Bluesky 側で
+     * 投稿を消したときにどうするか（消えた投稿を指したまま「告知済み」にするか、
+     * もう 1 本投げるか）は、必要になってから決める。
+     */
+    .post('/posts/:publicId/bluesky', async (c) => {
+      const db = c.env.DB;
+      const post = await getPostByPublicId(db, c.req.param('publicId'));
+      if (!post) return c.json(...apiError('post-not-found'));
+      // 下書きの URL は読者には 404 なので、リンクカードが組めない。
+      if (post.status !== 'published') return c.json(...apiError('post-not-published'));
+      // 二重投稿の抑止。**先に見る**ので、資格情報が無くてもここは同じ答えになる。
+      if (post.bluesky_uri !== null) {
+        return c.json(...apiError('already-announced', post.bluesky_uri));
+      }
+
+      const credentials = c.get('bluesky');
+      if (!credentials) return c.json(...apiError('bluesky-not-configured'));
+
+      // 記事のパスとサムネは互いに無関係なので同時に取る（D1 と ASSETS）。
+      const [canonical, thumb] = await Promise.all([
+        getCanonicalPath(db, post.id),
+        ogpThumb(c.env.ASSETS, c.req.url),
+      ]);
+
+      let announced;
+      try {
+        announced = await announce(credentials, {
+          url: urls.post(canonical ?? post.public_id, { absolute: true }),
+          title: post.title,
+          // 一覧・OGP・フィードに出るものと同じ説明（手書きが無ければ本文の冒頭）。
+          description: postDescription(post) ?? '',
+          langs: [config.site.lang],
+          thumb,
+        });
+      } catch (error) {
+        // **記録は残さない。** 投稿できていないのに告知済みにすると、直したあとに
+        // もう押せなくなる。
+        if (error instanceof BlueskyError) {
+          console.warn(`bluesky: ${error.step} で失敗した (${post.public_id}): ${error.message}`);
+          return c.json(...apiError('bluesky-failed', error.message));
+        }
+        throw error;
+      }
+
+      // **上書きはしない。** 続けて 2 回押されると、どちらも空を見てから外へ
+      // 投げるので投稿は 2 本できる。せめて先に投げた方の AT-URI を残す
+      // （消すのは Bluesky 側でしかできず、記録が消えると辿れなくなる）。
+      if (!(await setBlueskyUri(db, post.id, announced.uri))) {
+        console.warn(
+          `bluesky: 告知が競合した。二重に投稿している (${post.public_id}): ${announced.uri}`,
+        );
+      }
+      const fresh = (await getPostByPublicId(db, post.public_id)) ?? post;
+      return c.json({ post: await toPostView(db, urls, fresh) });
     })
 
     // canonical の張り替え。**旧パスは alias として残る**ので、共有された URL は生き続ける。
@@ -496,4 +573,29 @@ async function save(db: D1Database, urls: Urls, post: PostRow) {
   const unresolvedMedia = await renderAndStore(db, post);
   const fresh = (await getPostByPublicId(db, post.public_id)) ?? post;
   return { post: await toPostView(db, urls, fresh), unresolvedMedia };
+}
+
+/**
+ * リンクカードのサムネ。**取れなくても告知は止めない**（絵の無いカードが出る）。
+ *
+ * 読むのは配信しているのと同じ実体（`ASSETS` バインディング）。公開 URL を
+ * fetch すると、Worker が自分のゾーンへサブリクエストを出すことになる。
+ *
+ * **`urls.asset()` は使わない。** 静的アセットはディレクトリ直下に置かれるので、
+ * バインディングに渡すのは mount の付かない `/ogp.png`（`routes/feeds.ts` が
+ * 配信するときと同じ形）。mount 付きの公開 URL を渡すと何も返らない。
+ */
+async function ogpThumb(assets: Fetcher, requestUrl: string): Promise<BlueskyThumb | null> {
+  try {
+    const response = await assets.fetch(new URL(`/${OGP_ASSET}`, requestUrl));
+    if (!response.ok) return null;
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength === 0) return null;
+    // 大きさの上限は `announce()` が見る（超えたら載せずに投げる）。
+    const mime = response.headers.get('Content-Type')?.split(';')[0]?.trim();
+    return { bytes, mime: mime === undefined || mime === '' ? 'image/png' : mime };
+  } catch {
+    // アセットが読めないだけで告知を諦めない。
+    return null;
+  }
 }

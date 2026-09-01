@@ -3,7 +3,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { lily } from '../../src/config.ts';
 import { ADMIN_HINT } from '../../src/core/admin-contract.ts';
 import { resetDb } from '../db/helpers.ts';
-import { get, getRoot, MOUNT, ROOT_SITE, seedPost, setStubUser, SITE } from './helpers.ts';
+import {
+  get,
+  getRoot,
+  MOUNT,
+  ROOT_LANG,
+  ROOT_SITE,
+  seedPost,
+  setStubUser,
+  SITE,
+} from './helpers.ts';
 
 beforeEach(resetDb);
 afterEach(() => setStubUser(null));
@@ -47,6 +56,7 @@ describe('管理画面の入口 HTML', () => {
       name: 'ルート',
       description: 'root mount',
       author: 'someone',
+      lang: ROOT_LANG,
     });
   });
 
