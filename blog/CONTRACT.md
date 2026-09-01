@@ -44,6 +44,8 @@ posts/<canonical path>/<file>     その記事の添付（相対パスで参照�
   | `draft` | boolean | | `true` は公開側に出ない |
   | `public_id` | uuid | | 記事の identity。**省くと新規採番** |
   | `paths` | string[] | | canonical と alias。省くと `public_id` が URL |
+  | `media` | map | | ファイル名 → 添付の identity。省くと新規採番 |
+  | `ogp` | string | | OGP に使う添付の**ファイル名**。省くとサイト共通の絵 |
 
 - **キーを置いて値を空にした場合（`description:`）は、省略したのと同じ扱い。**
   YAML ではこれが `null` になり、素の zod では別物として弾かれる

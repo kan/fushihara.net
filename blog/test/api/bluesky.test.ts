@@ -1,4 +1,7 @@
+import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MAX_THUMB_BYTES } from '../../src/core/bluesky.ts';
+import { createMedia, setOgpMedia } from '../../src/core/db/media.ts';
 import { getPostByPublicId } from '../../src/core/db/posts.ts';
 import { db, resetDb } from '../db/helpers.ts';
 import {
@@ -31,6 +34,19 @@ afterEach(() => {
 
 function announce(publicId: string) {
   return apiJson('POST', `/api/posts/${publicId}/bluesky`);
+}
+
+/** OGP に選んだ添付を 1 つ足す。**R2 の実体は呼び出し側が置く。** */
+async function addOgp(postId: number, postPublicId: string, options: { bytes: number }) {
+  const media = await createMedia(db, {
+    postId,
+    filename: 'card.png',
+    r2Key: `posts/${postPublicId}/card.png`,
+    mime: 'image/png',
+    bytes: options.bytes,
+  });
+  await setOgpMedia(db, postId, media.id);
+  return media;
 }
 
 describe('告知する', () => {
@@ -69,6 +85,41 @@ describe('告知する', () => {
 
     // 言語はサイト設定から。core は既定値を持たない。
     expect(record.langs).toEqual([ROOT_LANG]);
+  });
+
+  it('記事が OGP を選んでいればその絵をサムネにする', async () => {
+    // 記事ページの og:image と同じ絵をカードに出すため。
+    const post = await seedPost();
+    const media = await addOgp(post.id, post.public_id, { bytes: 4 });
+    await env.MEDIA.put(media.r2_key, new Uint8Array([1, 2, 3, 4]));
+
+    await announce(post.public_id);
+    const upload = xrpcCalls().find((call) => call.url.endsWith('uploadBlob'));
+    expect(upload, 'uploadBlob を呼んでいない').toBeDefined();
+    expect(sentRecord().embed.external.thumb).toBeDefined();
+    // 共通の絵 (dist/ogp.png は 1KB を超える) ではなく、選んだ 4 バイトの方。
+    expect(upload!.byteLength).toBe(4);
+  });
+
+  it('選んだ絵が大きすぎたら共通の 1 枚に落とす', async () => {
+    // 上限を超えたぶんは announce() が載せないので、そのままだと選んだ絵でも
+    // 共通でもない「絵の無いカード」になる。bytes は DB にあるので取りに行く前に分かる。
+    const post = await seedPost();
+    const media = await addOgp(post.id, post.public_id, { bytes: MAX_THUMB_BYTES + 1 });
+
+    await announce(post.public_id);
+    const upload = xrpcCalls().find((call) => call.url.endsWith('uploadBlob'));
+    expect(sentRecord().embed.external.thumb).toBeDefined();
+    // R2 は見に行かない（大きさは DB で分かる）。載ったのは共通の ogp.png。
+    expect(upload!.byteLength).toBeGreaterThan(1000);
+    expect(await env.MEDIA.get(media.r2_key)).toBeNull();
+  });
+
+  it('選んだ絵の実体が消えていても告知は通る', async () => {
+    const post = await seedPost();
+    await addOgp(post.id, post.public_id, { bytes: 4 }); // R2 には置かない
+    expect((await announce(post.public_id)).status).toBe(200);
+    expect(sentRecord().embed.external.thumb).toBeDefined();
   });
 
   it('説明を書いていなければ本文の冒頭が入る', async () => {

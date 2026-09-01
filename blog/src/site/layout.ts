@@ -4,7 +4,8 @@
 import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import { STATIC_ASSETS } from '../core/routes/fixed.ts';
-import type { PageContext, Pagination } from '../core/theme.ts';
+import type { Urls } from '../core/paths.ts';
+import type { ImageView, PageContext, Pagination } from '../core/theme.ts';
 import { ADMIN_LINK, THEME_INIT, THEME_TOGGLE } from './client.ts';
 
 /**
@@ -32,6 +33,8 @@ export type LayoutOptions = {
   readonly brandIsHeading?: boolean;
   /** 一覧のページ送り。前後のページを `<link rel>` で示すのに使う。 */
   readonly pagination?: Pagination;
+  /** OGP に出す絵。**省略するとサイト共通の 1 枚**（記事だけが指定する）。 */
+  readonly image?: ImageView | null;
   /**
    * 管理画面のリンクの行き先。省略すると管理画面のトップに向く。
    * **リンク自体は常に出て、hidden 属性で隠してある。**
@@ -42,6 +45,28 @@ export type LayoutOptions = {
 /** トップはサイト名だけ、下層は「ページ名 | サイト名」。 */
 export function pageTitle(siteName: string, page?: string): string {
   return page ? `${page} | ${siteName}` : siteName;
+}
+
+/** サイト共通の OGP（`blog/public/ogp.png`）の寸法。**絵と一緒に直すこと。** */
+const OGP_SIZE = { width: 1200, height: 630 } as const;
+
+/**
+ * OGP の絵。**記事が選んでいなければサイト共通の 1 枚。**
+ *
+ * `og:image` は絶対 URL でないとクローラが解決できない（URL を組むのは core）。
+ * 寸法は**分かっているときだけ**書く。添付はヘッダから読めないことがあり
+ * （`media/dimensions.ts`）、共通の絵の 1200x630 を当てると嘘になる。
+ */
+function ogImage(urls: Urls, image: ImageView | null) {
+  const chosen: ImageView = image ?? {
+    url: urls.asset(ASSET.ogp, { absolute: true }),
+    ...OGP_SIZE,
+  };
+  return html`<meta property="og:image" content="${chosen.url}" />
+    ${chosen.width === null || chosen.height === null
+      ? ''
+      : html`<meta property="og:image:width" content="${chosen.width}" />
+          <meta property="og:image:height" content="${chosen.height}" />`}`;
 }
 
 export async function layout(
@@ -96,10 +121,7 @@ export async function layout(
     <meta property="og:description" content="${description}" />
     <meta property="og:type" content="${options.ogType ?? 'website'}" />
     ${canonicalUrl === null ? '' : html`<meta property="og:url" content="${canonicalUrl}" />`}
-    <!-- og:image は絶対 URL でないとクローラが解決できない。 -->
-    <meta property="og:image" content="${urls.asset(ASSET.ogp, { absolute: true })}" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
+    ${ogImage(urls, options.image ?? null)}
     <!-- カードの形だけ指定する。**どのアカウントのものかは示さない**
          (twitter:site は Astro から引き継いだだけで、何も担っていなかった)。 -->
     <meta name="twitter:card" content="summary_large_image" />

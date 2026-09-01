@@ -13,7 +13,7 @@ import {
   getPublishedPosts,
   getPublishedPostsByTagSlug,
 } from '../db/posts.ts';
-import { listMediaByPost } from '../db/media.ts';
+import { getOgpMedia, listMediaByPost } from '../db/media.ts';
 import { storedOrRenderedHtml } from '../delivery.ts';
 import { getTagBySlug, getTagsForPost, getTagsForPosts } from '../db/tags.ts';
 import { createUrls, normalizePostPath } from '../paths.ts';
@@ -159,7 +159,8 @@ export function publicRoutes(config: PageConfig): Hono<Env> {
       media: await listMediaByPost(db, post.id),
     });
     const html = resolveMediaUrls(rendered.html, urls);
-    const view = toPostView(urls, post, canonical, await getTagsForPost(db, post.id), html);
+    const [tags, ogp] = await Promise.all([getTagsForPost(db, post.id), getOgpMedia(db, post.id)]);
+    const view = toPostView(urls, post, canonical, tags, html, ogp);
 
     return c.html(await theme.post(context(null), view), 200, {
       'Cache-Control': NO_STORE,
@@ -197,13 +198,11 @@ export function publicRoutes(config: PageConfig): Hono<Env> {
 
     const stored = await storedOrRenderedHtml(resolved, () => listMediaByPost(db, resolved.id));
     const html = resolveMediaUrls(stored, urls);
-    const view = toPostView(
-      urls,
-      resolved,
-      resolved.canonical_path,
-      await getTagsForPost(db, resolved.id),
-      html,
-    );
+    const [tags, ogp] = await Promise.all([
+      getTagsForPost(db, resolved.id),
+      getOgpMedia(db, resolved.id),
+    ]);
+    const view = toPostView(urls, resolved, resolved.canonical_path, tags, html, ogp);
 
     return c.html(await theme.post(context(urls.post(resolved.canonical_path, { absolute: true })), view), 200, {
       'Cache-Control': SHORT_EDGE,

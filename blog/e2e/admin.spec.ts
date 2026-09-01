@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { SITE } from '../src/site/meta.ts';
-import { ID, MOUNT, url } from './helpers.ts';
+import { ID, MOUNT, ORIGIN, url } from './helpers.ts';
 
 /**
  * 管理画面の E2E。**`blog.spec.ts` とは分けてある。**
@@ -271,6 +271,45 @@ test.describe('編集画面', () => {
     await button.click();
     // 押しても黙って何も起きない、にはしない。
     await expect(page.locator('.notice.error')).toContainText('bluesky-not-configured');
+  });
+
+  /**
+   * OGP に選んだ添付が公開ページの og:image に出るところまで。**状態を変えるので
+   * 1 プロジェクトだけ**（desktop と mobile は同じサーバーを共有している）。
+   */
+  test('添付を OGP に選ぶと公開ページの og:image が変わる', async ({ page, request }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'desktop',
+      '記事の OGP を書き換えるので、同じサーバーに 2 プロジェクトからは掛けない',
+    );
+
+    const ogImage = async () => {
+      const res = await request.get(url.post('rendering-sample'));
+      return /<meta property="og:image" content="([^"]*)"/.exec(await res.text())?.[1];
+    };
+    const shared = `${SITE.url}${url.asset('ogp.png')}`;
+    expect(await ogImage()).toBe(shared);
+
+    try {
+      await page.goto(`${MOUNT}/admin/#/posts/${ID.renderingSample}`);
+      const row = page.locator('.media-list li', { hasText: 'sample.png' });
+      await row.getByRole('button', { name: 'OGP に使う' }).click();
+      await expect(row.locator('.badge')).toHaveText('OGP');
+
+      const chosen = await ogImage();
+      expect(chosen).toContain(`${MOUNT}/media/`);
+      expect(chosen).toContain('/sample.png');
+    } finally {
+      // **失敗しても必ず戻す。** 途中で落ちたまま残すと、再試行が 1 つ目の
+      // assertion で落ちて、元の失敗が見えなくなる（CI は retries: 2）。
+      // 画面ではなく API で戻すのは、落ちた場所によってはボタンが出ないため。
+      const res = await request.put(`${MOUNT}/api/posts/${ID.renderingSample}/ogp`, {
+        headers: { Origin: ORIGIN },
+        data: { mediaPublicId: null },
+      });
+      expect(res.status(), await res.text()).toBe(200);
+    }
+    expect(await ogImage()).toBe(shared);
   });
 
   test('セッションが切れたら書きかけを退避して読み込み直す', async ({ page }) => {

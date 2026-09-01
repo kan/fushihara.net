@@ -27,3 +27,17 @@ export function mimeForFilename(filename: string): string | undefined {
   if (dot === -1) return undefined;
   return MIME_BY_EXTENSION[filename.slice(dot + 1).toLowerCase()];
 }
+
+/**
+ * OGP（と Bluesky のリンクカード）に出せる形式。**受け付ける形式より狭い。**
+ *
+ * - SVG は多くのクローラが OGP の画像として読まない（読めても寸法が定まらない）
+ * - GIF は動かないまま 1 コマ目で止まって出るので、絵として選ぶ意味が薄い
+ * - AVIF は読まないクローラがまだあるうえ、`media/dimensions.ts` が寸法を
+ *   読めないので `og:image:width` / `height` も出せない
+ */
+const OGP_MIMES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+export function canBeOgp(mime: string): boolean {
+  return OGP_MIMES.has(mime);
+}

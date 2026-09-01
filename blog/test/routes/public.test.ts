@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { lily } from '../../src/config.ts';
 import { addAlias } from '../../src/core/db/post-paths.ts';
 import { setPreviewToken } from '../../src/core/db/posts.ts';
-import { createMedia } from '../../src/core/db/media.ts';
+import { createMedia, setOgpMedia } from '../../src/core/db/media.ts';
 import { hashPreviewToken, newPreviewToken } from '../../src/core/tokens.ts';
 import { db, resetDb } from '../db/helpers.ts';
 import { get, getRoot, MOUNT, seedPost, SITE } from './helpers.ts';
@@ -210,6 +210,60 @@ describe('記事', () => {
 function countPosts(html: string): number {
   return (html.match(/<li>\s*<div class="post-meta">/g) ?? []).length;
 }
+
+describe('OGP の絵', () => {
+  /** 添付を 1 つ入れて OGP に選ぶ。実体は R2 に要らない（meta を見るだけ）。 */
+  async function seedWithOgp(width: number | null = 600, height: number | null = 400) {
+    const post = await seedPost({ path: 'start-blog' });
+    const media = await createMedia(db, {
+      postId: post.id,
+      filename: 'card.png',
+      r2Key: `posts/${post.public_id}/card.png`,
+      mime: 'image/png',
+      bytes: 1234,
+      width,
+      height,
+    });
+    await setOgpMedia(db, post.id, media.id);
+    return { post, media };
+  }
+
+  it('選んでいなければサイト共通の 1 枚', async () => {
+    await seedPost({ path: 'start-blog' });
+    const body = await (await get(`${MOUNT}/start-blog/`)).text();
+    expect(body).toContain(`<meta property="og:image" content="${SITE}${MOUNT}/ogp.png" />`);
+    expect(body).toContain('<meta property="og:image:width" content="1200" />');
+  });
+
+  it('選んだ添付が絶対 URL と実寸で出る', async () => {
+    const { media } = await seedWithOgp();
+    const body = await (await get(`${MOUNT}/start-blog/`)).text();
+
+    expect(body).toContain(
+      `<meta property="og:image" content="${SITE}${MOUNT}/media/${media.public_id}/card.png" />`,
+    );
+    expect(body).toContain('<meta property="og:image:width" content="600" />');
+    expect(body).toContain('<meta property="og:image:height" content="400" />');
+    // 共通の絵の寸法が残っていると、切り抜き位置が狂う。
+    expect(body).not.toContain('content="1200"');
+  });
+
+  it('寸法が読めなかった添付は width / height を出さない', async () => {
+    // 共通の絵の 1200x630 を当てると嘘になる。
+    await seedWithOgp(null, null);
+    const body = await (await get(`${MOUNT}/start-blog/`)).text();
+    expect(body).toContain('property="og:image"');
+    expect(body).not.toContain('og:image:width');
+  });
+
+  it('一覧とタグには出ない（記事の絵はその記事のもの）', async () => {
+    await seedWithOgp();
+    for (const path of [`${MOUNT}/`, `${MOUNT}/tags/dev/`]) {
+      const body = await (await get(path)).text();
+      expect(body, path).toContain(`content="${SITE}${MOUNT}/ogp.png"`);
+    }
+  });
+});
 
 describe('説明', () => {
   // 手で書いていない記事でも、一覧と OGP に本文の冒頭が出る。

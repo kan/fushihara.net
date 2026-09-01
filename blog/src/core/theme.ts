@@ -26,9 +26,25 @@ export type PostSummaryView = {
   readonly isDraft: boolean;
 };
 
+/**
+ * OGP に出す絵。**完成した絶対 URL**をテーマに渡す（media の URL の組み方を
+ * テーマに知らせない。`adminUrl` と同じ理由）。
+ */
+export type ImageView = {
+  readonly url: string;
+  /** 分かっていれば実寸。ヘッダから読めなかった添付は null。 */
+  readonly width: number | null;
+  readonly height: number | null;
+};
+
 /** 記事ページ。`html` は placeholder を解決済みの、そのまま出せる HTML。 */
 export type PostView = PostSummaryView & {
   readonly html: string;
+  /**
+   * この記事の代表画像。**選ばれていなければ null** で、そのときテーマは
+   * サイト共通の絵を出す（どれを共通にするかはテーマの持ち物）。
+   */
+  readonly image: ImageView | null;
   /**
    * 管理画面でこの記事を開く URL。**組むのは core**（`urls.adminPost()`）で、
    * テーマは出すかどうかだけを決める。

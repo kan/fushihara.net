@@ -24,7 +24,7 @@ export type ApiErrorStatus = 400 | 404 | 409 | 502;
  * よいかが変わるため。
  */
 export function statusFor(code: string): ApiErrorStatus {
-  if (code === 'post-not-found' || code === 'not-found') return 404;
+  if (code === 'post-not-found' || code === 'media-not-found' || code === 'not-found') return 404;
   if (
     code === 'path-taken' ||
     code === 'public-id-taken' ||

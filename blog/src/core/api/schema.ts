@@ -57,6 +57,11 @@ export const pathSchema = z.object({
   path: z.string().min(1),
 });
 
+/** OGP に使う添付。**null で選択を外す**（「無し」を送れないと戻せない）。 */
+export const ogpSchema = z.object({
+  mediaPublicId: z.string().min(1).nullable(),
+});
+
 /**
  * 絞り込みの語。**空文字は「絞り込み無し」。** 画面の入力欄を空にしたときに
  * `?q=` が付いて飛んでくるので、それを「空文字に一致する記事」と読まない。

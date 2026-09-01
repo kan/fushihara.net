@@ -1,6 +1,12 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createMedia, listMediaByPost, mediaR2Key } from '../../src/core/db/media.ts';
+import {
+  createMedia,
+  getOgpMedia,
+  listMediaByPost,
+  mediaR2Key,
+  setOgpMedia,
+} from '../../src/core/db/media.ts';
 import { addAlias } from '../../src/core/db/post-paths.ts';
 import { getPostByPublicId, listAllPosts } from '../../src/core/db/posts.ts';
 import { getTagsForPost } from '../../src/core/db/tags.ts';
@@ -93,6 +99,37 @@ describe('export', () => {
     expect(text).toContain('  - old-path\n');
     expect(text).toContain(`  sample.png: ${media.public_id}\n`);
     expect(text).toContain('tags:\n  - blog\n  - dev\n');
+  });
+
+  it('OGP に選んだ添付はファイル名で載る', async () => {
+    const post = await seedPost({ path: 'start-blog' });
+    await attach(post.id, post.public_id, 'other.png');
+    const card = await attach(post.id, post.public_id, 'card.png');
+    await setOgpMedia(db, post.id, card.id);
+
+    const files = await entriesOf(await exportBytes());
+    const text = decoder.decode(files.get('posts/start-blog/index.md'));
+    // public_id ではなくファイル名。media を省いた形でも書けるようにするため。
+    expect(text).toContain('ogp: card.png\n');
+  });
+
+  it('選んでいなければ ogp の行を書かない', async () => {
+    const post = await seedPost({ path: 'start-blog' });
+    await attach(post.id, post.public_id, 'card.png');
+
+    const files = await entriesOf(await exportBytes());
+    expect(decoder.decode(files.get('posts/start-blog/index.md'))).not.toContain('ogp:');
+  });
+
+  it('実体の無い添付は OGP に選ばれていても書かない', async () => {
+    // 書庫に入らなかった絵を指すと、取り込み直したときに解決できない名前だけが残る。
+    const post = await seedPost({ path: 'start-blog' });
+    const card = await attach(post.id, post.public_id, 'card.png');
+    await setOgpMedia(db, post.id, card.id);
+    await env.MEDIA.delete(card.r2_key);
+
+    const files = await entriesOf(await exportBytes());
+    expect(decoder.decode(files.get('posts/start-blog/index.md'))).not.toContain('ogp:');
   });
 
   it('本文は body_md のまま (相対参照を書き換えない)', async () => {
@@ -207,6 +244,18 @@ describe('往復 (import → export → import)', () => {
 
     // 2 周目も同じ書庫になる = 取りこぼしが無い
     expect([...(await exportBytes())]).toEqual([...first]);
+  });
+
+  it('OGP の選択が往復で残る', async () => {
+    const original = await seedPost({ path: 'ratatoskr/1' });
+    await attach(original.id, original.public_id, 'other.png');
+    const card = await attach(original.id, original.public_id, 'card.png');
+    await setOgpMedia(db, original.id, card.id);
+
+    await reimport(await exportBytes());
+
+    const post = await getPostByPublicId(db, original.public_id);
+    expect((await getOgpMedia(db, post?.id as number))?.filename).toBe('card.png');
   });
 
   it('alias で引ける URL がそのまま残る', async () => {

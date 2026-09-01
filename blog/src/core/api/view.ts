@@ -10,6 +10,7 @@ import { listMediaByPost } from '../db/media.ts';
 import { listPaths } from '../db/post-paths.ts';
 import { getTagsForPost } from '../db/tags.ts';
 import type { MediaRow, PostRow, TagRow } from '../db/types.ts';
+import { canBeOgp } from '../media/formats.ts';
 import type { Urls } from '../paths.ts';
 
 export type MediaView = {
@@ -18,6 +19,13 @@ export type MediaView = {
   mime: string;
   bytes: number;
   url: string;
+  /** この記事の OGP に選ばれている 1 枚か。 */
+  isOgp: boolean;
+  /**
+   * OGP に選べる形式か。**判断するのは core。** 管理画面が MIME の表を
+   * 持つと、受け付ける形式を増やした日に片方だけ古い規則で描かれる。
+   */
+  canBeOgp: boolean;
 };
 
 export type PostView = {
@@ -60,6 +68,8 @@ export function toMediaView(urls: Urls, media: MediaRow): MediaView {
     mime: media.mime,
     bytes: media.bytes,
     url: urls.media(media),
+    isOgp: media.is_ogp === 1,
+    canBeOgp: canBeOgp(media.mime),
   };
 }
 

@@ -55,6 +55,8 @@ export type MediaRow = {
   bytes: number;
   width: number | null;
   height: number | null;
+  /** この記事の OGP に使う 1 枚か。**記事につき 1 枚**（部分ユニーク索引）。 */
+  is_ogp: 0 | 1;
   created_at: string;
 };
 
@@ -110,6 +112,7 @@ export const MEDIA_COLUMNS = columnsOf<MediaRow>({
   bytes: true,
   width: true,
   height: true,
+  is_ogp: true,
   created_at: true,
 });
 

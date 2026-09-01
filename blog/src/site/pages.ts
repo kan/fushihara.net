@@ -99,6 +99,8 @@ export function postPage(context: PageContext, post: PostView): Promise<string> 
       page: post.title,
       description: post.description ?? undefined,
       ogType: 'article',
+      // 添付から選ばれていればその絵。無ければ共通の 1 枚に落ちる。
+      image: post.image,
       adminUrl: post.adminUrl,
     },
     html`<article>

@@ -10,9 +10,15 @@
  * 添付も」で変わり、取り違えると記事が壊れる。復旧 (空の DB へ入れ直す) と
  * 移行にはこれで足りるので、必要になってから決める。
  */
-import { createMedia, getMediaByPublicId, mediaR2Key } from '../db/media.ts';
+import {
+  createMedia,
+  findByPostAndFilename,
+  getMediaByPublicId,
+  mediaR2Key,
+  setOgpMedia,
+} from '../db/media.ts';
 import { imageDimensions } from '../media/dimensions.ts';
-import { mimeForFilename } from '../media/formats.ts';
+import { canBeOgp, mimeForFilename } from '../media/formats.ts';
 import { addAlias } from '../db/post-paths.ts';
 import { createPost, getPostByPublicId } from '../db/posts.ts';
 import { applyTags, resolveTags } from '../db/tags.ts';
@@ -195,12 +201,43 @@ async function importPost(
 
   const media = await importMedia(db, bucket, post.id, post.public_id, group.files, frontmatter.media ?? {}, warnings);
 
+  // OGP は**添付を入れたあと**に選ぶ（まだ無い行は指せない）。
+  if (frontmatter.ogp !== undefined) {
+    await applyOgp(db, post.id, frontmatter.ogp, warnings);
+  }
+
   // 添付を入れてから描く。順番を逆にすると `./sample.png` が解決できず、
   // 貼ってあるはずの画像が公開ページから消える。
   const unresolved = await renderAndStore(db, post);
   for (const reference of unresolved) warnings.push(`本文の参照を解決できない: ${reference}`);
 
   return { ok: true, value: { path: canonical.value, publicId: post.public_id, media, warnings } };
+}
+
+/**
+ * frontmatter の `ogp` が指す添付を OGP に選ぶ。
+ *
+ * **見つからなくても記事は取り込む。** 選択が落ちるだけで、共通の絵に戻るだけ
+ * （書庫を丸ごと弾く理由にはならない）。名前は添付と同じ規則で正規化してから
+ * 突き合わせる（`importMedia` が入れた名前もそれを通っている）。
+ */
+async function applyOgp(
+  db: D1Database,
+  postId: number,
+  name: string,
+  warnings: string[],
+): Promise<void> {
+  const filename = normalizeSegment(name);
+  const media = filename.ok ? await findByPostAndFilename(db, postId, filename.value) : null;
+  if (!media) {
+    warnings.push(`ogp を無視した (その名前の添付が無い): ${name}`);
+    return;
+  }
+  if (!canBeOgp(media.mime)) {
+    warnings.push(`ogp を無視した (OGP に使えない形式 ${media.mime}): ${name}`);
+    return;
+  }
+  await setOgpMedia(db, postId, media.id);
 }
 
 async function importMedia(

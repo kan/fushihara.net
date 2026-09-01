@@ -105,6 +105,46 @@ export async function listMediaByPosts(
 }
 
 /**
+ * この記事の OGP に使う添付。選んでいなければ null。
+ *
+ * **`is_ogp = 1` を読む場所はここだけ。** 配信（`og:image`）と告知（リンクカードの
+ * サムネ）と export が同じ 1 本を通るので、条件を変える日に片方だけ古い規則が残らない。
+ */
+export async function getOgpMedia(db: D1Database, postId: number): Promise<MediaRow | null> {
+  return await db
+    .prepare(`SELECT ${MEDIA_SELECT} FROM media WHERE post_id = ?1 AND is_ogp = 1`)
+    .bind(postId)
+    .first<MediaRow>();
+}
+
+/**
+ * OGP に使う添付を選び直す。`mediaId` が null なら選択を外す。
+ *
+ * **外してから立てるのを 1 トランザクションで行う**（`batch`）。部分ユニーク索引は
+ * 「2 枚選ばれている」を防ぐが、途中の状態は防げないので、別々に流すと
+ * 立てる側が索引に弾かれる。
+ *
+ * 立てる方は `post_id` も条件に入れているので、**他の記事の添付は立たない**
+ * （呼び出し側の検証と二重に守る）。そのときは外れるだけになる ―― 呼び出し側の
+ * 誤りなので、どちらにも倒せるが「知らない絵が選ばれたまま」よりは安全な方へ倒す。
+ */
+export async function setOgpMedia(
+  db: D1Database,
+  postId: number,
+  mediaId: number | null,
+): Promise<void> {
+  const statements = [
+    db.prepare('UPDATE media SET is_ogp = 0 WHERE post_id = ?1 AND is_ogp = 1').bind(postId),
+  ];
+  if (mediaId !== null) {
+    statements.push(
+      db.prepare('UPDATE media SET is_ogp = 1 WHERE id = ?1 AND post_id = ?2').bind(mediaId, postId),
+    );
+  }
+  await db.batch(statements);
+}
+
+/**
  * 記事に紐づく R2 のキー。記事を消す前に控えておくために使う
  * (`media` を読むのはこのファイルだけ、という線を守るために置いている)。
  */

@@ -34,6 +34,7 @@ Worker 名は `fushihara-blog`、ディレクトリは `blog/`、コアの名前
 - 毎日の控え取り（Cron Trigger → portable な zip を別の R2 バケットへ 30 世代）
 - 公開ページの管理リンク（管理画面を開いたことがある端末にだけ出る）
 - Bluesky への告知（管理画面のボタン。二重投稿は `bluesky_uri` で防ぐ）
+- OGP の絵（ブログ専用の 1 枚 + 記事ごとに添付から選べる上書き）
 
 **2026-08-29 に `/blog` を Astro から引き継いだ。** 2026-08-30 に Astro
 （`blog/` と `fushihara-net-blog` Worker）を消し、`lily/` をこの `blog/` に改名した。
@@ -48,7 +49,7 @@ npm run test:e2e         # Playwright。wrangler dev に対して回す (localho
 npm run typecheck        # wrangler types → tsc (src / e2e / 管理画面 の 3 プロジェクト)
 npm run db:migrate:local # ローカル D1 にマイグレーションを当てる
 npm run db:seed:local    # 開発用の記事を入れる（seeds/dev.sql）
-npm run build            # 静的アセット（shared/public のコピー + 管理画面）
+npm run build            # 静的アセット（shared/public + public のコピー + 管理画面）
 npm run dev              # localhost:8787。上の 3 つを先に流しておくこと
 ```
 
@@ -67,6 +68,7 @@ npm run dev              # localhost:8787。上の 3 つを先に流しておく
 ```
 migrations/   D1 のマイグレーション（plain SQL）。スキーマの正はここだけ
 seeds/        ローカルで画面を見るための中身。E2E のフィクスチャとは別物
+public/       ブログ専用の静的アセット（今は ogp.png だけ）。共有は shared/public
 src/
   core/       将来 lily として切り出す部分（サイト固有を何も知らない）
     db/       Row 型とクエリ。SQL はここから出さない
@@ -189,6 +191,8 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 | 管理画面と配信側の契約（meta の名前・目印の cookie） | `core/admin-contract.ts` |
 | 管理画面のハッシュ URL の形 | `core/paths.ts` の `ADMIN_HASH` |
 | 告知の投稿の組み立て（本文・facet・リンクカード） | `core/bluesky.ts` |
+| 「この記事の OGP はどれか」 | `core/db/media.ts` の `getOgpMedia` / `setOgpMedia` |
+| OGP に選べる形式 | `core/media/formats.ts` の `OGP_MIMES` |
 | 配信する中身の言語（`<html lang>` と告知の `langs`） | `SiteConfig.lang`（`src/site/meta.ts`） |
 | AT-URI → bsky.app で開ける URL | `core/bluesky.ts` の `blueskyPostUrl` |
 | OGP とリンクカードに出す絵の名前 | `core/routes/fixed.ts` の `OGP_ASSET` |
@@ -437,6 +441,41 @@ git の履歴・レビュー・ロールバックの外に出る。今どうな�
   **食い違うと一覧が開くだけで気付けない**ので、E2E がリンクを実際に押して
   編集画面が出ることまで見る
 
+## OGP の絵
+
+**ブログ専用の 1 枚が既定で、記事は添付から 1 枚選んで上書きできる。**
+
+```
+blog/public/ogp.png            ブログ共通（「ふしはらねっとのぶろぐ」）
+shared/public/ogp.png          本体サイト（「fushihara.net」）
+```
+
+- **共有に 1 枚だけ置く形をやめた。** `/` と `/blog/` のどちらのリンクを貼っても
+  同じ絵が出ていた。`scripts/build.mjs` は共有（favicon 3 点）を先にコピーしてから
+  `blog/public` を被せるので、**同じ名前があればブログ側が勝つ**。順序を入れ替えると
+  本体の絵が黙って配られる（`e2e/blog.spec.ts` の「配信物」がバイト列で見張っている）
+- 作り方は本体と同じ。`f.` マーク（`shared/public/favicon.svg` と同じ path）と
+  文字を並べた HTML を headless Chrome で 1200x630 に撮り、`sharp` の 64 色
+  パレットに落とす（34KB → 13KB）。見出しは Noto Sans JP で、配信している
+  ブログと同じ書体
+- **記事ごとの上書きは `media.is_ogp`**（記事につき 1 枚。部分ユニーク索引）。
+  管理画面の添付一覧の「OGP に使う」で選び、`PUT <mount>/api/posts/<public_id>/ogp`
+  が受ける。反映先は記事ページの `og:image` と Bluesky のリンクカード
+- **選べるのは PNG / JPEG / WebP だけ**（`OGP_MIMES`）。SVG は多くのクローラが
+  OGP として読まず、GIF は 1 コマ目で止まって出る。AVIF は読まないクローラが
+  まだあるうえ、`media/dimensions.ts` が寸法を読めないので
+  `og:image:width` / `height` も出せない。選べない形式は**ボタン自体を出さない**
+  （判断するのは core。`MediaView.canBeOgp` で管理画面へ渡す）
+- **`og:image:width` / `height` は分かっているときだけ書く。** 添付の寸法は
+  ヘッダから読めないことがあり、共通の絵の 1200x630 を当てると嘘になる
+- **選択は `updated_at` を動かさない。** 読者から見える中身は変わらないので、
+  Atom の `<updated>` と sitemap の `lastmod` を進めない
+- 記事に紐づく行に印を置いているので、**添付を消せば選択も消える**（記事側に
+  media への参照を持たせると、消えた絵を指したままになる）
+- portable な zip は frontmatter の `ogp:` にファイル名で持つ（`CONTRACT.md`）。
+  **書庫に入った添付からしか選ばない**ので、R2 から取れなかった絵を指す名前が
+  残ることはない
+
 ## Bluesky 告知
 
 **記事の URL を Bluesky へ投げる。管理画面の「告知する」ボタンからだけ。**
@@ -465,12 +504,16 @@ git の履歴・レビュー・ロールバックの外に出る。今どうな�
 - **リンクカードは自分で組む。** 公式クライアントは貼られた URL を取りに行って OGP
   からカードを作るが、**API から投げた投稿にその処理は走らない**。載せるのは記事の
   URL・タイトル・`postDescription()`（一覧と OGP に出るのと同じ説明）と、サムネに
-  `ogp.png`
-- **サムネは配信しているのと同じ実体**を `ASSETS` バインディングから読む。公開 URL を
-  fetch すると自分のゾーンへサブリクエストを出すことになる（本体サイトの `/api/blog`
-  が 522 で踏んだのと同じ罠）
-- **サムネが取れなくても告知は止めない。** 大きすぎるとき・upload が失敗したときは
-  絵の無いカードで投げる（「押しても告知できない」にしない）
+  **記事ページの `og:image` と同じ絵**（「OGP の絵」の節）
+- **サムネは配信しているのと同じ実体**を読む。記事が選んでいれば R2 の添付、
+  無ければ `ASSETS` バインディングから共通の `ogp.png`。公開 URL を fetch すると
+  自分のゾーンへサブリクエストを出すことになる（本体サイトの `/api/blog` が 522 で
+  踏んだのと同じ罠）
+- **大きすぎる添付は共通の 1 枚に落とす。** 上限（1MB）を超えたぶんは `announce()`
+  が載せずに投げるので、そのままだと選んだ絵でも共通でもない「絵の無いカード」に
+  なる。`bytes` は DB にあるので、R2 へ取りに行く前に分かる
+- **サムネが取れなくても告知は止めない。** 実体が消えているとき・upload が失敗した
+  ときは絵の無いカードで投げる（「押しても告知できない」にしない）
 - 本文は「タイトル + 改行 + URL」で、**URL をリンクにする facet を付ける**。無いと
   素のテキストとして出る。範囲は **UTF-8 のバイト位置**なので、日本語のタイトルが
   入ると文字数とずれる。長さの上限は 300 **書記素**（`Intl.Segmenter` で数える。
@@ -565,6 +608,7 @@ D1 の dump（運用復旧用）とは別物。あちらは D1 / R2 という構
 | `public_id` | **必ず書く** | 省略可（採番する） | 不変の identity |
 | `paths` | 必ず書く | 省略可 | canonical + alias |
 | `media` | あれば書く | 省略可 | ファイル名 → 添付の `public_id` |
+| `ogp` | 選んでいれば書く | 省略可 | OGP に使う添付の**ファイル名** |
 
 - **`public_id` を落とさない。** 落とすと再 import で記事の identity が変わり、
   URL も購読者側の同一性も壊れる。`media` を持っているのも同じ理由で、
@@ -578,6 +622,9 @@ D1 の dump（運用復旧用）とは別物。あちらは D1 / R2 という構
 - `created_at` と `bluesky_uri` は**持たない**。前者は表示に使わないので
   `date` → `updated` の順で当て、後者は D1 の dump 側の担当
   （portable な Markdown に lily 固有の状態を混ぜない）
+- **`ogp` は持つ。** 告知済みかどうか（`bluesky_uri`）と違って、どの絵をその記事の
+  顔にするかは**記事に付随する情報**で、別の生成器でも意味を持つ。指すのは
+  `public_id` ではなく**ファイル名**なので、`media` を省いた形でも書ける
 - `public_id` / `paths` / `media` を省いた形（＝ Astro 版の frontmatter そのもの）が
   そのまま読める。**移行はこの経路**
 

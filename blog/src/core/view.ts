@@ -4,7 +4,7 @@
  * URL を組むのと日付を Date にするのがここの仕事。テーマが Row 型や
  * `post_paths` の存在を知らずに済むようにする。
  */
-import type { PostRow, PostWithPathRow, TagRow } from './db/types.ts';
+import type { MediaRow, PostRow, PostWithPathRow, TagRow } from './db/types.ts';
 import type { Urls } from './paths.ts';
 import { postDescription } from './summary.ts';
 import type { PostSummaryView, PostView, TagView } from './theme.ts';
@@ -36,11 +36,18 @@ export function toPostView(
   canonicalPath: string,
   tags: readonly TagRow[],
   html: string,
+  /** OGP に選ばれている添付。無ければテーマがサイト共通の絵を出す。 */
+  ogp: MediaRow | null = null,
 ): PostView {
   return {
     ...toPostSummary(urls, { ...row, canonical_path: canonicalPath }, tags),
     html,
     adminUrl: urls.adminPost(row.public_id),
+    // **絶対 URL。** クローラは相対 URL を解決してくれない。
+    image:
+      ogp === null
+        ? null
+        : { url: urls.media(ogp, { absolute: true }), width: ogp.width, height: ogp.height },
   };
 }
 

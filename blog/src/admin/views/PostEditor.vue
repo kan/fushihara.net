@@ -26,7 +26,15 @@ type Detail = {
   url: string;
   paths: { path: string; isCanonical: boolean }[];
   tags: { name: string; slug: string }[];
-  media: { publicId: string; filename: string; url: string }[];
+  media: {
+    publicId: string;
+    filename: string;
+    url: string;
+    /** この記事の OGP に選ばれている 1 枚か。 */
+    isOgp: boolean;
+    /** OGP に選べる形式か。**判断はサーバー**（`core/media/formats.ts`）。 */
+    canBeOgp: boolean;
+  }[];
 };
 
 const post = ref<Detail | null>(null);
@@ -274,6 +282,26 @@ async function upload(file: File): Promise<string | null> {
   return filename;
 }
 
+/**
+ * OGP に使う添付を選ぶ / やめる（`null` で解除）。
+ *
+ * **`fill()` を呼ばない。** 記事の中身は変わらないので、書きかけを消さないよう
+ * 添付の一覧だけ差し替える（告知と同じ扱い）。
+ */
+async function setOgp(mediaPublicId: string | null): Promise<void> {
+  const id = props.publicId;
+  if (id === null) return;
+  await run(async () => {
+    const res = await client.posts[':publicId'].ogp.$put({
+      param: { publicId: id },
+      json: { mediaPublicId },
+    });
+    if (!res.ok) return await fail(res);
+    const updated = (await res.json()).post;
+    if (post.value) post.value = { ...post.value, media: updated.media };
+  });
+}
+
 async function removeMedia(mediaId: string): Promise<void> {
   await run(async () => {
     const res = await client.media[':publicId'].$delete({ param: { publicId: mediaId } });
@@ -457,12 +485,25 @@ onMounted(async () => {
         <ul class="media-list">
           <li v-for="item in post.media" :key="item.publicId">
             <span class="name">{{ item.filename }}</span>
+            <span v-if="item.isOgp" class="badge">OGP</span>
             <span class="spacer" />
+            <!-- 選べない形式（SVG / GIF / AVIF）にはボタンを出さない。 -->
+            <button
+              v-if="item.canBeOgp"
+              :disabled="busy"
+              @click="setOgp(item.isOgp ? null : item.publicId)"
+            >
+              {{ item.isOgp ? 'OGP をやめる' : 'OGP に使う' }}
+            </button>
             <a :href="item.url" target="_blank" rel="noreferrer">開く</a>
             <button class="danger" @click="removeMedia(item.publicId)">消す</button>
           </li>
         </ul>
         <p v-if="post.media.length === 0" class="muted">まだ無い。</p>
+        <p v-else class="muted">
+          OGP に選んだ絵は、記事の og:image と Bluesky のリンクカードに出る（選ばなければ共通の
+          1 枚）。
+        </p>
       </div>
 
       <div class="panel">

@@ -10,7 +10,14 @@ import { vi } from 'vitest';
 /** スタブが返す AT-URI。テストはこれで「告知済み」を確かめる。 */
 export const AT_URI = 'at://did:plc:abc/app.bsky.feed.post/3kxyz';
 
-export type XrpcCall = { url: string; init: RequestInit; body: string };
+export type XrpcCall = {
+  url: string;
+  init: RequestInit;
+  /** JSON の口はこちら。`uploadBlob` は生のバイト列なので空文字。 */
+  body: string;
+  /** 送ったバイト数。**どの絵を載せたか**を見分けるのに使う（`uploadBlob`）。 */
+  byteLength: number;
+};
 
 let calls: XrpcCall[] = [];
 
@@ -24,7 +31,12 @@ export function stubBluesky(overrides: Record<string, () => Response> = {}): voi
   calls = [];
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input instanceof Request ? input.url : input);
-    calls.push({ url, init, body: typeof init.body === 'string' ? init.body : '' });
+    calls.push({
+      url,
+      init,
+      body: typeof init.body === 'string' ? init.body : '',
+      byteLength: bodyLength(init.body),
+    });
 
     for (const [nsid, respond] of Object.entries(overrides)) {
       if (url.endsWith(`/xrpc/${nsid}`)) return respond();
@@ -63,4 +75,11 @@ export function sentRecord(): any {
 
 export function xrpcHeader(call: XrpcCall, name: string): string | undefined {
   return (call.init.headers as Record<string, string> | undefined)?.[name];
+}
+
+function bodyLength(body: BodyInit | null | undefined): number {
+  if (typeof body === 'string') return new TextEncoder().encode(body).byteLength;
+  if (body instanceof ArrayBuffer) return body.byteLength;
+  if (ArrayBuffer.isView(body)) return body.byteLength;
+  return 0;
 }

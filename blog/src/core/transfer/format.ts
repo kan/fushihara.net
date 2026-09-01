@@ -46,6 +46,7 @@ export const FRONTMATTER_KEYS = [
   'public_id',
   'paths',
   'media',
+  'ogp',
 ] as const;
 
 /** 空欄 (`description:` のように値を書かない) は「書いていない」と同じ扱いにする。 */
@@ -83,6 +84,13 @@ const schema = z.object({
   paths: blankAsUnset(z.array(z.string())),
   /** ファイル名 → 添付の public_id。配信 URL を往復で保つために持つ。 */
   media: blankAsUnset(z.record(z.string(), z.string())),
+  /**
+   * OGP に使う添付の**ファイル名**（`media` のキーと同じもの）。
+   *
+   * public_id ではなくファイル名で指すのは、`media` を省いた形（＝よそから
+   * 持ち込む形）でも書けるようにするため。書き手が見て分かる値でもある。
+   */
+  ogp: blankAsUnset(z.string()),
 });
 
 export type PostFrontmatter = z.infer<typeof schema>;
@@ -168,7 +176,7 @@ export type BuildPostFileInput = {
   readonly paths: readonly string[];
   readonly tags: readonly string[];
   /** 書庫に実際に入れた添付だけ。R2 から取れなかったものは含めない。 */
-  readonly media: readonly Pick<MediaRow, 'filename' | 'public_id'>[];
+  readonly media: readonly Pick<MediaRow, 'filename' | 'public_id' | 'is_ogp'>[];
 };
 
 /** 記事 1 本を `index.md` の中身にする。 */
@@ -190,6 +198,9 @@ export function buildPostFile(input: BuildPostFileInput): string {
     ['public_id', post.public_id],
     ['paths', input.paths],
     ['media', mediaMap],
+    // **書庫に入った添付から選ぶ。** R2 から取れなかった絵を指して書き出すと、
+    // 取り込み直したときに解決できない名前だけが残る。
+    ['ogp', input.media.find((item) => item.is_ogp === 1)?.filename],
   ];
 
   return stringifyFrontmatter(entries, post.body_md);

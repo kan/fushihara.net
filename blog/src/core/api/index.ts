@@ -12,6 +12,7 @@ import type { AuthUser } from '../auth/index.ts';
 import {
   announce,
   BlueskyError,
+  MAX_THUMB_BYTES,
   type BlueskyCredentials,
   type BlueskyThumb,
 } from '../bluesky.ts';
@@ -22,8 +23,10 @@ import {
   deleteMedia,
   findByPostAndFilename,
   getMediaByPublicId,
+  getOgpMedia,
   listMediaByPost,
   mediaR2Key,
+  setOgpMedia,
 } from '../db/media.ts';
 import {
   addAlias,
@@ -48,10 +51,10 @@ import {
 } from '../db/posts.ts';
 import { applyTags, getTagsForPosts, listTagsWithCounts, resolveTags } from '../db/tags.ts';
 import { groupByPost } from '../view.ts';
-import type { PostRow } from '../db/types.ts';
+import type { MediaRow, PostRow } from '../db/types.ts';
 import { fetchLinkTitle } from '../link-title.ts';
 import { imageDimensions } from '../media/dimensions.ts';
-import { mimeForFilename } from '../media/formats.ts';
+import { canBeOgp, mimeForFilename } from '../media/formats.ts';
 import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
@@ -71,6 +74,7 @@ import {
   createPostSchema,
   linkTitleSchema,
   listPostsSchema,
+  ogpSchema,
   pathSchema,
   publishSchema,
   renderSchema,
@@ -293,10 +297,11 @@ export function createApi(config: PageConfig) {
       const credentials = c.get('bluesky');
       if (!credentials) return c.json(...apiError('bluesky-not-configured'));
 
-      // 記事のパスとサムネは互いに無関係なので同時に取る（D1 と ASSETS）。
+      // 記事のパスとサムネは互いに無関係なので同時に取る（サムネは
+      // 「どれを載せるか」を引いてから実体を読むので、2 段まとめて片側に置く）。
       const [canonical, thumb] = await Promise.all([
         getCanonicalPath(db, post.id),
-        ogpThumb(c.env.ASSETS, c.req.url),
+        getOgpMedia(db, post.id).then((ogp) => cardThumb(c.env, c.req.url, ogp)),
       ]);
 
       let announced;
@@ -387,6 +392,35 @@ export function createApi(config: PageConfig) {
 
       await setPreviewToken(db, post.id, null);
       return c.json({ revoked: post.public_id });
+    })
+
+    /**
+     * OGP に使う添付を選ぶ。**記事につき 1 枚**で、`null` で選択を外す。
+     *
+     * 反映先は記事ページの `og:image` と、Bluesky の告知のリンクカード。
+     * 選んでいない記事はサイト共通の絵に落ちる。
+     */
+    .put('/posts/:publicId/ogp', zValidator('json', ogpSchema), async (c) => {
+      const db = c.env.DB;
+      const post = await getPostByPublicId(db, c.req.param('publicId'));
+      if (!post) return c.json(...apiError('post-not-found'));
+
+      const { mediaPublicId } = c.req.valid('json');
+      let mediaId: number | null = null;
+      if (mediaPublicId !== null) {
+        const media = await getMediaByPublicId(db, mediaPublicId);
+        // **他の記事の添付は指せない。** 指せると、記事を消したときに OGP だけ
+        // 生き残る（あるいは消えた絵を指し続ける）。
+        if (!media || media.post_id !== post.id) return c.json(...apiError('media-not-found'));
+        if (!canBeOgp(media.mime)) {
+          return c.json(...apiError('ogp-format-not-allowed', media.mime));
+        }
+        mediaId = media.id;
+      }
+
+      await setOgpMedia(db, post.id, mediaId);
+      // 本文は変わらないので描き直さない。
+      return c.json({ post: await toPostView(db, urls, post) });
     })
 
     .post('/posts/:publicId/media', async (c) => {
@@ -576,7 +610,34 @@ async function save(db: D1Database, urls: Urls, post: PostRow) {
 }
 
 /**
- * リンクカードのサムネ。**取れなくても告知は止めない**（絵の無いカードが出る）。
+ * リンクカードのサムネ。**記事が OGP を選んでいればその絵、無ければ共通の 1 枚。**
+ *
+ * 記事ページの `og:image` と同じ絵を出すためで、選び方（`is_ogp`）も同じ 1 本を
+ * 通る。**大きすぎる添付は共通へ落とす。** 上限を超えたぶんは `announce()` が
+ * 載せずに投げるので、そのままだと選んだ絵でも共通でもない「絵の無いカード」に
+ * なる。`bytes` は DB にあるので、R2 から取りに行く前に分かる。
+ */
+async function cardThumb(
+  env: LilyBindings,
+  requestUrl: string,
+  ogp: MediaRow | null,
+): Promise<BlueskyThumb | null> {
+  if (ogp !== null && ogp.bytes <= MAX_THUMB_BYTES) {
+    try {
+      const object = await env.MEDIA.get(ogp.r2_key);
+      // 実体が消えていれば共通へ落ちる（告知そのものは止めない）。
+      if (object) return { bytes: await object.arrayBuffer(), mime: ogp.mime };
+    } catch (error) {
+      // **R2 の失敗で告知を落とさない。** ここは絵を選ぶだけの処理なので、
+      // 読めなければ共通の 1 枚に落ちればよい（`ogpThumb` と同じ扱い）。
+      console.warn(`bluesky: OGP の添付を読めないので共通の絵にする (${ogp.r2_key}): ${error}`);
+    }
+  }
+  return await ogpThumb(env.ASSETS, requestUrl);
+}
+
+/**
+ * サイト共通の OGP。**取れなくても告知は止めない**（絵の無いカードが出る）。
  *
  * 読むのは配信しているのと同じ実体（`ASSETS` バインディング）。公開 URL を
  * fetch すると、Worker が自分のゾーンへサブリクエストを出すことになる。

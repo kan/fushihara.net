@@ -66,7 +66,7 @@ cd blog
 npm install
 npm run db:migrate:local # ローカル D1 にマイグレーションを当てる
 npm run db:seed:local    # 開発用の記事を入れる（seeds/dev.sql）
-npm run build            # 静的アセット（shared/public のコピー + 管理画面）
+npm run build            # 静的アセット（shared/public + blog/public のコピー + 管理画面）
 npm run dev              # localhost:8787。上の 3 つを先に流しておくこと
 npm test                 # Vitest。実 workerd + 実 D1 で動く
 npm run test:e2e         # Playwright。wrangler dev に対して回す（localhost:8788）
@@ -427,15 +427,6 @@ mount 付きになり、`<mount>/favicon.svg` への要求を Worker が binding
 `robots.txt` のように「本体だけ」に効かせたいものが出たら、本体に `public/` を戻して
 共有物をビルド前にコピーする形へ寄せる。
 
-`ogp.png`（1200x630）もここにある。両サイトが同じ絵を使う前提で、中身は favicon と
-同じ `f.` マーク + `fushihara.net`。**`og:image` は絶対 URL でないとクローラが解決
-できない**ので、本体は直書き、ブログは `core/paths.ts` の `urls.asset(…, { absolute:
-true })` で組み立てている（出力は `/blog/ogp.png`）。配線が切れても画面には出ないので、
-本体は `e2e/favicon.spec.ts`、ブログは `blog/e2e/blog.spec.ts` の「配信物」節が
-meta と実体を突き合わせている。
-作り直すときは `f.` マークと `fushihara.net` を並べた HTML を headless Chrome で
-1200x630 に撮り、`sharp` の 64 色パレットに落とす（18KB → 4.8KB）。
-
 3 つとも同じマークと配色（紺 `#1A1A2E` の板に白い `f` とオレンジ `#FF6B00` の丸）。
 **違うのは角だけ。**
 
@@ -479,6 +470,32 @@ meta と実体を突き合わせている。
   ソースの文字列で検査すると `light-dark()` で書き直された形をすり抜ける。
   実体の検証に `<img>` のデコードを使ってはいけない。`page.route()` を張った状態だと
   **ICO だけデコードに失敗する**（Playwright の傍受の副作用で、ファイルは壊れていない）
+
+### OGP の絵は 2 枚（本体とブログ）
+
+**`ogp.png`（1200x630）だけはサイトごとに別**（favicon 3 点は共有のまま）。
+
+| ファイル | 出るところ | 中身 |
+|---|---|---|
+| `shared/public/ogp.png` | 本体（`/ogp.png`） | `f.` マーク + `fushihara.net` |
+| `blog/public/ogp.png` | ブログ（`/blog/ogp.png`） | `f.` マーク + 「ふしはらねっとのぶろぐ」 |
+
+最初は共有の 1 枚を両方が使っていたが、**どちらのリンクを貼っても同じ絵が出る**ので
+分けた。`blog/scripts/build.mjs` は共有（favicon 3 点）を先にコピーしてから
+`blog/public` を被せるので、**同じ名前があればブログ側が勝つ**。順序を入れ替えると
+本体の絵が黙って配られる（`blog/e2e/blog.spec.ts` の「配信物」節がバイト列で見張る）。
+
+**`og:image` は絶対 URL でないとクローラが解決できない**ので、本体は `index.html` に
+直書き、ブログは `core/paths.ts` の `urls.asset(…, { absolute: true })` で組み立てる。
+配線が切れても画面には出ないので、本体は `e2e/favicon.spec.ts`、ブログは
+`blog/e2e/blog.spec.ts` の「配信物」節が meta と実体を突き合わせている。
+
+**ブログの記事は添付から 1 枚を選んで上書きできる**（管理画面の「OGP に使う」。
+Bluesky のリンクカードにも同じ絵が出る）。詳細は `blog/README.md` の「OGP の絵」。
+
+作り直すときは `f.` マークと文字を並べた HTML を headless Chrome で 1200x630 に撮り、
+`sharp` の 64 色パレットに落とす（本体 18KB → 4.8KB、ブログ 34KB → 13KB）。
+ブログ側の見出しは配信しているのと同じ Noto Sans JP。
 
 ### SNS アカウントの宣言（`rel="me"`）
 

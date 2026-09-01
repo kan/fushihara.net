@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { STORAGE_KEY } from '../../shared/theme.ts';
 import { SITE } from '../src/site/meta.ts';
@@ -313,15 +314,25 @@ test.describe('配信物', () => {
     expect(xml).toContain(`<title>${SITE_NAME}</title>`);
   });
 
-  test('og:image が実体を指している', async ({ page, request }) => {
-    // 実体は本体サイトと共有の shared/public。画面に出ないので消えても気付けない。
+  test('og:image が実体を指していて、ブログ専用の絵が配られている', async ({ page, request }) => {
+    // 画面に出ないので、配線が切れても消えても気付けない。
     await page.goto(url.index());
     const href = await page.locator('meta[property="og:image"]').getAttribute('content');
     expect(href).toBe(`${SITE_URL}${url.asset('ogp.png')}`);
 
     const res = await request.get(new URL(href!).pathname);
     expect(res.status()).toBe(200);
-    expect((await res.body()).byteLength).toBeGreaterThan(0);
+
+    // **ブログ専用の 1 枚**（「ふしはらねっとのぶろぐ」）であること。build.mjs は
+    // 共有の shared/public を先にコピーしてから blog/public を被せているので、
+    // 順序が入れ替わると本体の絵（「fushihara.net」）が黙って配られる。
+    const served = new Uint8Array(await res.body());
+    const own = new Uint8Array(await readFile(new URL('../public/ogp.png', import.meta.url)));
+    const shared = new Uint8Array(
+      await readFile(new URL('../../shared/public/ogp.png', import.meta.url)),
+    );
+    expect([...served]).toEqual([...own]);
+    expect(own.byteLength).not.toBe(shared.byteLength);
   });
 
   test('RSS が絶対 URL の記事リンクを持つ', async ({ request }) => {
