@@ -851,9 +851,9 @@ cloudflared access curl https://fushihara.net/blog/api/import \
 
 ## E2E
 
-`e2e/blog.spec.ts` は Astro 版の `blog/e2e/blog.spec.ts` を**そのまま引き継いだもの**。
-生成器を差し替えても入出力の契約は変わらない、というのが `CONTRACT.md` の趣旨で、
-ここがその出番。**lily 固有の API をここに持ち込まない**（HTTP と DOM から見える
+`e2e/blog.spec.ts` は Astro 版の同名ファイル（`git show 1361402:blog/e2e/blog.spec.ts`）
+を**そのまま引き継いだもの**。生成器を差し替えても入出力の契約は変わらない、というのが
+`CONTRACT.md` の趣旨で、ここがその出番。**lily 固有の API をここに持ち込まない**（HTTP と DOM から見える
 ものだけで合否を出す）。
 
 - フィクスチャは `e2e/fixtures/posts/`。**seed に生 SQL を使わない**のは、添付の実体が

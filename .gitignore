@@ -32,14 +32,8 @@ worker-configuration.d.ts
 /playwright-report/
 /blob-report/
 
-# blog (Astro / 独立プロジェクト)
+# blog (独立プロジェクト)
 # node_modules / dist / .wrangler は上の行 (先頭スラッシュ無し) が既にどの階層でも拾う
-.astro
 blog/test-results/
 blog/playwright-report/
 blog/blob-report/
-
-# lily (ブログの置き換え / 独立プロジェクト)
-lily/test-results/
-lily/playwright-report/
-lily/blob-report/

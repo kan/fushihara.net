@@ -7,8 +7,9 @@ import { ID, MOUNT, ORIGIN, url } from './helpers.ts';
 /**
  * このファイルは「lily のテスト」ではなく**ブログの契約のテスト**。
  *
- * Astro 版の `blog/e2e/blog.spec.ts` をそのまま引き継いでいる。生成器を差し替えても
- * 入出力の契約は変わらない、というのが `CONTRACT.md` の趣旨で、今回がその出番。
+ * Astro 版の同名ファイル (`git show 1361402:blog/e2e/blog.spec.ts`) をそのまま引き継いで
+ * いる。生成器を差し替えても入出力の契約は変わらない、というのが `CONTRACT.md` の
+ * 趣旨で、今回がその出番。
  * だからここには lily 固有の API (D1 のスキーマ、query layer、Hono) を持ち込まない。
  * HTTP と DOM から見えるものだけで合否を出す。
  *
