@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown, type RenderMedia } from '../../src/core/render/index.ts';
-import { imageMarkdown, inLinkUrl } from '../../src/core/render/markdown.ts';
+import { blockPadding, imageMarkdown, inLinkUrl } from '../../src/core/render/markdown.ts';
+import { linkCardHtml } from '../../src/core/link-card.ts';
 
 const MEDIA: readonly RenderMedia[] = [
   { public_id: 'MEDIA-ID', filename: 'sample.png', width: 96, height: 48 },
@@ -284,5 +285,75 @@ describe('inLinkUrl (貼り付けで URL を展開してよいか)', () => {
 
   it('行をまたいだ `](` は見ない', () => {
     expect(at('[題](\n|')).toBe(false);
+  });
+});
+
+describe('リンクカード', () => {
+  const CARD = linkCardHtml({
+    url: 'https://example.com/a?x=1&y=2',
+    title: '相手の題',
+    description: '相手の説明',
+    siteName: 'example.com',
+    thumbnail: { filename: 'sample.png', width: 96, height: 48 },
+  });
+
+  it('ブロックとして出て、サムネが placeholder になる', async () => {
+    const out = await html(`本文。\n\n${CARD}\n\n続き。`);
+    // 生 HTML なので renderer は素通しする。書き換わるのは添付の参照だけ。
+    expect(out).toContain('<a class="link-card" href="https://example.com/a?x=1&amp;y=2">');
+    expect(out).toContain('src="lily-media://MEDIA-ID/sample.png"');
+    expect(out).toContain('相手の題');
+    // 段落に飲まれていない（`<p>` の中に入ると本文の途中に混ざる）
+    expect(out).toContain('</p>\n<a class="link-card"');
+  });
+
+  it('題と説明はエスケープされる', () => {
+    const card = linkCardHtml({
+      url: 'https://example.com/"><script>alert(1)</script>',
+      title: '<script>alert(1)</script>',
+      description: 'a & b',
+      siteName: 'example.com',
+      thumbnail: null,
+    });
+    expect(card).not.toContain('<script>');
+    expect(card).toContain('a &amp; b');
+  });
+
+  it('サムネが無ければ img を出さない', () => {
+    const card = linkCardHtml({
+      url: 'https://example.com/',
+      title: '題',
+      description: null,
+      siteName: 'example.com',
+      thumbnail: null,
+    });
+    expect(card).not.toContain('<img');
+    expect(card).not.toContain('link-card-desc');
+  });
+
+  it('空行を含まない (HTML ブロックが途中で切れる)', () => {
+    expect(CARD).not.toMatch(/\n\s*\n/);
+  });
+});
+
+describe('blockPadding (ブロックとして置き換えるための改行)', () => {
+  /** `|` 2 つで置き換える範囲を示す。 */
+  function pad(text: string): { before: string; after: string } {
+    const start = text.indexOf('|');
+    const end = text.indexOf('|', start + 1) - 1;
+    return blockPadding(text.replaceAll('|', ''), start, end);
+  }
+
+  it('段落の途中なら前後に空行を足す', () => {
+    expect(pad('本文の途中に |リンク| を貼った')).toEqual({ before: '\n\n', after: '\n\n' });
+  });
+
+  it('既にある改行は数える', () => {
+    expect(pad('前の段落\n\n|リンク|\n\n次の段落')).toEqual({ before: '', after: '' });
+    expect(pad('前の段落\n|リンク|\n次の段落')).toEqual({ before: '\n', after: '\n' });
+  });
+
+  it('文書の端では足さない', () => {
+    expect(pad('|リンク|')).toEqual({ before: '', after: '' });
   });
 });

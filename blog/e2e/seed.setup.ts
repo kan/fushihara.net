@@ -67,6 +67,7 @@ setup('フィクスチャを取り込む', async ({ request }) => {
   expect(body.imported.map((post) => post.path).sort()).toEqual([
     'aliased',
     'draft-example',
+    'link-card',
     'order-tie-a',
     'order-tie-b',
     'order-time-a',

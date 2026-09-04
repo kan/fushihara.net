@@ -34,7 +34,8 @@ export function statusFor(code: string): ApiErrorStatus {
   ) {
     return 409;
   }
-  if (code === 'bluesky-failed') return 502;
+  // 貼った先が読めない (落ちている / 題が無い) のもこちらの入力の問題ではない。
+  if (code === 'bluesky-failed' || code === 'link-unreachable') return 502;
   return 400;
 }
 

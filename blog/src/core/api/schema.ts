@@ -92,5 +92,9 @@ export const linkTitleSchema = z.object({
   url: z.string().url(),
 });
 
+export const linkCardSchema = z.object({
+  url: z.string().url(),
+});
+
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 export type UpdatePostInput = z.infer<typeof updatePostSchema>;

@@ -13,6 +13,7 @@ D1 の行しか作れず、画像が置けない。import なら D1 と R2 の�
 | ディレクトリ | 何を守っているか |
 |---|---|
 | `rendering-sample/` | 見出し・コード・画像・引用・本文中の HTML の描画。RSS の全文配信 |
+| `link-card/` | リンクカードが段落に飲まれずに出ること。サムネが記事でもフィードでも解決されること |
 | `order-time-a/` `order-time-z/` | 同じ日でも時刻で並ぶこと。早朝 JST が前日にならないこと |
 | `order-tie-a/` `order-tie-b/` | **同時刻の tie-break が `public_id` 昇順**であること |
 | `draft-example/` | 下書きが公開側に出ないこと。プレビュー URL でだけ見えること |

@@ -283,6 +283,41 @@ async function upload(file: File): Promise<string | null> {
 }
 
 /**
+ * 貼った URL をカードの HTML にする。**サムネを添付として取り込む**ので記事が要る。
+ *
+ * 取り込んだ添付をここで `media` に足すのは `upload()` と同じ理由。足さないと、
+ * プレビューが本文の `./card-….png` を解決できず、警告だけが出る。
+ */
+async function makeCard(url: string): Promise<string | null> {
+  const id = props.publicId;
+  if (id === null) {
+    error.value = '先に保存してからカードにする（どの記事の添付か決まらないため）';
+    return null;
+  }
+
+  let html: string | null = null;
+  await run(async () => {
+    const res = await client.posts[':publicId']['link-card'].$post({
+      param: { publicId: id },
+      json: { url },
+    });
+    if (!res.ok) return await fail(res);
+
+    const card = await res.json();
+    html = card.html;
+
+    // **既にあるものが返ることがある。** サムネのファイル名はページの URL から
+    // 決まるので、同じリンクを 2 回カードにすると同じ添付が返る。素直に足すと
+    // 一覧に同じ行が並び、`:key` が重複する。
+    const added = card.media;
+    if (added !== null && post.value && !post.value.media.some((m) => m.publicId === added.publicId)) {
+      post.value = { ...post.value, media: [...post.value.media, added] };
+    }
+  });
+  return html;
+}
+
+/**
  * OGP に使う添付を選ぶ / やめる（`null` で解除）。
  *
  * **`fill()` を呼ばない。** 記事の中身は変わらないので、書きかけを消さないよう
@@ -453,7 +488,7 @@ onMounted(async () => {
   <div class="editor">
     <div class="panel">
       <h2>本文</h2>
-      <MarkdownEditor v-model="bodyMd" :upload="upload" />
+      <MarkdownEditor v-model="bodyMd" :upload="upload" :make-card="makeCard" />
     </div>
     <div class="panel">
       <h2>プレビュー</h2>

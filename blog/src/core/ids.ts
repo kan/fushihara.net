@@ -11,3 +11,8 @@ export function newPublicId(): string {
 export function nowIso(): string {
   return new Date().toISOString();
 }
+
+/** バイト列を 16 進に。ハッシュを人の読める形で持ち回るのに使う。 */
+export function toHex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}

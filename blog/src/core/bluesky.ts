@@ -245,7 +245,7 @@ async function uploadThumb(
  * XRPC を 1 本叩く。**失敗の理由は握り潰さずに載せる。**
  *
  * 押した人は管理者ひとりなので、「App Password が違う」のか「PDS が落ちている」
- * のかが画面から分かる方がよい（`link-title.ts` が理由を返さないのは、あちらが
+ * のかが画面から分かる方がよい（`link-preview.ts` が理由を返さないのは、あちらが
  * 外から来た URL を扱う口だから）。
  */
 async function xrpc<T>(

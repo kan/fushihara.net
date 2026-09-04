@@ -161,6 +161,49 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
   `body_html` を作り直すだけで埋めない。埋めたければ**入れ直すか再 import する**
   （まだ配信していないので、実害があるのは手元の D1 だけ）
 
+## リンクカード
+
+貼った URL を、題・説明・サムネの付いたブロックにして本文へ入れる
+（`core/link-card.ts`）。**既定は今までどおりテキストリンク**で、貼った直後に出る
+「カードにする」を押したときだけ替わる。
+
+**なぜこの形なのか**（生 HTML である理由・サムネを添付として取り込む理由・取りに
+行く関門を 1 本に絞る理由）は `core/link-card.ts` と `core/link-preview.ts` の
+先頭コメントにある。ここには**外から見える形と、押したときに何が起きるか**だけを書く。
+
+本文に入るのは生 HTML で、renderer は raw ノードをそのまま運ぶだけなので
+**`RENDERER_VERSION` を上げる必要が無い**。
+
+```html
+<a class="link-card" href="https://example.com/x">
+  <img class="link-card-thumb" src="./card-example-com-0a1b2c3d.png" alt="" width="1200" height="630" loading="lazy" decoding="async">
+  <span class="link-card-text">
+    <span class="link-card-title">相手の題</span>
+    <span class="link-card-desc">相手の説明</span>
+    <span class="link-card-site">example.com</span>
+  </span>
+</a>
+```
+
+サムネは記事の添付になる。**ファイル名はページの URL から決まる**
+（`card-<host>-<8 桁>.<ext>`）ので、同じリンクを貼り直しても添付は増えない。
+拡張子は相手の `Content-Type` から決め、**ラスタだけ**受け付ける。
+
+口は `POST /api/posts/:publicId/link-card`。**記事に紐づくのはサムネを添付に
+するから**で、未保存の記事では断る（画像のアップロードと同じ）。
+
+| 相手の状態 | 返るもの | 管理画面 |
+|---|---|---|
+| 題が取れた | カードの HTML と、取り込んだ添付 | 本文の `[題](url)` を丸ごと置き換える |
+| 題は取れたが絵が無い / 取れない | 画像なしのカード | 同上 |
+| 題がまったく取れない | **502（`link-unreachable`）** | テキストリンクのままにする |
+
+差し込むときは**前後に空行を空ける**（`blockPadding`）。段落の途中に貼ったリンクを
+そのまま替えると、HTML ブロックが段落を中断できず**インライン要素として出る**。
+
+リーダーにはこのブログの CSS が無いので、**素のままでも上から絵・題・説明・出典と
+読める順**にしてある。`blog.css` 側で順序を入れ替えないこと。
+
 ## 1 箇所に閉じてあるもの
 
 同じ規則が 2 箇所にあると、片方だけ直した日に黙って食い違う。次は意図的に
@@ -278,14 +321,15 @@ import type { LilyApi } from './core/api/index.ts';
 
 const client = hc<LilyApi>('/blog/api');
 const res = await client.posts.$post({ json: { title: '…' } });
-if (!res.ok) { /* 400 / 404 / 409 */ }
+if (!res.ok) { /* 400 / 404 / 409 / 502 */ }
 const { post } = await res.json();  // 型は handler から
 ```
 
 - **route のパスは mount を知らない。** `<mount>/api` にマウントされるので、
   リテラルのまま型に残り、`hc` が `client.posts` の形を作れる
-- **エラーのステータスは `400 | 404 | 409` に絞る。** 広い型にすると
-  `if (res.ok)` の絞り込みが効かなくなる
+- **エラーのステータスは `400 | 404 | 409 | 502` に絞る。** 広い型にすると
+  `if (res.ok)` の絞り込みが効かなくなる（502 は上流の失敗。Bluesky への告知と
+  リンクカードが返す）
 - **本文が変わる操作のときだけ `body_html` を描き直す。** 配信側が毎回描き直さずに
   済む。`GET` は書き込まない（一覧→詳細を開くだけで D1 に書くことになる）。
   添付を消したときも描き直す（消えた画像を指す `<img>` を公開ページに残さない）
@@ -303,11 +347,12 @@ const { post } = await res.json();  // 型は handler から
   通す（export でそのままディレクトリに書き出すため）。ブラウザの `Content-Type`
   だけで通すと、**上げられるのに取り込み直せない添付**ができる（書庫に
   Content-Type は無いので、import 側は拡張子しか見られない）
-- `POST /api/link-title` は**外から来た URL をそのまま fetch する口**。
-  http/https だけ・IP リテラルとローカル向けの名前を弾く・**リダイレクトを自分で
-  追って飛び先も毎回検査する**・5 秒で打ち切る・先頭 64KB だけ読む、で狭めてある
-  （`redirect: 'follow'` に任せると最初の 1 回しか検査されず、公開 URL から
-  内側へ飛ばされる）
+- `POST /api/link-title` と `POST /api/posts/:publicId/link-card` は**外から来た
+  URL をそのまま fetch する口**。http/https だけ・IP リテラルとローカル向けの名前を
+  弾く・**リダイレクトを自分で追って飛び先も毎回検査する**・5 秒で打ち切る・
+  先頭 64KB だけ読む、で狭めてある（`redirect: 'follow'` に任せると最初の 1 回しか
+  検査されず、公開 URL から内側へ飛ばされる）。**関門は `fetchExternal()` の 1 本**で、
+  カードが OG 画像を取りに行くときも同じところを通る（「リンクカード」の節）
 
 ## 管理画面
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { client } from '../api.ts';
-import { imageMarkdown, inLinkUrl } from '../../core/render/markdown.ts';
+import { caretPoint } from '../caret.ts';
+import { blockPadding, imageMarkdown, inLinkUrl } from '../../core/render/markdown.ts';
 import Icon from './Icon.vue';
 
 const props = defineProps<{
@@ -11,6 +12,13 @@ const props = defineProps<{
    * **本文に入れるのは `./<filename>` の相対参照**で、配信 URL は描画時に解決する。
    */
   upload: (file: File) => Promise<string | null>;
+  /**
+   * URL を預けるとカードの HTML を返す。失敗したら null。
+   *
+   * 組み立てるのは Worker 側（`core/link-card.ts`）。相手のページを読むのも、
+   * サムネを添付として取り込むのも向こうの仕事で、ここは差し込むだけ。
+   */
+  makeCard: (url: string) => Promise<string | null>;
 }>();
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>();
@@ -18,6 +26,54 @@ const emit = defineEmits<{ 'update:modelValue': [string] }>();
 const area = ref<HTMLTextAreaElement | null>(null);
 const picker = ref<HTMLInputElement | null>(null);
 const dragging = ref(0);
+
+/**
+ * 直前に貼った URL と、そのとき本文へ入れた文字列。**カードにできるのはこれだけ。**
+ *
+ * 位置だけでなく中身も覚えるのは、本文が動いたかを照合するため。
+ */
+const justPasted = ref<{ url: string; start: number; text: string } | null>(null);
+const carding = ref(false);
+
+/**
+ * 「カードにする」を出してよいか。**入れた場所の中身が変わったら黙って消える。**
+ * 打ち始めた人に、もう当たらない操作を見せ続けない。
+ */
+const cardTarget = computed(() => {
+  const target = justPasted.value;
+  if (target === null) return null;
+  const end = target.start + target.text.length;
+  return props.modelValue.slice(target.start, end) === target.text ? { ...target, end } : null;
+});
+
+/** 貼ったリンクの真下に出す位置。textarea の左上からの座標。 */
+const popupAt = ref<{ top: number; left: number } | null>(null);
+const popup = ref<HTMLElement | null>(null);
+
+/**
+ * 貼ったリンクの位置へ寄せる。**入力欄の外へはみ出させない。**
+ *
+ * 本文が変わると折り返しも変わるので、`modelValue` を見て置き直す。textarea を
+ * スクロールしたときも同じ（`caretPoint` はスクロール量を引いた座標を返す）。
+ */
+function placePopup(): void {
+  const area_ = area.value;
+  const target = cardTarget.value;
+  if (!area_ || target === null) {
+    popupAt.value = null;
+    return;
+  }
+
+  const point = caretPoint(area_, target.start);
+  const width = popup.value?.offsetWidth ?? 0;
+  popupAt.value = {
+    top: point.top + point.lineHeight,
+    left: Math.max(0, Math.min(point.left, area_.clientWidth - width)),
+  };
+}
+
+// **描画のあとに測る。** 幅は出てみないと分からず、折り返しも本文が入ってから決まる。
+watch([cardTarget, () => props.modelValue], () => void nextTick(placePopup), { flush: 'post' });
 
 const TABLE = ['| 見出し | 見出し |', '| --- | --- |', '| 中身 | 中身 |'].join('\n');
 
@@ -69,10 +125,8 @@ function prefixLine(mark: string): void {
 /** 前後に空行を空けてブロックを差し込む (表・水平線)。 */
 function insertBlock(text: string): void {
   const { start } = selection();
-  const value = props.modelValue;
-  const head = value.slice(0, start);
-  const gap = head === '' || head.endsWith('\n\n') ? '' : head.endsWith('\n') ? '\n' : '\n\n';
-  surround(`${gap}${text}\n`, '', '');
+  const { before } = blockPadding(props.modelValue, start, start);
+  surround(`${before}${text}\n`, '', '');
 }
 
 /**
@@ -207,6 +261,7 @@ async function onPaste(event: ClipboardEvent): Promise<void> {
   const pasted = props.modelValue.slice(0, start) + inserted + props.modelValue.slice(end);
   emit('update:modelValue', pasted);
   reselect(start + inserted.length, start + inserted.length);
+  justPasted.value = { url: text, start, text: inserted };
 
   // 選んだ文字が題なら、取りに行く必要がない。
   if (selected !== '') return;
@@ -227,6 +282,46 @@ async function onPaste(event: ClipboardEvent): Promise<void> {
     current.slice(0, start) + replaced + current.slice(start + inserted.length),
   );
   reselect(start + replaced.length, start + replaced.length);
+
+  // 題が入って形が変わったので、カードの差し替え先も合わせる。**この貼り付けの
+  // ものだけ**（待っているあいだに別の URL を貼られていたら触らない）。
+  if (justPasted.value?.start === start && justPasted.value.text === inserted) {
+    justPasted.value = { url: text, start, text: replaced };
+  }
+}
+
+/**
+ * 貼った URL をカードに替える。
+ *
+ * **差し替えるのは、入れた場所の中身が今も同じときだけ。** 本文から URL を探して
+ * 置き換えると、同じ URL を前にも貼っていたときに古い方が変わる（題の差し替えと
+ * 同じ理由）。取りに行くあいだにも本文は動くので、前後 2 回照合する。
+ */
+async function toCard(): Promise<void> {
+  const target = cardTarget.value;
+  if (target === null || carding.value) return;
+
+  carding.value = true;
+  let html: string | null = null;
+  try {
+    html = await props.makeCard(target.url);
+  } finally {
+    carding.value = false;
+  }
+  if (html === null) return;
+
+  const current = props.modelValue;
+  if (current.slice(target.start, target.end) !== target.text) return;
+
+  // **生 HTML は空行で挟まないとブロックにならない。** 段落の途中に貼った
+  // リンクをそのまま替えると、カードが段落の中のインライン要素になる。
+  const { before, after } = blockPadding(current, target.start, target.end);
+  const block = `${before}${html}${after}`;
+  emit('update:modelValue', current.slice(0, target.start) + block + current.slice(target.end));
+
+  justPasted.value = null;
+  const at = target.start + block.length;
+  reselect(at, at);
 }
 
 function isHttpUrl(text: string): boolean {
@@ -331,7 +426,23 @@ function isHttpUrl(text: string): boolean {
       :value="modelValue"
       @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
       @paste="onPaste"
+      @scroll="placePopup"
+      @keydown.esc="justPasted = null"
     />
+    <!-- 貼った直後だけ、貼ったリンクの真下に出す。既定はテキストリンクのまま。
+         `mousedown.prevent` は textarea からフォーカスを外さないため。 -->
+    <div
+      v-if="cardTarget"
+      ref="popup"
+      class="card-popup"
+      :style="popupAt ? { top: `${popupAt.top}px`, left: `${popupAt.left}px` } : { visibility: 'hidden' }"
+      @mousedown.prevent
+    >
+      <button type="button" :disabled="carding" title="題と説明とサムネのブロックにする" @click="toCard">
+        <Icon name="link" /><span>{{ carding ? '取りに行っています…' : 'カードにする' }}</span>
+      </button>
+      <button type="button" class="close" title="閉じる (Esc)" @click="justPasted = null">×</button>
+    </div>
   </div>
   <p class="muted">
     画像はドラッグ＆ドロップ・貼り付け・ボタンで入る。URL を貼るとタイトル付きのリンクになる。

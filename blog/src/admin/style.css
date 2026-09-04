@@ -230,10 +230,14 @@ label > input, label > textarea, label > select { display: block; margin-top: 0.
 .path-row { display: flex; gap: 0.5rem; margin-top: 0.2rem; }
 .path-row input { flex: 1; }
 
-.editor { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-top: 1.25rem; }
-.editor > .panel { display: flex; flex-direction: column; }
+/* **`minmax(0, 1fr)` にすること。** 素の `1fr` は `minmax(auto, 1fr)` なので、
+ * 折り返せない長い文字列 (URL やリンクカードの題) がプレビュー側にあると、
+ * その列が中身の幅まで広がって**入力欄が潰れる**。 */
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; margin-top: 1.25rem; }
+.editor > .panel { display: flex; flex-direction: column; min-width: 0; }
 .editor textarea { flex: 1; min-height: 32rem; }
-.editor .preview { flex: 1; overflow-y: auto; }
+/* 上と対で要る。列を狭められても、中身が溢れるのではなく折り返るように。 */
+.editor .preview { flex: 1; overflow-y: auto; overflow-wrap: anywhere; }
 
 .panels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; margin-top: 1.25rem; }
 
@@ -299,6 +303,37 @@ label > input, label > textarea, label > select { display: block; margin-top: 0.
   padding: 0;
   font-size: 0.75rem;
 }
+
+/* URL を貼った直後だけ、**貼った場所の真下**に出る「カードにする」。
+ * 既定はテキストリンクのままなので、押さなければ何も起きない。
+ * 位置は `caret.ts` が測って `top` / `left` で入る。 */
+.card-popup {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  white-space: nowrap;
+}
+
+.card-popup button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: auto;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  background: transparent;
+  font-size: 0.8rem;
+}
+
+.card-popup button:hover:not(:disabled) { background: var(--note-bg); color: var(--accent); }
+.card-popup .close { padding: 0.25rem 0.4rem; color: var(--text-muted); }
 
 /* === タグ === */
 .tag-input {
@@ -422,6 +457,24 @@ label > input, label > textarea, label > select { display: block; margin-top: 0.
 .preview pre { padding: 0.8rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; }
 .preview :not(pre) > code { padding: 0.1rem 0.3rem; border-radius: 4px; background: var(--note-bg); }
 .preview blockquote { padding-left: 0.8rem; border-left: 3px solid var(--accent); color: var(--text-muted); }
+/* リンクカードは公開ページでは横並びの箱になる (blog.css)。ここでは「1 つの
+ * かたまりに見える」ことだけ再現する。細部まで写すと二重管理になる。 */
+.preview .link-card {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.preview .link-card-thumb { flex: 0 0 auto; width: 6rem; height: auto; border-radius: 4px; }
+.preview .link-card-text { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.preview .link-card-title { font-weight: 600; }
+.preview :is(.link-card-desc, .link-card-site) { color: var(--text-muted); font-size: 0.8rem; }
+
 .preview table { border-collapse: collapse; }
 .preview :is(th, td) { padding: 0.3rem 0.6rem; border: 1px solid var(--border); }
 

@@ -159,6 +159,27 @@ test.describe('ナビゲーション', () => {
   });
 });
 
+test.describe('リンクカード', () => {
+  test('ブロックとして出て、サムネが配信 URL に解決される', async ({ page }) => {
+    await page.goto(url.post('link-card'));
+
+    const card = page.locator('article a.link-card');
+    await expect(card).toHaveAttribute('href', 'https://example.com/x');
+    await expect(card.locator('.link-card-title')).toHaveText('相手の題');
+    await expect(card.locator('.link-card-site')).toHaveText('example.com');
+
+    // 本文には `./…` で入っている。ここが解決されないと絵が出ない。
+    const thumb = card.locator('img.link-card-thumb');
+    await expect(thumb).toHaveJSProperty('naturalWidth', 96);
+    expect(new URL(await thumb.evaluate((el) => (el as HTMLImageElement).src)).pathname).toContain(
+      `${MOUNT}/media/`,
+    );
+
+    // **段落に飲まれていない。** 飲まれると本文の途中のインライン要素になる。
+    await expect(page.locator('article p > a.link-card')).toHaveCount(0);
+  });
+});
+
 test.describe('並び順と日付', () => {
   // **Astro 版の「同日なら slug 昇順」から変えた仕様。** 同時刻のときは
   // public_id 昇順で、内部 id ではないので export / import で振り直されても並びが変わらない。
@@ -176,6 +197,7 @@ test.describe('並び順と日付', () => {
       // 8/19 の 2 本。**名前の順は a → b だが public_id は b の方が小さい。**
       url.post('order-tie-b'),
       url.post('order-tie-a'),
+      url.post('link-card'), // 8/18
     ]);
   });
 
@@ -392,6 +414,17 @@ test.describe('配信物', () => {
     // インラインコードと、言語指定なしのコードブロック
     expect(feed.code).toContain('<img src="./dog.png">');
     expect(feed.code).toContain('<img src="./cat.png">');
+  });
+
+  test('RSS でもカードの絵が絶対 URL になる', async ({ page, request }) => {
+    // カードは生 HTML なので、`./…` の解決も絶対化も**開始タグの書き換え**に
+    // 乗っている。ここが外れると、リーダーの中でだけ絵が出なくなる。
+    const feed = await feedHtml(page, request, 'リンクカードのある記事');
+
+    const image = feed.urls.find((u) => u.includes('card-example-com'));
+    expect(image, 'カードのサムネがフィードに入っている').toBeDefined();
+    expect(new URL(image!).origin).toBe(SITE_URL);
+    expect((await request.get(new URL(image!).pathname)).status()).toBe(200);
   });
 
   test('sitemap がある', async ({ request }) => {

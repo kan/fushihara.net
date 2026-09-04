@@ -37,3 +37,29 @@ export function inLinkUrl(text: string, at: number): boolean {
   if (open < 0 || open + 2 > at) return false;
   return !/[)\n]/.test(text.slice(open + 2, at));
 }
+
+/**
+ * 本文の `[start, end)` をブロック要素で置き換えるときに、前後へ足す改行。
+ *
+ * **生 HTML は空行で挟まないとブロックにならない。** CommonMark の HTML ブロック
+ * (type 7) は段落を中断できないので、`本文の途中に [題](url) を貼った` の
+ * リンクだけをカードに替えると、段落の中のインライン要素として出る。
+ *
+ * 既にある改行は数える (足しすぎると本文に空行が増えていく)。文書の先頭と末尾では
+ * 足さない。
+ */
+export function blockPadding(
+  text: string,
+  start: number,
+  end: number,
+): { readonly before: string; readonly after: string } {
+  const beforeText = text.slice(0, start);
+  const afterText = text.slice(end);
+  const trailing = /\n*$/.exec(beforeText)?.[0].length ?? 0;
+  const leading = /^\n*/.exec(afterText)?.[0].length ?? 0;
+
+  return {
+    before: beforeText === '' ? '' : '\n'.repeat(Math.max(0, 2 - trailing)),
+    after: afterText === '' ? '' : '\n'.repeat(Math.max(0, 2 - leading)),
+  };
+}

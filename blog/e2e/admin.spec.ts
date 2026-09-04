@@ -231,6 +231,69 @@ test.describe('編集画面', () => {
     await expect(area).toHaveValue('ここに [https://example.com/x](https://example.com/x)');
   });
 
+  test('貼った直後だけカードにできる', async ({ page }) => {
+    await openDraft(page);
+    const area = page.locator('.dropzone textarea');
+
+    // 外へ出る 2 つの口を止める。相手の応答で結果が変わるテストにしない。
+    await page.route(`**${MOUNT}/api/link-title`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '{"title":"相手の題"}' }),
+    );
+    await page.route(`**${MOUNT}/api/posts/*/link-card`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          html: '<a class="link-card" href="https://example.com/x">カード</a>',
+          media: null,
+        }),
+      }),
+    );
+
+    async function paste(body: string, at: number): Promise<void> {
+      await area.fill(body);
+      await area.evaluate((element, index) => {
+        const textarea = element as HTMLTextAreaElement;
+        textarea.focus();
+        textarea.setSelectionRange(index, index);
+        const data = new DataTransfer();
+        data.setData('text/plain', 'https://example.com/x');
+        textarea.dispatchEvent(
+          new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+        );
+      }, at);
+    }
+
+    const offer = page.locator('.card-popup button', { hasText: 'カードにする' });
+    // 貼る前は出ていない。既定はテキストリンクのまま。
+    await expect(offer).toHaveCount(0);
+
+    await paste('本文の途中に ', 7);
+    await expect(area).toHaveValue('本文の途中に [相手の題](https://example.com/x)');
+    await expect(offer).toBeVisible();
+
+    // **貼った位置の下に出る。** 入力欄の下ではどのリンクの話か分からない。
+    const box = (await offer.boundingBox())!;
+    const textarea = (await area.boundingBox())!;
+    expect(box.y).toBeGreaterThan(textarea.y);
+    expect(box.y).toBeLessThan(textarea.y + 4 * 24); // 1 行目に貼ったので上の方
+    expect(box.x + box.width).toBeLessThanOrEqual(textarea.x + textarea.width + 1);
+
+    await offer.click();
+    // **段落の途中でも空行で挟む。** 挟まないと生 HTML がインライン要素として出る
+    // （後ろは本文の末尾なので足さない）。
+    await expect(area).toHaveValue(
+      '本文の途中に \n\n<a class="link-card" href="https://example.com/x">カード</a>',
+    );
+    await expect(offer).toHaveCount(0);
+
+    // 貼ったところを書き換えたら、もう当たらないので黙って消える。
+    await paste('もう一度 ', 5);
+    await expect(offer).toBeVisible();
+    await area.fill('全部消した');
+    await expect(offer).toHaveCount(0);
+  });
+
   test('説明を空にすると本文の冒頭が下に見える', async ({ page }) => {
     // 見えているものが、そのまま一覧・OGP・フィードに出る (配信側と同じ関数)。
     await openDraft(page);

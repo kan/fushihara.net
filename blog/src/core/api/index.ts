@@ -52,7 +52,8 @@ import {
 import { applyTags, getTagsForPosts, listTagsWithCounts, resolveTags } from '../db/tags.ts';
 import { groupByPost } from '../view.ts';
 import type { MediaRow, PostRow } from '../db/types.ts';
-import { fetchLinkTitle } from '../link-title.ts';
+import { buildLinkCard } from '../link-card.ts';
+import { fetchLinkTitle, linkUserAgent } from '../link-preview.ts';
 import { imageDimensions } from '../media/dimensions.ts';
 import { canBeOgp, mimeForFilename } from '../media/formats.ts';
 import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
@@ -72,6 +73,7 @@ import { uniqueViolationTarget } from '../db/errors.ts';
 import { apiError } from './errors.ts';
 import {
   createPostSchema,
+  linkCardSchema,
   linkTitleSchema,
   listPostsSchema,
   ogpSchema,
@@ -110,6 +112,8 @@ const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 
 export function createApi(config: PageConfig) {
   const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
+  // 外へ取りに行くときに名乗る名前。**空だと断られる先がある**（`link-preview.ts`）。
+  const userAgent = linkUserAgent(config.site);
   const api = new Hono<ApiEnv>();
 
   return api
@@ -153,7 +157,7 @@ export function createApi(config: PageConfig) {
      * 取れなくても書くのを止めないよう、失敗は `title: null` で返す。
      */
     .post('/link-title', zValidator('json', linkTitleSchema), async (c) => {
-      return c.json(await fetchLinkTitle(c.req.valid('json').url));
+      return c.json(await fetchLinkTitle(c.req.valid('json').url, userAgent));
     })
 
     .get('/posts', zValidator('query', listPostsSchema), async (c) => {
@@ -493,6 +497,33 @@ export function createApi(config: PageConfig) {
       // 本文の `./<filename>` が解決できるようになるので描き直す。
       const unresolved = await renderAndStore(db, post);
       return c.json({ media: toMediaView(urls, media), unresolvedMedia: unresolved }, 201);
+    })
+
+    /**
+     * 貼った URL を、題・説明・サムネの付いたカード（生 HTML）にする。
+     *
+     * **記事に紐づくのはサムネを添付として取り込むから。** 中身は `link-card.ts`。
+     *
+     * ここで本文を描き直さない。返した HTML を本文へ入れるかどうかは管理画面が
+     * 決めることで、まだ `body_md` に入っていない（添付が増えただけの状態では、
+     * 描き直しても出力は変わらない）。
+     */
+    .post('/posts/:publicId/link-card', zValidator('json', linkCardSchema), async (c) => {
+      const db = c.env.DB;
+      const post = await getPostByPublicId(db, c.req.param('publicId'));
+      if (!post) return c.json(...apiError('post-not-found'));
+
+      const card = await buildLinkCard(
+        { db, bucket: c.env.MEDIA, userAgent },
+        post,
+        c.req.valid('json').url,
+      );
+      if (!card.ok) return c.json(...apiError(card.error));
+
+      return c.json({
+        html: card.value.html,
+        media: card.value.media === null ? null : toMediaView(urls, card.value.media),
+      });
     })
 
     .delete('/media/:publicId', async (c) => {
