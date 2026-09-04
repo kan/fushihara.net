@@ -22,6 +22,27 @@ updates:
     commit-message:
       prefix: deps
 
+  # ブログ (blog/) は独自の package.json を持つ独立プロジェクトで、本体の
+  # npm ci には入らない。ここに別エントリを置かないと、blog/ の wrangler が
+  # 誰にも更新されないまま取り残される。PR は deploy-blog.yml の
+  # pull_request トリガー (paths: blog/**) が拾ってテストする。
+  - package-ecosystem: npm
+    directory: /blog
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    # どちらの package.json の更新かが件名で分かるようにする。
+    commit-message:
+      prefix: deps(blog)
+
   # Actions のバージョン。actions/*@v4 が Node 20 前提で deprecated 警告を
   # 出しているが、ここからの PR で解消する。
   - package-ecosystem: github-actions
@@ -37,5 +58,3 @@ updates:
           - '*'
     commit-message:
       prefix: ci
-# ブログ (Phase 2) を blog/ に追加したら、独自の package.json を持つので
-# directory: /blog の npm エントリをここに足す。
