@@ -34,6 +34,16 @@ updates:
       time: '09:00'
       timezone: Asia/Tokyo
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7.0 はネイティブ (Go) 実装で typescript/lib/tsc を公開しない
+      # ため、それを require する vue-tsc (Volar) が起動できず、blog の
+      # typecheck が ERR_PACKAGE_PATH_NOT_EXPORTED で落ちる (PR #11 で実測)。
+      # Volar が使えるプログラマティック API は TS 7.1 で安定予定なので、
+      # 7.0.x だけを無視して 7.1 の PR は受け取る (可否は CI が判定する)。
+      # 本体 (directory: /) は vue-tsc を使わないので既に TS 7 で動いており、
+      # この ignore は blog のエントリにだけ要る。
+      - dependency-name: typescript
+        versions: ['7.0.x']
     groups:
       npm-minor-patch:
         update-types:
