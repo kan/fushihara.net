@@ -14,8 +14,8 @@
     "typecheck": "wrangler types && tsc -b"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.54.1",
-    "@cloudflare/vitest-plugin": "^1.1.1",
+    "@cloudflare/vite-plugin": "^1.54.2",
+    "@cloudflare/vitest-plugin": "^1.1.2",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.4.0",
     "typescript": "^7.0.2",
@@ -25,6 +25,6 @@
   },
   "dependencies": {
     "@kanf/wema": "^0.3.3",
-    "simple-icons": "^16.28.0"
+    "simple-icons": "^16.29.0"
   }
 }
