@@ -574,7 +574,7 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
   よそから記事を持ち込むときもこの経路を通す（`CONTRACT.md`）
 - **Worker 名は `fushihara-blog`、D1 と R2 は `fushihara-net-lily` 系のまま。**
   名前を揃えるために記事と添付を引っ越す理由がないため
-- **ここだけ TypeScript が 5.9 系のまま。** 本体は 7 系で動いているが、blog の
+- **ここだけ TypeScript が 6 系で止まっている。** 本体は 7 系で動いているが、blog の
   `typecheck` は管理画面のために `vue-tsc` を通す。TS 7.0 はネイティブ（Go）実装で
   `typescript/lib/tsc` を公開しないので、それを require する vue-tsc（Volar）が
   起動できず `ERR_PACKAGE_PATH_NOT_EXPORTED` で落ちる。`.github/dependabot.yml` の
