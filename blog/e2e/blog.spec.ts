@@ -163,7 +163,7 @@ test.describe('リンクカード', () => {
   test('ブロックとして出て、サムネが配信 URL に解決される', async ({ page }) => {
     await page.goto(url.post('link-card'));
 
-    const card = page.locator('article a.link-card');
+    const card = page.locator('article a.link-card[href="https://example.com/x"]');
     await expect(card).toHaveAttribute('href', 'https://example.com/x');
     await expect(card.locator('.link-card-title')).toHaveText('相手の題');
     await expect(card.locator('.link-card-site')).toHaveText('example.com');
@@ -177,6 +177,19 @@ test.describe('リンクカード', () => {
 
     // **段落に飲まれていない。** 飲まれると本文の途中のインライン要素になる。
     await expect(page.locator('article p > a.link-card')).toHaveCount(0);
+  });
+
+  test('GitHub のカードは統計の行が付き、サムネが正方形で出る', async ({ page }) => {
+    await page.goto(url.post('link-card'));
+
+    const card = page.locator('article a.link-card-github');
+    await expect(card.locator('.link-card-title')).toHaveText('kan/wema');
+    await expect(card.locator('.link-card-meta')).toHaveText('★ 12 · Fork 1 · TypeScript');
+
+    // **アバターを横長の枠に入れない。** 汎用のカードは 1200/630 なので、
+    // ここが効いていないと顔の上下が切れる。
+    const box = await card.locator('img.link-card-thumb').boundingBox();
+    expect(box!.width).toBeCloseTo(box!.height, 0);
   });
 });
 

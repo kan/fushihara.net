@@ -4,6 +4,7 @@ import { listMediaByPosts } from '../../src/core/db/media.ts';
 import { getPostByPublicId } from '../../src/core/db/posts.ts';
 import { db, resetDb } from '../db/helpers.ts';
 import { apiJson, setStubUser } from '../routes/helpers.ts';
+import { AVATAR_URL, BANNER_URL, REPO_API, REPO_URL, githubResponse } from '../fixtures/github.ts';
 import { pngHeader } from '../fixtures/png.ts';
 
 /**
@@ -163,6 +164,93 @@ describe('絵が取れないとき', () => {
     // 相手のページが書いた URL をそのまま fetch する経路なので、ここも同じ関門を通す。
     await cardWithoutImage(() => stubSite({ image: 'http://169.254.169.254/latest/meta-data/' }));
     expect(requested).toEqual([PAGE]);
+  });
+});
+
+describe('GitHub のカード', () => {
+  /** 応答は `fixtures/github.ts`。ここは呼ばれた URL を覚える包みだけ。 */
+  function stubGithub(api?: ResponseInit) {
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = String(input instanceof Request ? input.url : input);
+      requested.push(url);
+      const response = githubResponse(url, api);
+      if (response === null) throw new Error(`スタブしていない外向きの fetch: ${url}`);
+      return response;
+    });
+  }
+
+  it('アバターと統計の行が入り、リンク先は API が返した URL', async () => {
+    stubGithub();
+    const post = await createPost();
+
+    const { status, body } = await makeCard(post.publicId, `${REPO_URL}?tab=readme-ov-file`);
+    expect(status, JSON.stringify(body)).toBe(200);
+
+    expect(body.html).toContain('class="link-card link-card-github"');
+    // 貼られた URL ではなく html_url。`?tab=…` を落として同じところに落ち着く。
+    expect(body.html).toContain(`href="${REPO_URL}"`);
+    expect(body.html).toContain('kan/wema');
+    expect(body.html).toContain('★ 12 · Fork 1 · TypeScript');
+    expect(body.html).toContain('>GitHub<');
+    // サムネは owner のアバター。添付として取り込むので相対参照になる。
+    expect(body.html).toContain(`src="./${body.media.filename}"`);
+    expect(body.media.filename).toMatch(/^card-github-com-[0-9a-f]{8}\.png$/);
+    expect(body.html).toContain('width="200" height="200"');
+    // OGP の題（`GitHub - kan/wema: …`）は使わない。ページ自身も読みに行かない。
+    expect(body.html).not.toContain('GitHub - kan/wema');
+    expect(requested).toEqual([REPO_API, `${AVATAR_URL}&s=200`]);
+  });
+
+  it('クエリ違いで貼り直しても添付は増えない', async () => {
+    // 添付の名前は html_url から決まるので、貼った形が違っても同じ 1 つになる。
+    stubGithub();
+    const post = await createPost();
+
+    const first = await makeCard(post.publicId, REPO_URL);
+    const second = await makeCard(post.publicId, `${REPO_URL}?tab=readme-ov-file`);
+    expect(second.body.media.filename).toBe(first.body.media.filename);
+
+    const row = await getPostByPublicId(db, post.publicId);
+    expect(await listMediaByPosts(db, [row!.id])).toHaveLength(1);
+  });
+
+  it('API が枯れていたら汎用の OGP カードに落ちる', async () => {
+    // 未認証の api.github.com は 60 回/時。落ちた日はカードが貧しくなるだけでよい。
+    stubGithub({ status: 403 });
+    const post = await createPost();
+
+    const { status, body } = await makeCard(post.publicId, REPO_URL);
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.html).toContain('class="link-card"');
+    expect(body.html).not.toContain('link-card-github');
+    expect(body.html).toContain('GitHub - kan/wema');
+    expect(requested).toEqual([REPO_API, REPO_URL, BANNER_URL]);
+  });
+
+  it('汎用に落ちた日のバナーを、後から作った GitHub カードが使い回さない', async () => {
+    // 添付の名前はページの URL から決まるので、種類を混ぜないと 1200x630 の
+    // バナーと 200x200 のアバターが同じ名前になり、先にある方が黙って使われる。
+    const post = await createPost();
+
+    stubGithub({ status: 403 });
+    const fallback = await makeCard(post.publicId, REPO_URL);
+    expect(fallback.body.html).toContain('width="1200" height="630"');
+
+    stubGithub();
+    const { body } = await makeCard(post.publicId, REPO_URL);
+    expect(body.media.filename).not.toBe(fallback.body.media.filename);
+    expect(body.html).toContain('link-card-github');
+    expect(body.html).toContain('width="200" height="200"');
+  });
+
+  it('リポジトリより深い URL では API を叩かない', async () => {
+    stubGithub();
+    const post = await createPost();
+
+    const { body } = await makeCard(post.publicId, `${REPO_URL}/issues/1`);
+    expect(body.html).not.toContain('link-card-github');
+    // ページと、そこに書いてある OG 画像だけ。api.github.com は出てこない。
+    expect(requested).toEqual([`${REPO_URL}/issues/1`, BANNER_URL]);
   });
 });
 

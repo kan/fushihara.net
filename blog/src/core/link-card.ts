@@ -21,7 +21,8 @@ import { createMedia, findByPostAndFilename, mediaR2Key } from './db/media.ts';
 import { uniqueViolationTarget } from './db/errors.ts';
 import type { MediaRow, PostRow } from './db/types.ts';
 import { toHex } from './ids.ts';
-import { fetchExternal, fetchLinkPreview } from './link-preview.ts';
+import { fetchGithubRepo, githubRepoPath, githubStats } from './link-github.ts';
+import { fetchExternal, fetchLinkPreview, readCapped } from './link-preview.ts';
 import { imageDimensions } from './media/dimensions.ts';
 import { extensionForMime } from './media/formats.ts';
 import { err, ok, type Result } from './result.ts';
@@ -44,6 +45,16 @@ export type LinkCardText = {
   readonly description: string | null;
   /** 出典として出す文字。既定は host。 */
   readonly siteName: string;
+  /**
+   * 説明の下に出す 1 行（GitHub なら `★ 12 · Fork 1 · TypeScript`）。
+   * **取った時点で固まる。** 後から数え直す仕組みは持たない。
+   */
+  readonly meta?: string;
+  /**
+   * 汎用でないカードの種類。`link-card-<kind>` として class に出る。
+   * サムネの形が違う（GitHub は owner のアバターなので正方形）。
+   */
+  readonly kind?: 'github';
   /** 取り込めた添付のファイル名と実寸。取れなければ null（画像なしのカード）。 */
   readonly thumbnail: {
     readonly filename: string;
@@ -74,15 +85,18 @@ export function linkCardHtml(card: LinkCardText): string {
       ? ''
       : html`\n  <img class="link-card-thumb" src="./${thumbnail.filename}" alt=""${size} loading="lazy" decoding="async">`;
 
-  const description =
-    card.description === null
+  // 題の後ろに続く行。無い項目は行ごと出さない。
+  const row = (className: string, value: string | null | undefined) =>
+    value === null || value === undefined
       ? ''
-      : html`\n    <span class="link-card-desc">${card.description}</span>`;
+      : html`\n    <span class="${className}">${value}</span>`;
+
+  const classes = card.kind === undefined ? 'link-card' : `link-card link-card-${card.kind}`;
 
   return String(
-    html`<a class="link-card" href="${card.url}">${image}
+    html`<a class="${classes}" href="${card.url}">${image}
   <span class="link-card-text">
-    <span class="link-card-title">${card.title}</span>${description}
+    <span class="link-card-title">${card.title}</span>${row('link-card-desc', card.description)}${row('link-card-meta', card.meta)}
     <span class="link-card-site">${card.siteName}</span>
   </span>
 </a>`,
@@ -103,11 +117,27 @@ export type LinkCardDeps = {
 };
 
 /**
+ * カードに出すもの。**取り込む前**のサムネは、相手のページが指す URL のまま。
+ *
+ * `url` は貼られたものではなく**カードが指す URL**。GitHub は API が返す
+ * `html_url` に寄せるので、`?tab=…` の付いた URL を貼っても、リンク先も
+ * 添付の名前も同じところに落ちる（同じリポジトリのカードで添付が増えない）。
+ */
+type CardSource = {
+  readonly url: URL;
+  readonly card: Omit<LinkCardText, 'url' | 'thumbnail'>;
+  readonly image: string | null;
+};
+
+/**
  * URL からカードを組む。**相手から画像を取れなくてもカードは作る**（取れない日は
  * 珍しくない）。
  *
  * 題がまったく取れないときだけ失敗させる。host だけのカードは読み手に何も伝えず、
  * 管理画面としては「テキストリンクのままにする」方が正しいため。
+ *
+ * **相手ごとの特別扱いはここで足す。** 今あるのは GitHub のリポジトリだけで、
+ * 当たらなければ（当たっても取れなければ）汎用の OGP に落ちる。
  *
  * **D1 と R2 の失敗はここで握らない**（`Result` にするのは「起こりうる正常系」だけ、
  * という `result.ts` の線引き）。取り込みの途中で落ちたら 500 で出す。
@@ -124,17 +154,16 @@ export async function buildLinkCard(
     return err('link-unreachable');
   }
 
-  const preview = await fetchLinkPreview(url.href, deps.userAgent);
-  if (preview.title === null) return err('link-unreachable');
+  const source =
+    (await githubSource(url, deps.userAgent)) ?? (await previewSource(url, deps.userAgent));
+  if (source === null) return err('link-unreachable');
 
-  const media = preview.image === null ? null : await storeThumbnail(deps, post, url, preview.image);
+  const media = await storeThumbnail(deps, post, source);
 
   return ok({
     html: linkCardHtml({
-      url: url.href,
-      title: preview.title,
-      description: trim(preview.description),
-      siteName: preview.siteName ?? url.hostname,
+      ...source.card,
+      url: source.url.href,
       thumbnail:
         media === null
           ? null
@@ -142,6 +171,46 @@ export async function buildLinkCard(
     }),
     media,
   });
+}
+
+/**
+ * GitHub のリポジトリ。**当たらなければ null を返して汎用へ譲る**（リポジトリ以外の
+ * URL も、API が枯れている日も同じ扱い。`link-github.ts` の先頭コメント参照）。
+ */
+async function githubSource(url: URL, userAgent: string): Promise<CardSource | null> {
+  const path = githubRepoPath(url);
+  if (path === null) return null;
+
+  const repo = await fetchGithubRepo(path, userAgent);
+  if (repo === null) return null;
+
+  return {
+    url: repo.url,
+    card: {
+      title: repo.fullName,
+      description: trim(repo.description),
+      siteName: 'GitHub',
+      meta: githubStats(repo),
+      kind: 'github',
+    },
+    image: repo.avatarUrl,
+  };
+}
+
+/** 汎用。相手のページの `og:*` だけで組む。 */
+async function previewSource(url: URL, userAgent: string): Promise<CardSource | null> {
+  const preview = await fetchLinkPreview(url.href, userAgent);
+  if (preview.title === null) return null;
+
+  return {
+    url,
+    card: {
+      title: preview.title,
+      description: trim(preview.description),
+      siteName: preview.siteName ?? url.hostname,
+    },
+    image: preview.image,
+  };
 }
 
 function trim(description: string | null): string | null {
@@ -152,18 +221,25 @@ function trim(description: string | null): string | null {
 }
 
 /**
- * OG 画像を取ってきて、その記事の添付にする。取れなければ null。
+ * サムネを取ってきて、その記事の添付にする。取れなければ null。
  *
- * **ファイル名はページの URL から決まる。** 同じリンクを貼り直しても添付が増えず、
- * 既にあるものを使い回せる（相手が絵を差し替えても、記事の中の絵は変わらない）。
+ * **ファイル名はカードの種類とページの URL から決まる。** 同じリンクを貼り直しても
+ * 添付が増えず、既にあるものを使い回せる（相手が絵を差し替えても、記事の中の絵は
+ * 変わらない）。
+ *
+ * **種類を混ぜるのは、同じ URL でも絵が違うから。** GitHub のカードのサムネは
+ * 正方形のアバターで、API が枯れた日に落ちる汎用カードのサムネは 1200x630 の
+ * OG バナー。どちらも `image/png` なので、種類を入れないと名前まで一致し、後から
+ * 作った方が先にあるものを黙って使う（丸く切り抜かれたバナーが出る）。
  */
 async function storeThumbnail(
   deps: LinkCardDeps,
   post: PostRow,
-  pageUrl: URL,
-  imageUrl: string,
+  source: CardSource,
 ): Promise<MediaRow | null> {
-  const fetched = await fetchExternal(imageUrl, IMAGE_ACCEPT, deps.userAgent);
+  if (source.image === null) return null;
+
+  const fetched = await fetchExternal(source.image, IMAGE_ACCEPT, deps.userAgent);
   if (fetched === null) return null;
 
   // **形式は相手の Content-Type で決める。** よそから来た画像にファイル名は無く、
@@ -179,10 +255,16 @@ async function storeThumbnail(
   const extension = extensionForMime(mime);
   if (extension === undefined) return null;
 
-  // **中身を読む前に既存を見る。** ファイル名はページの URL と Content-Type から
-  // 決まるので、本文を読まなくても分かる。2 回目のカード化で、最大 4MB の読み込みと
-  // D1・R2 への書き込みを丸ごと省ける。
-  const filename = `${thumbnailStem(pageUrl)}-${await shortHash(pageUrl.href)}.${extension}`;
+  // **中身を読む前に既存を見る。** ファイル名はカードの種類とページの URL、それに
+  // Content-Type から決まるので、本文を読まなくても分かる。2 回目のカード化で、
+  // 最大 4MB の読み込みと D1・R2 への書き込みを丸ごと省ける。
+  //
+  // **汎用のカードは種類を混ぜない。** 混ぜると、これまでに作った汎用カードの
+  // 名前まで変わり、貼り直したときに同じ絵が別名でもう 1 つ増える。
+  const pageUrl = source.url;
+  const kind = source.card.kind;
+  const seed = kind === undefined ? pageUrl.href : `${kind}\n${pageUrl.href}`;
+  const filename = `${thumbnailStem(pageUrl)}-${await shortHash(seed)}.${extension}`;
 
   const existing = await findByPostAndFilename(deps.db, post.id, filename);
   if (existing) {
@@ -236,43 +318,8 @@ function thumbnailStem(pageUrl: URL): string {
   return `card-${host === '' ? 'link' : host}`;
 }
 
-/** ページの URL から決まる 8 桁。同じ記事に同じリンクを貼っても 1 つで済む。 */
+/** カードの種類とページの URL から決まる 8 桁。同じ記事に同じリンクを貼っても 1 つで済む。 */
 async function shortHash(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return toHex(new Uint8Array(digest).slice(0, 4));
-}
-
-/**
- * 上限まで読む。**超えたら諦めて null。**
- *
- * `arrayBuffer()` に任せると、相手が申告と違う大きさを流してきたときに、全部
- * 受け取ってから捨てることになる。
- */
-async function readCapped(response: Response, max: number): Promise<Uint8Array | null> {
-  const reader = response.body?.getReader();
-  if (!reader) return null;
-
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > max) return null;
-      chunks.push(value);
-    }
-  } catch {
-    return null;
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
-
-  const data = new Uint8Array(bytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    data.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return data;
 }

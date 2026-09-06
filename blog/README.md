@@ -185,9 +185,10 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 </a>
 ```
 
-サムネは記事の添付になる。**ファイル名はページの URL から決まる**
-（`card-<host>-<8 桁>.<ext>`）ので、同じリンクを貼り直しても添付は増えない。
-拡張子は相手の `Content-Type` から決め、**ラスタだけ**受け付ける。
+サムネは記事の添付になる。**ファイル名はカードの種類とページの URL から決まる**
+（`card-<host>-<8 桁>.<ext>`）ので、同じリンクを貼り直しても添付は増えない
+（種類も混ぜる理由は `core/link-card.ts` の `storeThumbnail`）。拡張子は相手の
+`Content-Type` から決め、**ラスタだけ**受け付ける。
 
 口は `POST /api/posts/:publicId/link-card`。**記事に紐づくのはサムネを添付に
 するから**で、未保存の記事では断る（画像のアップロードと同じ）。
@@ -203,6 +204,34 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 
 リーダーにはこのブログの CSS が無いので、**素のままでも上から絵・題・説明・出典と
 読める順**にしてある。`blog.css` 側で順序を入れ替えないこと。
+
+### GitHub のリポジトリ
+
+`github.com/<owner>/<repo>` を貼ったときだけ、OGP ではなく GitHub の API から組む
+（`core/link-github.ts`）。**特別扱いするのはリポジトリだけ**で、issue や PR、
+ファイルへのリンク、`github.com/<owner>` は汎用のカードのまま（貼った人が指した
+ものと違うものを出さないため）。
+
+```html
+<a class="link-card link-card-github" href="https://github.com/kan/wema">
+  <img class="link-card-thumb" src="./card-github-com-1a2b3c4d.png" alt="" width="200" height="200" loading="lazy" decoding="async">
+  <span class="link-card-text">
+    <span class="link-card-title">kan/wema</span>
+    <span class="link-card-desc">Web上に付箋を絵馬のように貼るライブラリ</span>
+    <span class="link-card-meta">★ 12 · Fork 1 · TypeScript</span>
+    <span class="link-card-site">GitHub</span>
+  </span>
+</a>
+```
+
+- **リンク先とサムネの名前は API が返した `html_url` から決まる。** `?tab=…` の
+  付いた URL を貼っても、素の URL を貼ったときと同じ 1 つの添付に落ちる。改名された
+  リポジトリは新しい名前に張り替わる
+- サムネは owner のアバター（正方形）。`link-card-github` が付いた分だけ
+  `blog.css` が枠の形を変える
+- **統計は取った時点で固まる。** 星が増えても後から数え直さない
+- **API が枯れていたら汎用の OGP カードに落ちる**（理由と、資格情報を持たせて
+  いない判断は `core/link-github.ts` の先頭）
 
 ## 1 箇所に閉じてあるもの
 
@@ -239,6 +268,7 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 | 配信する中身の言語（`<html lang>` と告知の `langs`） | `SiteConfig.lang`（`src/site/meta.ts`） |
 | AT-URI → bsky.app で開ける URL | `core/bluesky.ts` の `blueskyPostUrl` |
 | OGP とリンクカードに出す絵の名前 | `core/routes/fixed.ts` の `OGP_ASSET` |
+| 外へ取りに行く関門（宛先・リダイレクト・時間・読む量・URL の正当性） | `core/link-preview.ts` の `fetchExternal` / `readCapped` / `httpUrl` |
 | 一覧の絞り込み条件（行と件数で同じもの） | `core/db/posts.ts` の `postFilter` |
 | 控えの置き場所と世代の切り方 | `core/backup.ts` |
 
@@ -352,7 +382,8 @@ const { post } = await res.json();  // 型は handler から
   弾く・**リダイレクトを自分で追って飛び先も毎回検査する**・5 秒で打ち切る・
   先頭 64KB だけ読む、で狭めてある（`redirect: 'follow'` に任せると最初の 1 回しか
   検査されず、公開 URL から内側へ飛ばされる）。**関門は `fetchExternal()` の 1 本**で、
-  カードが OG 画像を取りに行くときも同じところを通る（「リンクカード」の節）
+  カードが OG 画像を取りに行くときも、GitHub の API を叩くときも同じところを通る
+  （「リンクカード」の節）
 
 ## 管理画面
 

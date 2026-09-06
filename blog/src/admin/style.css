@@ -473,7 +473,7 @@ label > input, label > textarea, label > select { display: block; margin-top: 0.
 .preview .link-card-thumb { flex: 0 0 auto; width: 6rem; height: auto; border-radius: 4px; }
 .preview .link-card-text { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
 .preview .link-card-title { font-weight: 600; }
-.preview :is(.link-card-desc, .link-card-site) { color: var(--text-muted); font-size: 0.8rem; }
+.preview :is(.link-card-desc, .link-card-meta, .link-card-site) { color: var(--text-muted); font-size: 0.8rem; }
 
 .preview table { border-collapse: collapse; }
 .preview :is(th, td) { padding: 0.3rem 0.6rem; border: 1px solid var(--border); }

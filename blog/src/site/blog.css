@@ -305,9 +305,20 @@ a.tag:hover {
   line-height: 1.5;
 }
 
+.prose .link-card-meta,
 .prose .link-card-site {
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+/* GitHub のカードだけサムネが owner のアバター。正方形なので、横長の枠に入れると
+   顔の上下が切れる。**幅も伸ばさない** (潰れる幅で縦積みになっても、アバターが
+   カード幅いっぱいに広がるのはただの間延び)。上の `width: 100%` より詳細度が
+   高いので、メディアクエリの中で書き直す必要はない。 */
+.prose .link-card-github .link-card-thumb {
+  width: 4rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
 }
 
 .prose hr {

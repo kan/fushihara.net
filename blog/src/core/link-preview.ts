@@ -13,8 +13,8 @@
  *   5. 読むのは先頭だけ。`og:*` は `<head>` にあるので全部読む必要がない
  *
  * **この関門は 1 つだけにする。** リンクカードが OG 画像を取りに行くときも
- * `fetchExternal()` を通す（`link-card.ts`）。取りに行く口が 2 つになると、
- * 片方だけ緩い日ができる。
+ * （`link-card.ts`）、GitHub の API を叩くときも（`link-github.ts`）
+ * `fetchExternal()` を通す。取りに行く口が 2 つになると、片方だけ緩い日ができる。
  */
 
 const TIMEOUT_MS = 5000;
@@ -98,7 +98,11 @@ export async function fetchExternal(
     }
 
     if (response.status < 300 || response.status >= 400) {
-      return response.ok ? { response, url } : null;
+      if (response.ok) return { response, url };
+      // 読まずに捨てるときは明示的に畳む（開いたままのストリームを残さない）。
+      // 未認証の api.github.com は 60 回/時なので、403 は日常的にここへ来る。
+      await response.body?.cancel().catch(() => {});
+      return null;
     }
 
     const location = response.headers.get('Location');
@@ -110,6 +114,42 @@ export async function fetchExternal(
     }
   }
   return null;
+}
+
+/**
+ * 応答の中身を上限まで読む。**超えたら諦めて null。**
+ *
+ * `arrayBuffer()` / `json()` に任せると、相手が申告と違う大きさを流してきたときに、
+ * 全部受け取ってから捨てることになる。読む量の上限は中身の形で変わる（絵と JSON で
+ * 違う）ので `fetchExternal()` には持たせず、呼ぶ側が渡す。
+ */
+export async function readCapped(response: Response, max: number): Promise<Uint8Array | null> {
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > max) return null;
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+
+  const data = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    data.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return data;
 }
 
 const HTML_ACCEPT = 'text/html,application/xhtml+xml';
@@ -131,7 +171,7 @@ export async function fetchLinkPreview(rawUrl: string, userAgent: string): Promi
     title: first(meta.get('og:title'), extractTitle(head)),
     description: first(meta.get('og:description'), meta.get('description')),
     // **相対で書いてあることがある。** 基準はリダイレクトを追い終えた後の URL。
-    image: image === null ? null : absolute(image, fetched.url),
+    image: httpUrl(image, fetched.url)?.href ?? null,
     siteName: first(meta.get('og:site_name')),
   };
 }
@@ -149,10 +189,17 @@ function first(...values: readonly (string | null | undefined)[]): string | null
   return null;
 }
 
-function absolute(value: string, base: URL): string | null {
+/**
+ * 文字列を URL にする。**http / https 以外と、読めない形は null。**
+ *
+ * 相手のページや API が書いた文字列を URL として扱う場所はここと `link-github.ts`
+ * にあり、規則が割れると片方だけ `javascript:` を通す日ができる。
+ */
+export function httpUrl(value: string | null | undefined, base?: URL): URL | null {
+  if (value === null || value === undefined || value === '') return null;
   try {
     const url = new URL(value, base);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
   } catch {
     return null;
   }

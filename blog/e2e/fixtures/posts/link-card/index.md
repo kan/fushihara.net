@@ -24,3 +24,16 @@ public_id: 00000000-0000-4000-8000-000000000008
 </a>
 
 カードの後ろの段落。カードが段落に飲まれていないことがここで分かる。
+
+GitHub のリポジトリだけは API から組む（`core/link-github.ts`）。サムネが owner の
+アバターなので**正方形**で、統計の行が 1 本増える。
+
+<a class="link-card link-card-github" href="https://github.com/kan/wema">
+  <img class="link-card-thumb" src="./card-github-com-1a2b3c4d.png" alt="" width="200" height="200" loading="lazy" decoding="async">
+  <span class="link-card-text">
+    <span class="link-card-title">kan/wema</span>
+    <span class="link-card-desc">Web上に付箋を絵馬のように貼るライブラリ</span>
+    <span class="link-card-meta">★ 12 · Fork 1 · TypeScript</span>
+    <span class="link-card-site">GitHub</span>
+  </span>
+</a>
