@@ -2,11 +2,11 @@
  * 404。ページのルータとアプリ全体の両方から使うので、生成をここに 1 つ置く。
  */
 import type { PageConfig } from '../config.ts';
-import { createUrls } from '../paths.ts';
+import { createPaths } from '../paths.ts';
 import { SHORT_EDGE } from './cache.ts';
 
 export function createNotFound(config: PageConfig): () => Promise<Response> {
-  const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
+  const { urls } = createPaths(config);
 
   return async () =>
     new Response(

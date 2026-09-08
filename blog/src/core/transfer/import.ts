@@ -23,7 +23,7 @@ import { addAlias } from '../db/post-paths.ts';
 import { createPost, getPostByPublicId } from '../db/posts.ts';
 import { applyTags, resolveTags } from '../db/tags.ts';
 import { renderAndStore } from '../delivery.ts';
-import { normalizePostPath, normalizeSegment } from '../paths.ts';
+import { normalizeSegment, type PostPaths } from '../paths.ts';
 import { parsePostFile, POST_FILENAME, POSTS_DIR } from './format.ts';
 import { readZip, type ZipFile } from './zip.ts';
 
@@ -49,6 +49,7 @@ export type ImportResult = {
 
 export async function importArchive(
   db: D1Database,
+  paths: PostPaths,
   bucket: R2Bucket,
   archive: Uint8Array,
 ): Promise<ImportResult> {
@@ -65,7 +66,7 @@ export async function importArchive(
     // 一覧まで失われる (どこまで進んだか分からないまま、入れ直すと衝突する)。
     let result: PostOutcome;
     try {
-      result = await importPost(db, bucket, directory, group);
+      result = await importPost(db, paths, bucket, directory, group);
     } catch (error) {
       result = { ok: false, error: `取り込み中に失敗した: ${messageOf(error)}` };
     }
@@ -135,16 +136,17 @@ type PostOutcome =
 
 async function importPost(
   db: D1Database,
+  paths: PostPaths,
   bucket: R2Bucket,
   directory: string,
   group: PostGroup,
 ): Promise<PostOutcome> {
-  const canonical = normalizePostPath(directory);
+  const canonical = paths.normalizePostPath(directory);
   if (!canonical.ok) {
     return { ok: false, error: `パスとして使えない (${canonical.error.code})` };
   }
 
-  const parsed = parsePostFile(new TextDecoder().decode(group.index as Uint8Array));
+  const parsed = parsePostFile(new TextDecoder().decode(group.index as Uint8Array), paths);
   if (!parsed.ok) return { ok: false, error: parsed.error.message };
   const { frontmatter, bodyMd } = parsed.value;
 
@@ -161,7 +163,7 @@ async function importPost(
   const tags = await resolveTags(db, frontmatter.tags ?? []);
   if (!tags.ok) return { ok: false, error: `タグを解決できない (${tags.error.code}: ${tags.error.name})` };
 
-  const created = await createPost(db, {
+  const created = await createPost(db, paths, {
     title: frontmatter.title,
     bodyMd,
     description: frontmatter.description ?? null,
@@ -185,7 +187,7 @@ async function importPost(
   if (tags.value.length > 0) await applyTags(db, post.id, tags.value);
 
   for (const alias of frontmatter.paths ?? []) {
-    const normalized = normalizePostPath(alias);
+    const normalized = paths.normalizePostPath(alias);
     if (!normalized.ok) {
       warnings.push(`alias を無視した (${normalized.error.code}): ${alias}`);
       continue;
@@ -195,7 +197,7 @@ async function importPost(
     if (samePath(normalized.value, canonical.value) || samePath(normalized.value, post.public_id)) {
       continue;
     }
-    const added = await addAlias(db, post.id, normalized.value);
+    const added = await addAlias(db, paths, post.id, normalized.value);
     if (!added.ok) warnings.push(`alias を追加できなかった (${added.error.code}): ${alias}`);
   }
 

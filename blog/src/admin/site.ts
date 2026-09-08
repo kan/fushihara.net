@@ -21,6 +21,11 @@ const FALLBACK: Site = {
   author: '',
   url: location.origin,
   lang: '',
+  // 差し込みが無いときは端末の設定で切り出す。ここで throw する値を残すと、
+  // 日付を組む `date.ts` が読み込み時に落ちて画面ごと出なくなる。
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  // 管理画面は OGP の絵を出さないので、空の 1 枚で足りる。
+  ogImage: { url: '', width: null, height: null },
 };
 
 export const SITE: Site = read();
@@ -36,9 +41,23 @@ export const MOUNT_LABEL: string = MOUNT === '' ? '/' : MOUNT;
 function read(): Site {
   const content = document.querySelector<HTMLMetaElement>(`meta[name="${SITE_META}"]`)?.content;
   if (!content) return FALLBACK;
+  let site: Site;
   try {
-    return { ...FALLBACK, ...(JSON.parse(content) as Partial<Site>) };
+    site = { ...FALLBACK, ...(JSON.parse(content) as Partial<Site>) };
   } catch {
     return FALLBACK;
+  }
+  // 読めないタイムゾーンは `Intl` が throw する。設定の綴り違いで管理画面が
+  // 開かなくなるより、端末の設定で切り出して開けるほうがよい。
+  return usableTimeZone(site.timeZone) ? site : { ...site, timeZone: FALLBACK.timeZone };
+}
+
+function usableTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return true;
+  } catch {
+    console.warn(`lily admin: タイムゾーンを読めないので端末の設定で切り出す (${timeZone})`);
+    return false;
   }
 }

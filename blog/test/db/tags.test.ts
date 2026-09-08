@@ -10,12 +10,12 @@ import {
 } from '../../src/core/db/tags.ts';
 import { slugifyTag } from '../../src/core/slug.ts';
 import type { PostRow } from '../../src/core/db/types.ts';
-import { db, resetDb } from './helpers.ts';
+import { db, paths, resetDb } from './helpers.ts';
 
 beforeEach(resetDb);
 
 async function create(path: string, status: 'draft' | 'published' = 'published'): Promise<PostRow> {
-  const result = await createPost(db, {
+  const result = await createPost(db, paths, {
     title: path,
     bodyMd: 'x',
     path,

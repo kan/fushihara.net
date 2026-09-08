@@ -5,7 +5,7 @@ import { createLily } from './core/app.ts';
 import type { BlueskyCredentials } from './core/bluesky.ts';
 import { cloudflareAccess } from './core/auth/access.ts';
 import { localhostOnly } from './core/auth/localhost.ts';
-import { MOUNT_PATH, SITE } from './site/meta.ts';
+import { ASSET, ASSETS, MOUNT_PATH, SITE } from './site/meta.ts';
 import { theme } from './site/theme.ts';
 
 export const lily = createLily({
@@ -13,6 +13,12 @@ export const lily = createLily({
   // route (wrangler.jsonc) と必ずセットで見ること。
   mountPath: MOUNT_PATH,
   theme,
+  // favicon 3 点と ogp.png。**配信と記事パスの予約の両方**がこの一覧から出る。
+  assets: ASSETS,
+  // 告知カードのサムネに使うアセット。**公開 URL は fetch できない**ので
+  // （同一ゾーンへのサブリクエストは origin へ向かって 522 になる。本体側で
+  // 踏んでいる）、core が `ASSETS` バインディングから名前で読む。
+  ogImageAsset: ASSET.ogp,
   // 画像は配信時に WebP / AVIF へ変換する。**無効にしても URL は変わらず、
   // 原本がそのまま出る**（Images の設定・quota・障害に記事を巻き込まない）。
   media: { images: true },

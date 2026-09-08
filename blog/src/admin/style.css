@@ -1,11 +1,29 @@
-/* 色は本体サイトと共有のトークンに乗せる。管理画面だけ別の配色にすると、
- * 書いているものと出るものの印象がずれる。 */
-@import '../../../shared/tokens.css';
-
+/* 管理画面の色。**lily の持ち物なので、配信するサイトのトークンを読まない。**
+ *
+ * 出てくる値は fushihara.net の `shared/tokens.css` と同じだが、揃っている必要は
+ * 無い（管理画面は読者に見えないし、別のサイトに lily を載せてもここは変わらない）。
+ * 公開ページの配色はテーマ (`src/site/`) の持ち物で、あちらは今までどおり
+ * 本体サイトと同じトークンを読む。
+ *
+ * `light-dark()` で 1 回だけ書く。どちらが使われるかは `color-scheme` が決めるので、
+ * 2 つのパレットがずれようがない。**管理画面にテーマの切り替えは無い**ので、
+ * `light dark` を宣言して OS 設定にそのまま従う（`index.html` の meta と同じ）。 */
 :root {
+  color-scheme: light dark;
+
+  --bg: light-dark(#F5F5F7, #0A0A0F);
+  --note-bg: light-dark(#FFFFFF, #1A1A2E);
+  --text: light-dark(#1A1A2E, #EAEAEA);
+  --text-muted: light-dark(#6B6B72, #888);
+  --link: light-dark(#C81E4A, #F25570);
+  --accent: #E94560;
+
   --panel: light-dark(#FFFFFF, #14141F);
   --border: light-dark(#E1E1E8, #2C2C44);
   --danger: light-dark(#C0392B, #FF6B6B);
+
+  --font-sans: 'Inter', 'Noto Sans JP', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

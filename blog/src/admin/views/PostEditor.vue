@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { fromDateTimeInput, toDateTimeInput } from '../../../../shared/date.ts';
+import { fromDateTimeInput, toDateTimeInput } from '../date.ts';
 import { apiFetch, client, errorMessage, MOUNT } from '../api.ts';
 import { go, postRoute } from '../router.ts';
 import { onSessionLost, stash, unstash } from '../session.ts';

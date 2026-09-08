@@ -10,12 +10,12 @@ import {
   listMediaByPosts,
   setOgpMedia,
 } from '../../src/core/db/media.ts';
-import { db, resetDb } from './helpers.ts';
+import { db, paths, resetDb } from './helpers.ts';
 
 beforeEach(resetDb);
 
 async function createPostId(path: string): Promise<number> {
-  const result = await createPost(db, { title: path, bodyMd: 'x', path });
+  const result = await createPost(db, paths, { title: path, bodyMd: 'x', path });
   if (!result.ok) throw new Error(`createPost に失敗した: ${result.error.code}`);
   return result.value.id;
 }

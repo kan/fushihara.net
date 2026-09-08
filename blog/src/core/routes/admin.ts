@@ -7,7 +7,7 @@
 import { Hono } from 'hono';
 import { ADMIN_HINT, ADMIN_HINT_MAX_AGE, SITE_META, type AdminSiteMeta } from '../admin-contract.ts';
 import type { LilyBindings, PageConfig } from '../config.ts';
-import { createUrls, siteOrigin } from '../paths.ts';
+import { createPaths, siteOrigin } from '../paths.ts';
 import { ROUTE } from './fixed.ts';
 
 type Env = { Bindings: LilyBindings };
@@ -23,7 +23,7 @@ const ASSET_DIR = 'assets';
 
 export function adminRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
-  const mount = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath }).mountPath;
+  const mount = createPaths(config).urls.mountPath;
   const base = `${mount}/${ROUTE.admin}`;
 
   // 入口 HTML に差し込む値。設定はデプロイのときにしか変わらないので 1 度だけ組む。

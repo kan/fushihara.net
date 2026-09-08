@@ -80,8 +80,9 @@ src/
     media/    画像の最適化（任意）、受け付ける形式の表、寸法をヘッダから読む
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
     transfer/ portable な import / export。frontmatter・zip・往復の規則
-    routes/   fixed.ts がルーティング定義の正本。public.ts が人向け、
-              feeds.ts が機械向け、media.ts が添付、api.ts が保護境界
+    routes/   fixed.ts が core の route 名の正本。public.ts が人向け、
+              feeds.ts が機械向け（と静的アセット）、media.ts が添付、
+              api.ts が保護境界
     theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
   site/       fushihara.net 固有（レイアウト・CSS・文言・OGP・クライアント JS）
     meta.ts   mount とサイト名。**何も import しない**（E2E が Node から読む）
@@ -240,8 +241,9 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 
 | 何 | どこ |
 |---|---|
-| ルーティング（予約パスと URL のセグメント名） | `core/routes/fixed.ts` の `ROUTE` |
-| URL を組む場所 | `core/paths.ts`（`createUrls`） |
+| core が持つ route のセグメント名 | `core/routes/fixed.ts` の `ROUTE` |
+| URL を組む場所・記事パスの予約判定 | `core/paths.ts`（`createPaths`） |
+| 配る静的アセットの名前（予約語の残り半分） | `PageConfig.assets`（`src/site/meta.ts` の `ASSET`） |
 | 「URL セグメントとして安全か」 | `core/paths.ts` の `normalizeSegment` |
 | 「公開記事とは何か」 | `core/db/posts.ts` の `PUBLISHED_WHERE` |
 | SELECT する列 | `core/db/types.ts`（Row 型から導出） |
@@ -254,7 +256,8 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 | 添付の寸法をヘッダから読む規則 | `core/media/dimensions.ts` |
 | portable な形式（frontmatter のキーと並び） | `core/transfer/format.ts` |
 | その形式の YAML をどこまで読むか | `core/transfer/frontmatter.ts` |
-| 日時の JST 変換 | `shared/date.ts` |
+| 日時の JST 変換（公開ページ） | `shared/date.ts` |
+| 日時の変換（管理画面。`SiteConfig.timeZone` で切り出す） | `src/admin/date.ts` |
 | 見た目・文言・OGP（差し替え点） | `core/theme.ts` の `Theme` を `site/` が実装 |
 | キャッシュ方針 | `core/routes/cache.ts` |
 | 保存済み HTML と描画の使い分け | `core/delivery.ts` |
@@ -267,7 +270,7 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 | OGP に選べる形式 | `core/media/formats.ts` の `OGP_MIMES` |
 | 配信する中身の言語（`<html lang>` と告知の `langs`） | `SiteConfig.lang`（`src/site/meta.ts`） |
 | AT-URI → bsky.app で開ける URL | `core/bluesky.ts` の `blueskyPostUrl` |
-| OGP とリンクカードに出す絵の名前 | `core/routes/fixed.ts` の `OGP_ASSET` |
+| サイト共通の OGP（絶対 URL と寸法） | `SiteConfig.ogImage`（サムネに読む実体は `PageConfig.ogImageAsset`） |
 | 外へ取りに行く関門（宛先・リダイレクト・時間・読む量・URL の正当性） | `core/link-preview.ts` の `fetchExternal` / `readCapped` / `httpUrl` |
 | 一覧の絞り込み条件（行と件数で同じもの） | `core/db/posts.ts` の `postFilter` |
 | 控えの置き場所と世代の切り方 | `core/backup.ts` |

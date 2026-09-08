@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import type { LilyBindings, PageConfig } from '../config.ts';
 import { getMediaByPublicId } from '../db/media.ts';
 import { isNegotiable, optimize, pickFormat } from '../media/optimize.ts';
-import { createUrls } from '../paths.ts';
+import { createPaths } from '../paths.ts';
 import { ROUTE } from './fixed.ts';
 
 type Env = { Bindings: LilyBindings };
@@ -37,7 +37,7 @@ const missing = (): Response => new Response('Not Found', { status: 404 });
 
 export function mediaRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
-  const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
+  const { urls } = createPaths(config);
   const mount = urls.mountPath;
 
   app.get(`${mount}/${ROUTE.media}/:publicId/:filename`, async (c) => {

@@ -10,7 +10,7 @@ import { lily } from '../../src/config.ts';
 import { normalizeMountPath } from '../../src/core/paths.ts';
 import { MOUNT_PATH } from '../../src/site/meta.ts';
 import { theme } from '../../src/site/theme.ts';
-import { db } from '../db/helpers.ts';
+import { db, paths } from '../db/helpers.ts';
 
 export const SITE = 'https://fushihara.net';
 
@@ -23,6 +23,13 @@ export const ROOT_SITE = 'https://blog.example.com';
  * `'ja'` を焼き込んだ実装でもテストが通ってしまう。
  */
 export const ROOT_LANG = 'en';
+
+/**
+ * root mount のアプリが配る静的アセット。**本番の一覧とわざと違う**ので、
+ * `<mount>/favicon.svg` のような route が設定から来ていることを確かめられる
+ * （`favicon.svg` はここに無いので、root mount では 404 になる）。
+ */
+export const ROOT_ASSETS = ['favicon.ico', 'ogp.png'];
 /**
  * このデプロイの mount（先頭スラッシュ付き・末尾スラッシュ無し）。
  *
@@ -77,9 +84,18 @@ const rootApp = createLily({
     description: 'root mount',
     author: 'someone',
     lang: ROOT_LANG,
+    timeZone: 'UTC',
+    // **寸法は本番（1200x630）とわざと違う。** 同じにすると、設定を読まずに
+    // 寸法を焼き込んだテーマでもテストが通ってしまう。
+    ogImage: { url: `${ROOT_SITE}/ogp.png`, width: 800, height: 400 },
   },
   mountPath: '/',
   theme,
+  // 配る静的アセット。**core は 1 つも知らない**ので、設定から来ていることは
+  // ここが空でないと確かめられない。
+  assets: ROOT_ASSETS,
+  // 告知カードのサムネ。本番 (`src/config.ts`) と同じく `assets` の 1 つを指す。
+  ogImageAsset: 'ogp.png',
   auth: () => stubAuth,
   bluesky: () => stubBlueskyCredentials,
 });
@@ -115,7 +131,7 @@ export type SeedOptions = {
 };
 
 export async function seedPost(options: SeedOptions = {}): Promise<PostRow> {
-  const created = await createPost(db, {
+  const created = await createPost(db, paths, {
     title: options.title ?? 'はじめての記事',
     bodyMd: options.bodyMd ?? '## 見出し\n\n本文。\n',
     description: options.description === undefined ? 'ためしに書いた' : options.description,

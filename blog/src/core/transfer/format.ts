@@ -14,7 +14,7 @@
  */
 import { z } from 'zod';
 import type { MediaRow, PostRow } from '../db/types.ts';
-import { normalizePostPath } from '../paths.ts';
+import type { PostPaths } from '../paths.ts';
 import { err, ok, type Result } from '../result.ts';
 import {
   parseFrontmatter,
@@ -109,7 +109,10 @@ export type ParsedPostFile = {
   readonly bodyMd: string;
 };
 
-export function parsePostFile(text: string): Result<ParsedPostFile, PostFileError> {
+export function parsePostFile(
+  text: string,
+  paths: PostPaths,
+): Result<ParsedPostFile, PostFileError> {
   const document = parseFrontmatter(text);
   if (!document.ok) {
     const { code, line, detail } = document.error;
@@ -139,7 +142,7 @@ export function parsePostFile(text: string): Result<ParsedPostFile, PostFileErro
 
   const publicId = parsed.data.public_id;
   if (publicId !== undefined) {
-    const checked = checkPublicId(publicId);
+    const checked = checkPublicId(publicId, paths);
     if (!checked.ok) return checked;
   }
 
@@ -153,8 +156,8 @@ export function parsePostFile(text: string): Result<ParsedPostFile, PostFileErro
  * `normalizePostPath` を通さずに入れると、`admin` のような予約語が
  * `post_paths` に入って route を食う経路が開く。
  */
-function checkPublicId(publicId: string): Result<string, PostFileError> {
-  const normalized = normalizePostPath(publicId);
+function checkPublicId(publicId: string, paths: PostPaths): Result<string, PostFileError> {
+  const normalized = paths.normalizePostPath(publicId);
   if (!normalized.ok) {
     return err({
       code: 'invalid-public-id',

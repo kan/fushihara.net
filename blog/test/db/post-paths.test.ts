@@ -9,12 +9,12 @@ import {
   resolvePath,
 } from '../../src/core/db/post-paths.ts';
 import type { PostRow } from '../../src/core/db/types.ts';
-import { db, resetDb } from './helpers.ts';
+import { db, paths, resetDb } from './helpers.ts';
 
 beforeEach(resetDb);
 
 async function create(path?: string): Promise<PostRow> {
-  const result = await createPost(db, { title: 'x', bodyMd: 'y', path });
+  const result = await createPost(db, paths, { title: 'x', bodyMd: 'y', path });
   if (!result.ok) throw new Error(`createPost に失敗した: ${result.error.code}`);
   return result.value;
 }
@@ -56,7 +56,7 @@ describe('resolvePath', () => {
 describe('addAlias', () => {
   it('別名からも引ける', async () => {
     const post = await create('now');
-    expect((await addAlias(db, post.id, 'then')).ok).toBe(true);
+    expect((await addAlias(db, paths, post.id, 'then')).ok).toBe(true);
 
     const resolved = await resolvePath(db, 'then');
     expect(resolved?.id).toBe(post.id);
@@ -67,20 +67,20 @@ describe('addAlias', () => {
   it('使われているパスは拒否する (大小文字違い・自分の記事でも)', async () => {
     const a = await create('a');
     const b = await create('b');
-    expect((await addAlias(db, b.id, 'A')).ok).toBe(false);
-    expect((await addAlias(db, a.id, 'A')).ok).toBe(false);
+    expect((await addAlias(db, paths, b.id, 'A')).ok).toBe(false);
+    expect((await addAlias(db, paths, a.id, 'A')).ok).toBe(false);
   });
 
   it('予約パスは拒否する', async () => {
     const post = await create('a');
-    const result = await addAlias(db, post.id, 'rss.xml');
+    const result = await addAlias(db, paths, post.id, 'rss.xml');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('reserved-path');
   });
 
   it('前後スラッシュは取り除いて受け入れる', async () => {
     const post = await create('a');
-    const result = await addAlias(db, post.id, '/b/');
+    const result = await addAlias(db, paths, post.id, '/b/');
     expect(result.ok && result.value).toBe('b');
   });
 });
@@ -88,7 +88,7 @@ describe('addAlias', () => {
 describe('changeCanonicalPath', () => {
   it('旧 canonical は alias として残る', async () => {
     const post = await create('old');
-    expect((await changeCanonicalPath(db, post.id, 'new')).ok).toBe(true);
+    expect((await changeCanonicalPath(db, paths, post.id, 'new')).ok).toBe(true);
 
     expect(await getCanonicalPath(db, post.id)).toBe('new');
     expect(await canonicalCount(post.id)).toBe(1);
@@ -99,8 +99,8 @@ describe('changeCanonicalPath', () => {
 
   it('alias を canonical に昇格できる', async () => {
     const post = await create('first');
-    await addAlias(db, post.id, 'second');
-    expect((await changeCanonicalPath(db, post.id, 'second')).ok).toBe(true);
+    await addAlias(db, paths, post.id, 'second');
+    expect((await changeCanonicalPath(db, paths, post.id, 'second')).ok).toBe(true);
     expect(await getCanonicalPath(db, post.id)).toBe('second');
     expect(await canonicalCount(post.id)).toBe(1);
     expect((await listPaths(db, post.id)).map((p) => p.path).sort()).toEqual(
@@ -111,7 +111,7 @@ describe('changeCanonicalPath', () => {
   it('他の記事のパスには変えられず、canonical は元のまま', async () => {
     await create('a');
     const b = await create('b');
-    const result = await changeCanonicalPath(db, b.id, 'a');
+    const result = await changeCanonicalPath(db, paths, b.id, 'a');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('path-taken');
     expect(await getCanonicalPath(db, b.id)).toBe('b');
@@ -120,7 +120,7 @@ describe('changeCanonicalPath', () => {
 
   it('大小文字だけの変更は同じ行を書き換える (ci 索引で 2 行は並べられない)', async () => {
     const post = await create('Foo');
-    expect((await changeCanonicalPath(db, post.id, 'foo')).ok).toBe(true);
+    expect((await changeCanonicalPath(db, paths, post.id, 'foo')).ok).toBe(true);
     expect(await getCanonicalPath(db, post.id)).toBe('foo');
     expect(await canonicalCount(post.id)).toBe(1);
     expect((await listPaths(db, post.id)).map((p) => p.path).sort()).toEqual(
@@ -130,7 +130,7 @@ describe('changeCanonicalPath', () => {
 
   it('public_id の大小文字違いには変えられない (identity 行を書き換えない)', async () => {
     const post = await create('a');
-    const result = await changeCanonicalPath(db, post.id, post.public_id.toUpperCase());
+    const result = await changeCanonicalPath(db, paths, post.id, post.public_id.toUpperCase());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('public-id-path');
 
@@ -141,7 +141,7 @@ describe('changeCanonicalPath', () => {
 
   it('public_id 自体は canonical に戻せる', async () => {
     const post = await create('a');
-    expect((await changeCanonicalPath(db, post.id, post.public_id)).ok).toBe(true);
+    expect((await changeCanonicalPath(db, paths, post.id, post.public_id)).ok).toBe(true);
     expect(await getCanonicalPath(db, post.id)).toBe(post.public_id);
     expect(await canonicalCount(post.id)).toBe(1);
   });
@@ -149,7 +149,7 @@ describe('changeCanonicalPath', () => {
   it('無効なパスは拒否して canonical を壊さない', async () => {
     const post = await create('keep');
     for (const bad of ['admin', 'a//b', '..', 'a\\b', '']) {
-      expect((await changeCanonicalPath(db, post.id, bad)).ok).toBe(false);
+      expect((await changeCanonicalPath(db, paths, post.id, bad)).ok).toBe(false);
     }
     expect(await getCanonicalPath(db, post.id)).toBe('keep');
     expect(await canonicalCount(post.id)).toBe(1);
@@ -159,25 +159,25 @@ describe('changeCanonicalPath', () => {
 describe('removePath', () => {
   it('alias は消せる', async () => {
     const post = await create('a');
-    await addAlias(db, post.id, 'b');
-    expect((await removePath(db, post.id, 'b')).ok).toBe(true);
+    await addAlias(db, paths, post.id, 'b');
+    expect((await removePath(db, paths, post.id, 'b')).ok).toBe(true);
     expect(await resolvePath(db, 'b')).toBeNull();
   });
 
   it('canonical と public_id のパスは消せない', async () => {
     const post = await create('a');
-    const canonical = await removePath(db, post.id, 'a');
+    const canonical = await removePath(db, paths, post.id, 'a');
     expect(canonical.ok).toBe(false);
     if (!canonical.ok) expect(canonical.error.code).toBe('canonical-required');
 
-    const identity = await removePath(db, post.id, post.public_id);
+    const identity = await removePath(db, paths, post.id, post.public_id);
     expect(identity.ok).toBe(false);
     if (!identity.ok) expect(identity.error.code).toBe('public-id-path');
   });
 
   it('public_id を大文字で指定しても消せない (行引きが lower() なので届く)', async () => {
     const post = await create('a');
-    const result = await removePath(db, post.id, post.public_id.toUpperCase());
+    const result = await removePath(db, paths, post.id, post.public_id.toUpperCase());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('public-id-path');
     expect(await resolvePath(db, post.public_id)).not.toBeNull();

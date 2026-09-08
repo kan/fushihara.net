@@ -96,8 +96,10 @@ export → import で `public_id` と canonical path が変わる実装は、こ
 ## 日付
 
 表示・`<time datetime>`・`pubDate` はすべて **Asia/Tokyo 基準**。動かす機械の TZ に
-依存しない。変換は `shared/date.ts` が持ち、本体サイトと共用する（同じ記事の日付が
-`/` と `/blog/` でずれないため）。
+依存しない。公開ページの変換は `shared/date.ts` が持ち、本体サイトと共用する
+（同じ記事の日付が `/` と `/blog/` でずれないため）。管理画面は lily の一部なので
+`src/admin/date.ts` が別に持ち、**同じタイムゾーンを設定（`SiteConfig.timeZone`）から
+受け取る**（編集画面で入れた日時と公開ページに出る日付を揃えるため）。
 
 並びは**公開日時の降順**。同時刻のときは `public_id` の昇順を tie-break に使う。
 **同じ日の順序を決めたいときは公開日時に時刻を入れる。**
@@ -117,6 +119,9 @@ export → import で `public_id` と canonical path が変わる実装は、こ
 色とフォントのトークンはリポジトリ直下の `shared/tokens.css` が正本で、本体サイトと
 共用する。テーマの保存キーも `shared/theme.ts` の `STORAGE_KEY` を共用する
 （ずれると `/` と `/blog/` を行き来したときにテーマの選択が引き継がれない）。
+
+**共用するのは公開ページ（`src/site/`）だけ。** 管理画面は lily の一部なので、色は
+`src/admin/style.css` が自分で持つ（値は今のところ同じだが、揃っている必要は無い）。
 
 ## テスト用の固定物
 

@@ -13,14 +13,13 @@ import type { PostWithPathRow } from '../db/types.ts';
 import { storedOrRenderedHtml } from '../delivery.ts';
 import { buildAtom, buildRss, type FeedEntry } from '../feed/index.ts';
 import { toFeedHtml } from '../feed/html.ts';
-import { createUrls, type Urls } from '../paths.ts';
+import { createPaths, type Urls } from '../paths.ts';
 import type { RenderMedia } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
 import { buildSitemap, buildSitemapIndex } from '../sitemap.ts';
 import { postDescription } from '../summary.ts';
 import { groupByPost } from '../view.ts';
 import { LONG_EDGE, SHORT_EDGE } from './cache.ts';
-import { STATIC_ASSETS } from './fixed.ts';
 
 type Env = { Bindings: LilyBindings };
 
@@ -36,7 +35,7 @@ const POSTS_JSON_MAX = 20;
 
 export function feedRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
-  const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
+  const { urls, assets } = createPaths(config);
   const mount = urls.mountPath;
 
   const xml = (body: string, cache = SHORT_EDGE): Response =>
@@ -105,10 +104,10 @@ export function feedRoutes(config: PageConfig): Hono<Env> {
     );
   });
 
-  // favicon 3 点と ogp.png。実体は本体サイトと共有の shared/public にあり、
-  // 静的アセットの URL はディレクトリ直下からの相対になる。`<mount>/favicon.svg`
-  // へは binding 経由で読み替えて出す。
-  for (const name of STATIC_ASSETS) {
+  // deployment が配ると決めた静的アセット (`PageConfig.assets`)。実体は
+  // `ASSETS` バインディングの root 直下にあるので、`<mount>/favicon.svg` への
+  // 要求はそこへ読み替えて出す。**名前は `createPaths()` が予約もしている。**
+  for (const name of assets) {
     app.get(`${mount}/${name}`, (c) => c.env.ASSETS.fetch(new URL(`/${name}`, c.req.url)));
   }
 

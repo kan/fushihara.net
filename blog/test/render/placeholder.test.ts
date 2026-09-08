@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createUrls } from '../../src/core/paths.ts';
+import { createPaths } from '../../src/core/paths.ts';
 import { renderMarkdown } from '../../src/core/render/index.ts';
 import { mediaPlaceholder, resolveMediaUrls } from '../../src/core/render/placeholder.ts';
 
 const MEDIA = { public_id: 'MEDIA-ID', filename: 'sample.png' };
-const blog = createUrls({ siteUrl: 'https://fushihara.net', mountPath: '/blog' });
-const next = createUrls({ siteUrl: 'https://fushihara.net', mountPath: '/blog-next' });
-const root = createUrls({ siteUrl: 'https://blog.example.com', mountPath: '/' });
+const urlsFor = (url: string, mountPath: string) => createPaths({ site: { url }, mountPath }).urls;
+const blog = urlsFor('https://fushihara.net', '/blog');
+const next = urlsFor('https://fushihara.net', '/blog-next');
+const root = urlsFor('https://blog.example.com', '/');
 
 describe('resolveMediaUrls', () => {
   it('placeholder を配信 URL に差し替える', () => {

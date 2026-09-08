@@ -6,7 +6,7 @@
  * integer が振り直されても並びが変わらないようにするため。
  */
 import { newPublicId, nowIso } from '../ids.ts';
-import { normalizePostPath } from '../paths.ts';
+import type { PostPaths } from '../paths.ts';
 import { err, ok, type Result } from '../result.ts';
 import { uniqueViolationTarget } from './errors.ts';
 import { listR2KeysByPost } from './media.ts';
@@ -55,6 +55,7 @@ export type CreatePostInput = {
  */
 export async function createPost(
   db: D1Database,
+  paths: PostPaths,
   input: CreatePostInput,
 ): Promise<Result<PostRow, PathWriteError>> {
   const publicId = input.publicId ?? newPublicId();
@@ -65,7 +66,7 @@ export async function createPost(
 
   let canonical = publicId;
   if (input.path !== undefined) {
-    const normalized = normalizePostPath(input.path);
+    const normalized = paths.normalizePostPath(input.path);
     if (!normalized.ok) return err(normalized.error);
     canonical = normalized.value;
 

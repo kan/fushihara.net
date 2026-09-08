@@ -29,7 +29,20 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 180_000,
   },
-  use: { baseURL: ORIGIN, trace: 'on-first-retry' },
+  use: {
+    baseURL: ORIGIN,
+    trace: 'on-first-retry',
+    /**
+     * ブラウザのタイムゾーン。**わざとサイトのもの (`Asia/Tokyo`) と違うものを
+     * 指定する。**
+     *
+     * 管理画面の日付は `SiteConfig.timeZone` で切り出し、設定が読めないときだけ
+     * 端末の設定に落ちる (`src/admin/site.ts`)。走らせる機械に任せると、日本で
+     * 動かしている限り「設定を読まずに端末の TZ を使う」実装でもテストが通る
+     * (「一覧の日付は JST で出す」が意味を失う)。
+     */
+    timezoneId: 'America/New_York',
+  },
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,

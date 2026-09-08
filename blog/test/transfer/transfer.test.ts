@@ -13,7 +13,7 @@ import { getTagsForPost } from '../../src/core/db/tags.ts';
 import { exportArchive } from '../../src/core/transfer/export.ts';
 import { importArchive } from '../../src/core/transfer/import.ts';
 import { createZip, readZip } from '../../src/core/transfer/zip.ts';
-import { db, resetDb } from '../db/helpers.ts';
+import { db, paths, resetDb } from '../db/helpers.ts';
 import { pngHeader } from '../fixtures/png.ts';
 import {
   api,
@@ -87,7 +87,7 @@ describe('export', () => {
 
   it('frontmatter に identity と全パスと添付の id が載る', async () => {
     const post = await seedPost({ path: 'start-blog', tags: ['blog', 'dev'] });
-    await addAlias(db, post.id, 'old-path');
+    await addAlias(db, paths, post.id, 'old-path');
     const media = await attach(post.id, post.public_id, 'sample.png');
 
     const files = await entriesOf(await exportBytes());
@@ -196,7 +196,7 @@ describe('往復 (import → export → import)', () => {
    */
   async function reimport(archive: Uint8Array) {
     await resetDb();
-    const result = await importArchive(db, env.MEDIA, archive);
+    const result = await importArchive(db, paths, env.MEDIA, archive);
     expect(result.failed, JSON.stringify(result.failed)).toEqual([]);
     return result;
   }
@@ -210,7 +210,7 @@ describe('往復 (import → export → import)', () => {
       description: 'ためしに書いた',
       publishedAt: '2026-08-23T04:00:00.000Z',
     });
-    await addAlias(db, original.id, 'old-path');
+    await addAlias(db, paths, original.id, 'old-path');
     const media = await attach(original.id, original.public_id, 'sample.png');
     // **日時を実行時刻から引き離す。** そうしないと「2 周目も同じ書庫になる」が、
     // 往復で保たれない列 (media.created_at など) を書庫に載せていても、同じ
@@ -260,7 +260,7 @@ describe('往復 (import → export → import)', () => {
 
   it('alias で引ける URL がそのまま残る', async () => {
     const original = await seedPost({ path: 'ratatoskr/1' });
-    await addAlias(db, original.id, 'old-path');
+    await addAlias(db, paths, original.id, 'old-path');
 
     await reimport(await exportBytes());
 
@@ -293,7 +293,7 @@ describe('往復 (import → export → import)', () => {
 describe('import', () => {
   async function importFiles(files: Record<string, Uint8Array>) {
     const archive = createZip(Object.entries(files).map(([path, data]) => ({ path, data })));
-    return await importArchive(db, env.MEDIA, archive);
+    return await importArchive(db, paths, env.MEDIA, archive);
   }
 
   it('public_id と paths が無い記事も取り込める (Astro からの移行はこの形)', async () => {
@@ -486,14 +486,14 @@ describe('import', () => {
       { path: 'posts/b/index.md', data: postFile(['title: 添付あり', 'date: 2026-08-23']) },
       { path: 'posts/b/sample.png', data: PNG },
     ]);
-    const result = await importArchive(db, broken, archive);
+    const result = await importArchive(db, paths, broken, archive);
 
     expect(result.imported.map((p) => p.path)).toEqual(['a']);
     expect(result.failed).toEqual([{ path: 'b', error: '取り込み中に失敗した: R2 が落ちた' }]);
   });
 
   it('zip でなければ 1 本も取り込まない', async () => {
-    await expect(importArchive(db, env.MEDIA, encoder.encode('これは zip ではない'))).rejects.toThrow();
+    await expect(importArchive(db, paths, env.MEDIA, encoder.encode('これは zip ではない'))).rejects.toThrow();
   });
 });
 

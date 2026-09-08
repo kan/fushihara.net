@@ -1,6 +1,22 @@
 import { env } from 'cloudflare:test';
+import { createPaths, type Paths } from '../../src/core/paths.ts';
+import { ASSETS, MOUNT_PATH, SITE } from '../../src/site/meta.ts';
 
 export const db = env.DB;
+
+/**
+ * 記事パスの規則。**本番と同じ予約語**（route + `src/site/meta.ts` のアセット）で見る。
+ *
+ * 書き込みの口はどれも `PostPaths` を要求するので、テストごとに素のオブジェクトを
+ * 作ると「予約語を知らない規則」で通ってしまい、`admin` や `favicon.ico` を弾いて
+ * いるかの検証にならない。`site/meta.ts` は何も import しないので、ここから引いても
+ * テーマや CSS を引き込まない。
+ */
+export const paths: Paths = createPaths({
+  site: SITE,
+  mountPath: MOUNT_PATH,
+  assets: ASSETS,
+});
 
 /**
  * 表を空にする。isolatedStorage に頼らず、どのテストも同じ前提から始める

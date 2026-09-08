@@ -419,7 +419,8 @@ JS は `data-theme` を切り替えるだけで、色を一切持たない。
 向き、ブログは `blog/scripts/build.mjs` が `dist/` へコピーする。同じアイコンを
 2 箇所に置くと必ず片方だけ古くなるため。ブログ側の参照は `/blog/favicon.svg` のように
 mount 付きになり、`<mount>/favicon.svg` への要求を Worker が binding 経由で読み替える
-（配るものの一覧は `core/routes/fixed.ts` の `STATIC_ASSETS`）。
+（配るものの一覧は `blog/src/site/meta.ts` の `ASSET`。**lily の設定として渡す**ので、
+core は 1 つも知らない）。
 
 **片方のサイトだけの静的ファイルが要るようになったら、置き場所を分けること。**
 `shared/public/` に置いたものは両サイトに配られる。ブログ側はコピーなので
@@ -486,7 +487,8 @@ mount 付きになり、`<mount>/favicon.svg` への要求を Worker が binding
 本体の絵が黙って配られる（`blog/e2e/blog.spec.ts` の「配信物」節がバイト列で見張る）。
 
 **`og:image` は絶対 URL でないとクローラが解決できない**ので、本体は `index.html` に
-直書き、ブログは `core/paths.ts` の `urls.asset(…, { absolute: true })` で組み立てる。
+直書き、ブログは `blog/src/site/meta.ts` の `SITE.ogImage` に持つ（lily の設定として
+渡す。core は絵の配信にも URL の組み立てにも関与しない）。
 配線が切れても画面には出ないので、本体は `e2e/favicon.spec.ts`、ブログは
 `blog/e2e/blog.spec.ts` の「配信物」節が meta と実体を突き合わせている。
 

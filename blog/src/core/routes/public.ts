@@ -1,5 +1,5 @@
 /**
- * 公開側のルータ。**URL の形は `core/paths.ts` が、予約は `fixed.ts` が決める。**
+ * 公開側のルータ。**URL の形も予約も `core/paths.ts` の `createPaths()` が決める。**
  *
  * ここが持つのは「どのデータをどのテーマ関数に渡すか」と、308 の張り方だけ。
  */
@@ -16,7 +16,7 @@ import {
 import { getOgpMedia, listMediaByPost } from '../db/media.ts';
 import { storedOrRenderedHtml } from '../delivery.ts';
 import { getTagBySlug, getTagsForPost, getTagsForPosts } from '../db/tags.ts';
-import { createUrls, normalizePostPath } from '../paths.ts';
+import { createPaths } from '../paths.ts';
 import { renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
 import type { PageContext, Pagination } from '../theme.ts';
@@ -30,7 +30,7 @@ type Env = { Bindings: LilyBindings };
 
 export function publicRoutes(config: PageConfig): Hono<Env> {
   const app = new Hono<Env>();
-  const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
+  const { urls, normalizePostPath } = createPaths(config);
   const mount = urls.mountPath;
   const { theme } = config;
   // 中身が変わるのはデプロイのときだけなので、ETag は起動時に 1 度だけ組む。

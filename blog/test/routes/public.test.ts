@@ -5,7 +5,7 @@ import { addAlias } from '../../src/core/db/post-paths.ts';
 import { setPreviewToken } from '../../src/core/db/posts.ts';
 import { createMedia, setOgpMedia } from '../../src/core/db/media.ts';
 import { hashPreviewToken, newPreviewToken } from '../../src/core/tokens.ts';
-import { db, resetDb } from '../db/helpers.ts';
+import { db, paths, resetDb } from '../db/helpers.ts';
 import { get, getRoot, MOUNT, seedPost, SITE } from './helpers.ts';
 
 beforeEach(resetDb);
@@ -116,7 +116,7 @@ describe('記事', () => {
 
   it('alias は canonical へ 308', async () => {
     const post = await seedPost({ path: 'now' });
-    await addAlias(db, post.id, 'then');
+    await addAlias(db, paths, post.id, 'then');
 
     const res = await get(`${MOUNT}/then/`);
     expect(res.status).toBe(308);

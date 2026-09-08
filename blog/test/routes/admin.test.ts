@@ -57,6 +57,8 @@ describe('管理画面の入口 HTML', () => {
       description: 'root mount',
       author: 'someone',
       lang: ROOT_LANG,
+      timeZone: 'UTC',
+      ogImage: { url: `${ROOT_SITE}/ogp.png`, width: 800, height: 400 },
     });
   });
 

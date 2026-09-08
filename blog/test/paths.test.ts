@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ADMIN_HASH,
-  createUrls,
-  normalizeMountPath,
-  normalizePostPath,
-  siteOrigin,
-} from '../src/core/paths.ts';
+import { ADMIN_HASH, createPaths, normalizeMountPath, siteOrigin } from '../src/core/paths.ts';
 import type { PathErrorCode } from '../src/core/paths.ts';
-import { isReservedSegment, ROUTE } from '../src/core/routes/fixed.ts';
+import { ROUTE } from '../src/core/routes/fixed.ts';
+
+/**
+ * 配る静的アセットの名前。**core は 1 つも知らない**ので、予約されるものを
+ * 見たいテストは自分で渡す（本番の一覧は `src/site/meta.ts`）。
+ */
+const ASSETS = ['favicon.svg', 'favicon.ico', 'ogp.png'];
+
+const site = { site: { url: 'https://fushihara.net' }, mountPath: '/blog', assets: ASSETS };
+const root = { site: { url: 'https://blog.example.com' }, mountPath: '/', assets: ASSETS };
+
+const { normalizePostPath, isReservedSegment } = createPaths(site);
 
 /** 成功したときの値。失敗していたらエラーコード付きで落とす。 */
 function value(input: string): string {
@@ -142,12 +147,11 @@ describe('normalizeMountPath', () => {
   });
 });
 
-describe('createUrls', () => {
-  const site = { siteUrl: 'https://fushihara.net', mountPath: '/blog' };
-  const root = { siteUrl: 'https://blog.example.com', mountPath: '/' };
+describe('createPaths().urls', () => {
+  const urlsOf = (config: typeof site) => createPaths(config).urls;
 
   it('fushihara.net の現行 URL を組める', () => {
-    const urls = createUrls(site);
+    const urls = urlsOf(site);
     expect(urls.index()).toBe('/blog/');
     expect(urls.post('ratatoskr/1')).toBe('/blog/ratatoskr/1/');
     expect(urls.tag({ slug: 'dev' })).toBe('/blog/tags/dev/');
@@ -164,7 +168,7 @@ describe('createUrls', () => {
 
   it('一覧のページ番号は 2 ページ目から付く', () => {
     // `/blog/` と `/blog/page/1/` が両方あると、同じ中身が 2 つの URL で出る。
-    const urls = createUrls(site);
+    const urls = urlsOf(site);
     expect(urls.index()).toBe('/blog/');
     expect(urls.index({ page: 1 })).toBe('/blog/');
     expect(urls.index({ page: 2 })).toBe('/blog/page/2/');
@@ -173,7 +177,7 @@ describe('createUrls', () => {
   });
 
   it('absolute でサイトの絶対 URL になる', () => {
-    const urls = createUrls(site);
+    const urls = urlsOf(site);
     expect(urls.post('ratatoskr/1', { absolute: true })).toBe('https://fushihara.net/blog/ratatoskr/1/');
     expect(urls.media({ public_id: 'abc', filename: 'a.png' }, { absolute: true })).toBe(
       'https://fushihara.net/blog/media/abc/a.png',
@@ -181,7 +185,7 @@ describe('createUrls', () => {
   });
 
   it('root mount でも同じ関数で組める (core に /blog を焼き付けない)', () => {
-    const urls = createUrls(root);
+    const urls = urlsOf(root);
     expect(urls.index()).toBe('/');
     expect(urls.post('ratatoskr/1')).toBe('/ratatoskr/1/');
     expect(urls.feed('rss')).toBe('/rss.xml');
@@ -191,24 +195,24 @@ describe('createUrls', () => {
   it('管理画面で記事を開く URL を組める', () => {
     // ハッシュの形は `ADMIN_HASH` が正。**組む側と、解く側 (`src/admin/router.ts`)
     // が同じものを見る**ので、ここで形を固定しておく。
-    const urls = createUrls(site);
+    const urls = urlsOf(site);
     expect(urls.adminPost('abc')).toBe(`/blog/admin/#${ADMIN_HASH.postPrefix}abc`);
     expect(urls.adminPost('abc')).toBe('/blog/admin/#/posts/abc');
-    expect(createUrls(root).adminPost('abc')).toBe('/admin/#/posts/abc');
+    expect(urlsOf(root).adminPost('abc')).toBe('/admin/#/posts/abc');
   });
 
   it('origin の末尾スラッシュは落とす (// にならない)', () => {
     expect(siteOrigin('https://fushihara.net/')).toBe('https://fushihara.net');
     expect(siteOrigin('https://fushihara.net///')).toBe('https://fushihara.net');
     expect(siteOrigin('https://fushihara.net')).toBe('https://fushihara.net');
-    // createUrls も同じものを通す。
+    // URL 生成器も同じものを通す。
     expect(
-      createUrls({ siteUrl: 'https://fushihara.net/', mountPath: '/blog' }).index({ absolute: true }),
+      urlsOf({ ...site, site: { url: 'https://fushihara.net/' } }).index({ absolute: true }),
     ).toBe('https://fushihara.net/blog/');
   });
 
   it('保存されているパスはセグメント単位でエンコードする', () => {
-    const urls = createUrls(site);
+    const urls = urlsOf(site);
     expect(urls.post('日本語/1')).toBe('/blog/%E6%97%A5%E6%9C%AC%E8%AA%9E/1/');
     expect(urls.tag({ slug: '日記' })).toBe('/blog/tags/%E6%97%A5%E8%A8%98/');
   });
@@ -218,7 +222,7 @@ describe('URL 生成と予約パスの対応', () => {
   it('生成器が作る固定 URL は、すべて記事に取られないよう予約されている', () => {
     // route を 1 本足したときに fixed.ts だけ直して paths.ts を忘れる (逆も) と、
     // 「URL は生成できるが予約されていない」が黙って成立する。ここで塞ぐ。
-    const urls = createUrls({ siteUrl: 'https://example.com', mountPath: '/' });
+    const urls = createPaths({ site: { url: 'https://example.com' }, mountPath: '/' }).urls;
     const generated = [
       urls.tag({ slug: 'x' }),
       urls.media({ public_id: 'a', filename: 'b.png' }),
@@ -242,5 +246,25 @@ describe('URL 生成と予約パスの対応', () => {
     for (const segment of Object.values(ROUTE)) {
       expect(isReservedSegment(segment), `${segment} が予約されていない`).toBe(true);
     }
+  });
+
+  it('配ると宣言した静的アセットも予約される', () => {
+    // 配るのに予約しないと、その名前で作った記事が静的アセットの影に入る。
+    // **大小文字は無視する**（記事パスの一意性が ci なので、`Favicon.ico` を
+    // 通すと `/favicon.ICO` がその記事に解決されてしまう）。
+    for (const asset of ASSETS) {
+      expect(isReservedSegment(asset), `${asset} が予約されていない`).toBe(true);
+      expect(code(asset)).toBe('reserved-path');
+      expect(isReservedSegment(asset.toUpperCase())).toBe(true);
+    }
+  });
+
+  it('予約するのは deployment が配ると言ったものだけ', () => {
+    // core に既定のアセット名を持たせない。持たせると、配りもしないのに
+    // `favicon.ico` という記事パスが作れないサイトができる。
+    const bare = createPaths({ site: { url: 'https://example.com' }, mountPath: '/' });
+    expect(bare.isReservedSegment('favicon.ico')).toBe(false);
+    expect(bare.normalizePostPath('favicon.ico').ok).toBe(true);
+    expect(bare.assets).toEqual([]);
   });
 });

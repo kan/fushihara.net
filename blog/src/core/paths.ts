@@ -6,7 +6,7 @@
  * 各所に散らさないぶん、root mount の検証はユニットテストで済む。
  */
 import { err, ok, type Result } from './result.ts';
-import { isReservedSegment, ROUTE } from './routes/fixed.ts';
+import { FIXED_ROUTES, ROUTE } from './routes/fixed.ts';
 
 /** パス全体の長さ上限。export 先のファイルシステムに書ける範囲に収める。 */
 const MAX_PATH_LENGTH = 200;
@@ -46,8 +46,15 @@ export type PathError = { readonly code: PathErrorCode; readonly segment?: strin
  *
  * `path` は公開 URL であると同時に portable export のディレクトリ名になるので、
  * ファイルシステムに書ける形であることまでここで決める。
+ *
+ * **予約判定だけが deployment 依存**（配る静的アセットの名前が設定から来る）
+ * なので、外に出すのは `createPaths()` が閉じ込めたほうだけ。ここを直接
+ * export すると、予約語を知らないまま記事パスを書ける経路ができる。
  */
-export function normalizePostPath(input: string): Result<string, PathError> {
+function normalizePostPath(
+  input: string,
+  isReservedSegment: (segment: string) => boolean,
+): Result<string, PathError> {
   // percent encoding は保存しない。1 回だけデコードしてから検査し、その後も `%` が
   // 残っていたら拒否する (`%252F` のような二重エンコードで `/` を紛れ込ませる経路を塞ぐ)。
   let decoded: string;
@@ -147,11 +154,24 @@ export type UrlOptions = { readonly absolute?: boolean };
  */
 export type PageOptions = UrlOptions & { readonly page?: number };
 
-export type UrlsConfig = {
+/**
+ * URL と予約語を決めるのに要る設定。**`PageConfig` がそのまま渡せる形**にして
+ * あるので、ルータは `createPaths(config)` と書ける。
+ *
+ * `core/config.ts` の型を import しないのは、あちらが `theme.ts` 経由でここを
+ * import しているため（型だけの循環でも読む側が追いにくい）。構造で受ければ
+ * `PageConfig` も、テストの素のオブジェクトも同じように渡せる。
+ */
+export type PathsConfig = {
   /** サイトの絶対 URL (`https://fushihara.net`)。末尾スラッシュは無視する。 */
-  readonly siteUrl: string;
+  readonly site: { readonly url: string };
   /** マウント位置。OSS の標準構成では `'/'`。 */
   readonly mountPath: string;
+  /**
+   * mount root 直下に配る静的アセットのファイル名 (`favicon.ico` など)。
+   * **記事のパスとして予約される。**
+   */
+  readonly assets?: readonly string[];
 };
 
 export type MediaRef = { readonly public_id: string; readonly filename: string };
@@ -182,13 +202,63 @@ export interface Urls {
   sitemapUrls(options?: UrlOptions): string;
   /** テーマが配る 1 本のスタイルシート。 */
   stylesheet(options?: UrlOptions): string;
-  /** mount root 直下に置く静的アセット (favicon 3 点と ogp.png)。 */
+  /** mount root 直下に置く静的アセット (`PathsConfig.assets` の 1 つ)。 */
   asset(filename: string, options?: UrlOptions): string;
 }
 
-export function createUrls(config: UrlsConfig): Urls {
+/**
+ * 記事パスの規則。**予約語はこの deployment のもの**（route + 配る静的アセット）。
+ *
+ * URL 生成を要らない層 (`core/db/` と `core/transfer/`) はこちらだけを受け取る。
+ */
+export type PostPaths = {
+  normalizePostPath(input: string): Result<string, PathError>;
+  /**
+   * 第 1 セグメントが予約されているか。
+   *
+   * `_` 始まりも予約する。将来 `_astro` のような内部用のプレフィックスを
+   * 足したくなったときに、既存記事の URL と衝突しないようにするため。
+   *
+   * **判定は大小文字を無視する。** パスの一意性 (`post_paths_path_ci`) も解決
+   * (`resolvePath` の `lower()`) も ci なので、ここだけ厳密にすると `Admin` が
+   * 記事パスとして通ったうえで `/AdMiN` がその記事に解決されてしまう。
+   */
+  isReservedSegment(segment: string): boolean;
+};
+
+/**
+ * この deployment の URL と予約語。**両方を 1 つの factory から出す。**
+ *
+ * route の名前 (`fixed.ts`) と配る静的アセット (`config.assets`) の
+ * どちらも「URL を組む側」と「記事パスを弾く側」の両方から見られる。別々に
+ * 作ると、片方だけ直して「URL は生成できるが予約されていない」が黙って成立する。
+ */
+export type Paths = PostPaths & {
+  readonly urls: Urls;
+  /** mount root 直下に配る静的アセット。ルータはこの順で route を張る。 */
+  readonly assets: readonly string[];
+};
+
+export function createPaths(config: PathsConfig): Paths {
+  const assets = config.assets ?? [];
+  // route は元から小文字だが、アセット名は設定から来るので畳んでおく。
+  const reserved = new Set<string>(
+    [...FIXED_ROUTES, ...assets].map((name) => name.toLowerCase()),
+  );
+  const isReservedSegment = (segment: string): boolean =>
+    segment.startsWith('_') || reserved.has(segment.toLowerCase());
+
+  return {
+    urls: createUrls(config),
+    assets,
+    isReservedSegment,
+    normalizePostPath: (input) => normalizePostPath(input, isReservedSegment),
+  };
+}
+
+function createUrls(config: PathsConfig): Urls {
   const mountPath = normalizeMountPath(config.mountPath);
-  const origin = siteOrigin(config.siteUrl);
+  const origin = siteOrigin(config.site.url);
 
   const build = (relative: string, options?: UrlOptions): string => {
     const path = `${mountPath}${relative}`;

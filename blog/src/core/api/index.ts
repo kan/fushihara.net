@@ -56,10 +56,9 @@ import { buildLinkCard } from '../link-card.ts';
 import { fetchLinkTitle, linkUserAgent } from '../link-preview.ts';
 import { imageDimensions } from '../media/dimensions.ts';
 import { canBeOgp, mimeForFilename } from '../media/formats.ts';
-import { createUrls, normalizeSegment, type Urls } from '../paths.ts';
+import { createPaths, normalizeSegment, type Urls } from '../paths.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../render/index.ts';
 import { resolveMediaUrls } from '../render/placeholder.ts';
-import { OGP_ASSET } from '../routes/fixed.ts';
 import { postDescription, summarize } from '../summary.ts';
 import { hashPreviewToken, newPreviewToken } from '../tokens.ts';
 import {
@@ -111,7 +110,8 @@ const RERENDER_BATCH = 50;
 const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 
 export function createApi(config: PageConfig) {
-  const urls = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath });
+  const paths = createPaths(config);
+  const { urls } = paths;
   // 外へ取りに行くときに名乗る名前。**空だと断られる先がある**（`link-preview.ts`）。
   const userAgent = linkUserAgent(config.site);
   const api = new Hono<ApiEnv>();
@@ -200,7 +200,7 @@ export function createApi(config: PageConfig) {
       const tags = await resolveTags(db, input.tags ?? []);
       if (!tags.ok) return c.json(...apiError(tags.error.code, tags.error.name));
 
-      const created = await createPost(db, {
+      const created = await createPost(db, paths, {
         title: input.title,
         bodyMd: input.bodyMd,
         description: input.description,
@@ -305,7 +305,7 @@ export function createApi(config: PageConfig) {
       // 「どれを載せるか」を引いてから実体を読むので、2 段まとめて片側に置く）。
       const [canonical, thumb] = await Promise.all([
         getCanonicalPath(db, post.id),
-        getOgpMedia(db, post.id).then((ogp) => cardThumb(c.env, c.req.url, ogp)),
+        getOgpMedia(db, post.id).then((ogp) => cardThumb(config, c.env, c.req.url, ogp)),
       ]);
 
       let announced;
@@ -346,7 +346,7 @@ export function createApi(config: PageConfig) {
       const post = await getPostByPublicId(db, c.req.param('publicId'));
       if (!post) return c.json(...apiError('post-not-found'));
 
-      const changed = await changeCanonicalPath(db, post.id, c.req.valid('json').path);
+      const changed = await changeCanonicalPath(db, paths, post.id, c.req.valid('json').path);
       if (!changed.ok) return c.json(...apiError(changed.error.code, changed.error.segment));
       // 本文は変わらないので描き直さない (URL の解決は配信時に行われる)。
       return c.json({ post: await toPostView(db, urls, post) });
@@ -357,7 +357,7 @@ export function createApi(config: PageConfig) {
       const post = await getPostByPublicId(db, c.req.param('publicId'));
       if (!post) return c.json(...apiError('post-not-found'));
 
-      const added = await addAlias(db, post.id, c.req.valid('json').path);
+      const added = await addAlias(db, paths, post.id, c.req.valid('json').path);
       if (!added.ok) return c.json(...apiError(added.error.code, added.error.segment));
       // 本文は変わらないので描き直さない (URL の解決は配信時に行われる)。
       return c.json({ post: await toPostView(db, urls, post) });
@@ -368,7 +368,7 @@ export function createApi(config: PageConfig) {
       const post = await getPostByPublicId(db, c.req.param('publicId'));
       if (!post) return c.json(...apiError('post-not-found'));
 
-      const removed = await removePath(db, post.id, c.req.valid('json').path);
+      const removed = await removePath(db, paths, post.id, c.req.valid('json').path);
       if (!removed.ok) return c.json(...apiError(removed.error.code, removed.error.segment));
       // 本文は変わらないので描き直さない (URL の解決は配信時に行われる)。
       return c.json({ post: await toPostView(db, urls, post) });
@@ -594,7 +594,7 @@ export function createApi(config: PageConfig) {
 
       try {
         const archive = new Uint8Array(await file.arrayBuffer());
-        return c.json(await importArchive(c.env.DB, c.env.MEDIA, archive));
+        return c.json(await importArchive(c.env.DB, paths, c.env.MEDIA, archive));
       } catch (error) {
         // 壊れた書庫は入力の誤りなので 400。それ以外は投げ直す。
         if (error instanceof ZipError) return c.json(...apiError('invalid-archive', error.message));
@@ -649,6 +649,7 @@ async function save(db: D1Database, urls: Urls, post: PostRow) {
  * なる。`bytes` は DB にあるので、R2 から取りに行く前に分かる。
  */
 async function cardThumb(
+  config: PageConfig,
   env: LilyBindings,
   requestUrl: string,
   ogp: MediaRow | null,
@@ -664,22 +665,25 @@ async function cardThumb(
       console.warn(`bluesky: OGP の添付を読めないので共通の絵にする (${ogp.r2_key}): ${error}`);
     }
   }
-  return await ogpThumb(env.ASSETS, requestUrl);
+  return await ogpThumb(config, env, requestUrl);
 }
 
 /**
  * サイト共通の OGP。**取れなくても告知は止めない**（絵の無いカードが出る）。
  *
- * 読むのは配信しているのと同じ実体（`ASSETS` バインディング）。公開 URL を
- * fetch すると、Worker が自分のゾーンへサブリクエストを出すことになる。
- *
- * **`urls.asset()` は使わない。** 静的アセットはディレクトリ直下に置かれるので、
- * バインディングに渡すのは mount の付かない `/ogp.png`（`routes/feeds.ts` が
- * 配信するときと同じ形）。mount 付きの公開 URL を渡すと何も返らない。
+ * 読むのは配信しているのと同じ実体（`ASSETS` バインディング）。**mount は付けない**
+ * ―― 静的アセットは root 直下に置かれるので、渡すのは `/ogp.png` の形
+ * （`routes/feeds.ts` が配信するときと同じ）。`site.ogImage.url` を素で fetch
+ * できない理由は `core/config.ts` の `ogImageAsset`。
  */
-async function ogpThumb(assets: Fetcher, requestUrl: string): Promise<BlueskyThumb | null> {
+async function ogpThumb(
+  config: PageConfig,
+  env: LilyBindings,
+  requestUrl: string,
+): Promise<BlueskyThumb | null> {
+  if (!config.ogImageAsset) return null;
   try {
-    const response = await assets.fetch(new URL(`/${OGP_ASSET}`, requestUrl));
+    const response = await env.ASSETS.fetch(new URL(`/${config.ogImageAsset}`, requestUrl));
     if (!response.ok) return null;
     const bytes = await response.arrayBuffer();
     if (bytes.byteLength === 0) return null;

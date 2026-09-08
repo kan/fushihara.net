@@ -4,7 +4,7 @@
  * 記事の identity は `posts.public_id`、URL は `post_paths` と分けてあるので、
  * URL は後から変えられて旧 URL は alias として残る。
  */
-import { normalizePostPath, type PathErrorCode } from '../paths.ts';
+import type { PathErrorCode, PostPaths } from '../paths.ts';
 import { err, ok, type Result } from '../result.ts';
 import { nowIso } from '../ids.ts';
 import { queryInChunks } from './chunk.ts';
@@ -186,10 +186,11 @@ export function initialPathStatements(
  */
 export async function changeCanonicalPath(
   db: D1Database,
+  paths: PostPaths,
   postId: number,
   rawPath: string,
 ): Promise<Result<string, PathWriteError>> {
-  const normalized = normalizePostPath(rawPath);
+  const normalized = paths.normalizePostPath(rawPath);
   if (!normalized.ok) return err(normalized.error);
   const path = normalized.value;
 
@@ -237,10 +238,11 @@ export async function changeCanonicalPath(
 
 export async function addAlias(
   db: D1Database,
+  paths: PostPaths,
   postId: number,
   rawPath: string,
 ): Promise<Result<string, PathWriteError>> {
-  const normalized = normalizePostPath(rawPath);
+  const normalized = paths.normalizePostPath(rawPath);
   if (!normalized.ok) return err(normalized.error);
   const path = normalized.value;
 
@@ -268,10 +270,11 @@ export async function addAlias(
 
 export async function removePath(
   db: D1Database,
+  paths: PostPaths,
   postId: number,
   rawPath: string,
 ): Promise<Result<void, PathWriteError>> {
-  const normalized = normalizePostPath(rawPath);
+  const normalized = paths.normalizePostPath(rawPath);
   if (!normalized.ok) return err(normalized.error);
   const path = normalized.value;
 

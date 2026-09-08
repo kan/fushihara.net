@@ -3,23 +3,10 @@
  */
 import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
-import { STATIC_ASSETS } from '../core/routes/fixed.ts';
-import type { Urls } from '../core/paths.ts';
+import type { SiteConfig } from '../core/config.ts';
 import type { ImageView, PageContext, Pagination } from '../core/theme.ts';
 import { ADMIN_LINK, THEME_INIT, THEME_TOGGLE } from './client.ts';
-
-/**
- * mount root 直下に出す静的アセット。実体は本体サイトと共有の `shared/public`。
- *
- * `satisfies` で `STATIC_ASSETS` に載っているものだけを参照していることを型で
- * 確かめる。core 側の予約と食い違うと、その名前の記事パスが作れてしまう。
- */
-const ASSET = {
-  favicon: 'favicon.ico',
-  faviconSvg: 'favicon.svg',
-  appleTouchIcon: 'apple-touch-icon.png',
-  ogp: 'ogp.png',
-} as const satisfies Record<string, (typeof STATIC_ASSETS)[number]>;
+import { ASSET } from './meta.ts';
 
 export type LayoutOptions = {
   /** ページ名。トップは省略してサイト名だけにする。 */
@@ -47,21 +34,14 @@ export function pageTitle(siteName: string, page?: string): string {
   return page ? `${page} | ${siteName}` : siteName;
 }
 
-/** サイト共通の OGP（`blog/public/ogp.png`）の寸法。**絵と一緒に直すこと。** */
-const OGP_SIZE = { width: 1200, height: 630 } as const;
-
 /**
- * OGP の絵。**記事が選んでいなければサイト共通の 1 枚。**
+ * OGP の絵。**記事が選んでいなければサイト共通の 1 枚**（`site.ogImage`）。
  *
- * `og:image` は絶対 URL でないとクローラが解決できない（URL を組むのは core）。
  * 寸法は**分かっているときだけ**書く。添付はヘッダから読めないことがあり
  * （`media/dimensions.ts`）、共通の絵の 1200x630 を当てると嘘になる。
  */
-function ogImage(urls: Urls, image: ImageView | null) {
-  const chosen: ImageView = image ?? {
-    url: urls.asset(ASSET.ogp, { absolute: true }),
-    ...OGP_SIZE,
-  };
+function ogImage(site: SiteConfig, image: ImageView | null) {
+  const chosen: ImageView = image ?? site.ogImage;
   return html`<meta property="og:image" content="${chosen.url}" />
     ${chosen.width === null || chosen.height === null
       ? ''
@@ -121,7 +101,7 @@ export async function layout(
     <meta property="og:description" content="${description}" />
     <meta property="og:type" content="${options.ogType ?? 'website'}" />
     ${canonicalUrl === null ? '' : html`<meta property="og:url" content="${canonicalUrl}" />`}
-    ${ogImage(urls, options.image ?? null)}
+    ${ogImage(site, options.image ?? null)}
     <!-- カードの形だけ指定する。**どのアカウントのものかは示さない**
          (twitter:site は Astro から引き継いだだけで、何も担っていなかった)。 -->
     <meta name="twitter:card" content="summary_large_image" />

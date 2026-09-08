@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { isoDate } from '../../../../shared/date.ts';
+import { isoDate } from '../date.ts';
 import { client, errorMessage, MOUNT } from '../api.ts';
 import { go, NEW_POST_ROUTE, postRoute } from '../router.ts';
 import { SITE } from '../site.ts';

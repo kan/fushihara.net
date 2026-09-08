@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
 import { createApi, type ApiEnv } from '../api/index.ts';
 import type { LilyBindings, LilyConfig } from '../config.ts';
-import { createUrls } from '../paths.ts';
+import { createPaths } from '../paths.ts';
 import { ROUTE } from './fixed.ts';
 import { requireAuth } from './require-auth.ts';
 
@@ -22,7 +22,7 @@ export function apiRoutes<Bindings extends LilyBindings>(
   config: LilyConfig<Bindings>,
 ): Hono<AppEnv<Bindings>> {
   const app = new Hono<AppEnv<Bindings>>();
-  const mount = createUrls({ siteUrl: config.site.url, mountPath: config.mountPath }).mountPath;
+  const mount = createPaths(config).urls.mountPath;
 
   /**
    * **認証だけでは足りない。**

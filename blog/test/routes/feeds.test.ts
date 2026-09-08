@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { changeCanonicalPath } from '../../src/core/db/post-paths.ts';
 import { createMedia } from '../../src/core/db/media.ts';
-import { db, resetDb } from '../db/helpers.ts';
-import { get, MOUNT, seedPost, SITE } from './helpers.ts';
+import { db, paths, resetDb } from '../db/helpers.ts';
+import { get, getRoot, MOUNT, ROOT_ASSETS, seedPost, SITE } from './helpers.ts';
 
 beforeEach(resetDb);
 
@@ -206,7 +206,7 @@ describe('Atom', () => {
     const before = await (await get(`${MOUNT}/atom.xml`)).text();
     expect(before).toContain(`<id>urn:uuid:${post.public_id}</id>`);
 
-    await changeCanonicalPath(db, post.id, 'new-path');
+    await changeCanonicalPath(db, paths, post.id, 'new-path');
     const after = await (await get(`${MOUNT}/atom.xml`)).text();
     expect(after).toContain(`<id>urn:uuid:${post.public_id}</id>`);
     expect(after).toContain(`href="${SITE}${MOUNT}/new-path/"`);
@@ -314,6 +314,14 @@ describe('静的アセット', () => {
       expect(res.status, path).toBe(200);
       expect((await res.arrayBuffer()).byteLength, path).toBeGreaterThan(0);
     }
+  });
+
+  it('配る名前は設定から来る (core は 1 つも知らない)', async () => {
+    // root mount のアプリは `ROOT_ASSETS` しか配らない。core に一覧を持たせると
+    // 「設定に無いものが配られる」「設定に足したものが配られない」の両方が起きる。
+    expect((await getRoot('/favicon.ico')).status, 'ROOT_ASSETS のものが出ない').toBe(200);
+    expect(ROOT_ASSETS).not.toContain('favicon.svg');
+    expect((await getRoot('/favicon.svg')).status, '設定に無いものが配られている').toBe(404);
   });
 
   it('レイアウトの link と og:image が実体を指す', async () => {

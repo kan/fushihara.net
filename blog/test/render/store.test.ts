@@ -1,7 +1,7 @@
 import { beforeEach, expect, it } from 'vitest';
 import { createPost, setRenderedHtml } from '../../src/core/db/posts.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../../src/core/render/index.ts';
-import { db, resetDb } from '../db/helpers.ts';
+import { db, paths, resetDb } from '../db/helpers.ts';
 
 beforeEach(resetDb);
 
@@ -9,7 +9,7 @@ it('描画結果は renderer_version と一緒に保存できる (CHECK を満�
   // body_html は派生データで、renderer を更新したら作り直す。DB は
   // 「body_html があるなら renderer_version もある」を CHECK で守っているので、
   // 描画側と保存側が噛み合っていることをここで確かめる。
-  const created = await createPost(db, { title: 'x', bodyMd: '## 見出し' });
+  const created = await createPost(db, paths, { title: 'x', bodyMd: '## 見出し' });
   expect(created.ok).toBe(true);
   if (!created.ok) return;
 

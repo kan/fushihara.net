@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fromDateTimeInput, isoDate, toDateTimeInput } from '../../shared/date.ts';
+import { createDateFormat } from '../src/admin/date-format.ts';
+import { SITE } from '../src/site/meta.ts';
 
 /**
  * 公開日時の編集は JST で行う。表示もフィードも Asia/Tokyo 基準なので、入力だけ
@@ -34,5 +36,26 @@ describe('日時の編集', () => {
     // 一覧に出る日付 (isoDate) と、編集欄に出る日付が同じ日を指すこと
     const date = new Date('2026-08-01T15:30:00.000Z');
     expect(toDateTimeInput(date).slice(0, 10)).toBe(isoDate(date));
+  });
+});
+
+/**
+ * 公開ページは `shared/date.ts`（本体サイトと共用なので設定を読めない）、管理画面は
+ * `SiteConfig.timeZone` で日付を組む。**片方だけ動かすと、編集画面で入れた日時と
+ * `/blog/` に出る日付が食い違う。**
+ *
+ * コメントで「同じ値にすること」と書くだけだと、動かした日に気付けない。出力そのものを
+ * 突き合わせておけば、`SITE.timeZone` を変えた時点でここが落ちる。
+ */
+describe('公開ページと管理画面のタイムゾーン', () => {
+  it('同じ瞬間から同じ日付・同じ入力欄の値を出す', () => {
+    const admin = createDateFormat(SITE.timeZone);
+    // 日付をまたぐ側と、またがない側の両方を見る。
+    for (const iso of ['2026-08-01T00:00:00.000Z', '2026-08-19T23:00:00.000Z']) {
+      const date = new Date(iso);
+      expect(admin.isoDate(date), iso).toBe(isoDate(date));
+      expect(admin.toDateTimeInput(date), iso).toBe(toDateTimeInput(date));
+      expect(admin.fromDateTimeInput(toDateTimeInput(date)), iso).toBe(iso);
+    }
   });
 });

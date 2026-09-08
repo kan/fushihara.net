@@ -17,12 +17,12 @@ import {
 import { listPaths } from '../../src/core/db/post-paths.ts';
 import { createMedia } from '../../src/core/db/media.ts';
 import type { PostRow } from '../../src/core/db/types.ts';
-import { db, resetDb } from './helpers.ts';
+import { db, paths, resetDb } from './helpers.ts';
 
 beforeEach(resetDb);
 
-async function create(input: Parameters<typeof createPost>[1]): Promise<PostRow> {
-  const result = await createPost(db, input);
+async function create(input: Parameters<typeof createPost>[2]): Promise<PostRow> {
+  const result = await createPost(db, paths, input);
   if (!result.ok) throw new Error(`createPost に失敗した: ${result.error.code}`);
   return result.value;
 }
@@ -47,13 +47,13 @@ describe('createPost', () => {
 
   it('使われているパスは大小文字違いでも拒否する', async () => {
     await create({ title: 'x', bodyMd: 'y', path: 'taken' });
-    const result = await createPost(db, { title: 'z', bodyMd: 'w', path: 'TAKEN' });
+    const result = await createPost(db, paths, { title: 'z', bodyMd: 'w', path: 'TAKEN' });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('path-taken');
   });
 
   it('予約パスは canonical にできない', async () => {
-    const result = await createPost(db, { title: 'x', bodyMd: 'y', path: 'admin' });
+    const result = await createPost(db, paths, { title: 'x', bodyMd: 'y', path: 'admin' });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('reserved-path');
   });
@@ -67,7 +67,7 @@ describe('createPost', () => {
     const publicId = '99999999-9999-4999-8999-999999999999';
     await create({ title: 'x', bodyMd: 'y', publicId });
 
-    const result = await createPost(db, { title: 'z', bodyMd: 'w', publicId, path: 'other' });
+    const result = await createPost(db, paths, { title: 'z', bodyMd: 'w', publicId, path: 'other' });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('public-id-taken');
   });
