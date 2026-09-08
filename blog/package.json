@@ -25,8 +25,8 @@
     "@shikijs/langs": "^4.4.3",
     "@shikijs/rehype": "^4.4.3",
     "@shikijs/themes": "^4.4.3",
-    "hono": "^4.13.5",
-    "jose": "^6.2.10",
+    "hono": "^4.13.7",
+    "jose": "^6.2.12",
     "rehype-stringify": "^10.0.1",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
@@ -47,6 +47,6 @@
     "vue": "^3.5.42",
     "vue-tsc": "^3.3.11",
     "wrangler": "^4.125.0",
-    "@playwright/test": "^1.62.1"
+    "@playwright/test": "^1.63.0"
   }
 }
