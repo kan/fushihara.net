@@ -4,7 +4,7 @@
  * `src/site/meta.ts` の `MOUNT_PATH` を変えたらここも変わる。テストの中に `/blog` を
  * 直接書くと、切り替え (`/blog-next` ↔ `/blog`) のたびに全 spec を書き換えることになる。
  */
-import { normalizeMountPath } from '../src/core/paths.ts';
+import { normalizeMountPath } from '@kanf/lily/paths';
 import { MOUNT_PATH } from '../src/site/meta.ts';
 
 /**

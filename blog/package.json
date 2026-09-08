@@ -6,47 +6,30 @@
   "scripts": {
     "dev": "wrangler dev -c ./wrangler.jsonc",
     "//build": "wrangler.jsonc の assets.directory が dist/ を指すので、テストもデプロイもこれが要る",
-    "build": "npm run build:assets && npm run build:admin",
-    "build:assets": "node scripts/build.mjs",
-    "build:admin": "vite build",
+    "build": "node scripts/build.mjs",
     "pretest": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "wrangler types -c ./wrangler.jsonc && tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json && vue-tsc --noEmit -p tsconfig.admin.json",
+    "typecheck": "wrangler types -c ./wrangler.jsonc && tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
     "//wrangler": "リポジトリ直下に本体の .wrangler/deploy/config.json があると wrangler が両方を見つけて落ちるので、-c で明示する",
+    "//db": "マイグレーションの実体は lily。wrangler.jsonc の migrations_dir が node_modules を直接指している",
     "db:migrate:local": "wrangler d1 migrations apply DB --local -c ./wrangler.jsonc",
     "db:migrate": "wrangler d1 migrations apply DB --remote -c ./wrangler.jsonc",
     "db:seed:local": "wrangler d1 execute DB --local -c ./wrangler.jsonc --file ./seeds/dev.sql",
     "deploy": "npm run build && wrangler deploy -c ./wrangler.jsonc",
     "test:e2e": "playwright test"
   },
+  "//dependencies": "CMS の本体は lily。ここに残るのはテーマが使うもの (hono/html) だけ",
   "dependencies": {
-    "@hono/zod-validator": "^0.9.1",
-    "@shikijs/langs": "^4.4.3",
-    "@shikijs/rehype": "^4.4.3",
-    "@shikijs/themes": "^4.4.3",
-    "hono": "^4.13.5",
-    "jose": "^6.2.10",
-    "rehype-stringify": "^10.0.1",
-    "remark-gfm": "^4.0.1",
-    "remark-parse": "^11.0.0",
-    "remark-rehype": "^11.1.2",
-    "shiki": "^4.4.3",
-    "unified": "^11.0.5",
-    "unist-util-visit": "^5.1.0",
-    "zod": "^4.5.4"
+    "@kanf/lily": "file:../lily",
+    "hono": "^4.13.5"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.1.4",
-    "@types/hast": "^3.0.5",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^26.4.1",
-    "@vitejs/plugin-vue": "^6.0.8",
     "typescript": "^6.0.3",
-    "vite": "^8.2.2",
     "vitest": "^4.1.11",
-    "vue": "^3.5.42",
-    "vue-tsc": "^3.3.11",
-    "wrangler": "^4.125.0",
-    "@playwright/test": "^1.62.1"
+    "wrangler": "^4.125.0"
   }
 }

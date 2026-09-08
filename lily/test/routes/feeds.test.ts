@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { changeCanonicalPath } from '../../src/core/db/post-paths.ts';
 import { createMedia } from '../../src/core/db/media.ts';
 import { db, paths, resetDb } from '../db/helpers.ts';
-import { get, getRoot, MOUNT, ROOT_ASSETS, seedPost, SITE } from './helpers.ts';
+import { get, getRoot, MOUNT, ROOT_ASSETS, seedPost, SITE, SITE_CONFIG } from './helpers.ts';
 
 beforeEach(resetDb);
 
@@ -72,7 +72,7 @@ describe('RSS', () => {
     const xml = await res.text();
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/xml');
-    expect(xml).toContain('<title>ふしはらねっとのぶろぐ</title>');
+    expect(xml).toContain(`<title>${SITE_CONFIG.name}</title>`);
     // ポートフォリオ側ではなくブログのルート。リーダーの「サイトを開く」がここへ飛ぶ。
     expect(xml).toContain(`<link>${SITE}${MOUNT}/</link>`);
   });
@@ -259,7 +259,7 @@ describe('posts.json', () => {
     };
 
     expect(posts.map((p) => p.title)).toEqual(['新しい', '古い']);
-    expect(posts[0]?.url).toBe(`https://fushihara.net${MOUNT}/new/`);
+    expect(posts[0]?.url).toBe(`${SITE}${MOUNT}/new/`);
     expect(posts[0]?.published_at).toBe('2026-08-02T00:00:00.000Z');
   });
 
@@ -324,21 +324,18 @@ describe('静的アセット', () => {
     expect((await getRoot('/favicon.svg')).status, '設定に無いものが配られている').toBe(404);
   });
 
-  it('レイアウトの link と og:image が実体を指す', async () => {
+  it('テーマが出す link と og:image が実体を指す', async () => {
+    // **設定の URL と、実際に配られているものが同じであること。** テーマは
+    // `SiteConfig` の値をそのまま出すので、設定が実体を指していなければ
+    // 404 を指す link が出る（画面には出ないので気付けない）。
     const html = await (await get(`${MOUNT}/`)).text();
-    expect(html).toContain(`href="${MOUNT}/favicon.ico" sizes="32x32"`);
-    expect(html).toContain(`href="${MOUNT}/favicon.svg" type="image/svg+xml"`);
-    expect(html).toContain(`rel="apple-touch-icon" href="${MOUNT}/apple-touch-icon.png"`);
-    expect(html).toContain(`content="${SITE}${MOUNT}/ogp.png"`);
+    expect(html).toContain(`<link rel="icon" href="${SITE_CONFIG.favicon}" />`);
+    expect(html).toContain(`content="${SITE_CONFIG.ogImage.url}"`);
+
+    for (const url of [SITE_CONFIG.favicon as string, SITE_CONFIG.ogImage.url]) {
+      const res = await get(new URL(url).pathname);
+      expect(res.status, url).toBe(200);
+    }
   });
 
-  it('favicon.svg がパースできる XML である', async () => {
-    // SVG は XML なので、コメントにハイフン 2 個を書くだけで壊れる (実際に踏んだ)。
-    // 壊れたファイルも 200 で配信されるので、中身まで見る。
-    const svg = await (await get(`${MOUNT}/favicon.svg`)).text();
-    expect(svg).toContain('<svg');
-    expect(svg).toContain('</svg>');
-    // `<!-- ... -- ... -->` は XML として不正
-    expect(svg.replace(/<!--[\s\S]*?-->/g, '')).not.toContain('<!--');
-  });
 });

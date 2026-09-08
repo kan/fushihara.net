@@ -2,8 +2,7 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createMedia } from '../../src/core/db/media.ts';
 import { db, resetDb } from '../db/helpers.ts';
-import { lily } from '../../src/config.ts';
-import { get, getRootWith, MOUNT, seedPost, SITE } from './helpers.ts';
+import { get, getRootWith, getWith, MOUNT, seedPost } from './helpers.ts';
 
 beforeEach(resetDb);
 
@@ -33,7 +32,7 @@ async function seedImage(
 
 /** 受け入れる形式を伝えて取りに行く。 */
 async function fetchWith(path: string, accept: string): Promise<Response> {
-  return await lily.fetch(new Request(`${SITE}${path}`, { headers: { Accept: accept } }), env);
+  return await getWith(path, { headers: { Accept: accept } });
 }
 
 describe('添付', () => {

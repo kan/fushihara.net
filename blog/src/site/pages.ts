@@ -16,7 +16,7 @@ import type {
   PostSummaryView,
   PostView,
   TagView,
-} from '../core/theme.ts';
+} from '@kanf/lily';
 import { layout } from './layout.ts';
 
 /**

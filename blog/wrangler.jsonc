@@ -31,7 +31,10 @@
       "binding": "DB",
       "database_name": "fushihara-net-lily",
       "database_id": "d2588105-bed3-4baa-94ba-1140241e494e",
-      "migrations_dir": "./migrations"
+      // **スキーマの正は lily。** `migrations_dir` はディレクトリのパスなので、
+      // パッケージの中を直接指せる（コピーの仕組みが要らない）。lily を上げると
+      // ここも一緒に動くので、`db:migrate` を回す順序はデプロイの前。
+      "migrations_dir": "./node_modules/@kanf/lily/migrations"
     }
   ],
   // 静的アセットの合流点。`npm run build` が作る (shared/public のコピー +
@@ -69,8 +72,13 @@
 
   // CSS は Worker がバンドルした文字列として配る。site/ が @import ではなく
   // 連結して 1 本にするので、ブラウザから見えるのは <mount>/styles.css だけ。
+  // **`fallthrough` を付けること。** 付けないと wrangler の既定ルール
+  // (`**/*.txt` `**/*.html` `**/*.sql`) がまるごと無効になる（警告は出るが
+  // ビルドは通るので、既定に頼っている import があると読み込み時に初めて壊れる）。
+  // このルールは node_modules の中の CSS にも効くので、lily の標準テーマを
+  // そのまま使う deployment でも同じ 1 行で足りる。
   "rules": [
-    { "type": "Text", "globs": ["**/*.css"] }
+    { "type": "Text", "globs": ["**/*.css"], "fallthrough": true }
   ],
 
   // Cloudflare Access の設定。**秘密ではない**が deployment ごとに違うので、

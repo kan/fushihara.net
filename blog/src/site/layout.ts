@@ -3,9 +3,8 @@
  */
 import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
-import { ADMIN_LINK_CLASS, ADMIN_LINK_SCRIPT } from '../core/admin-contract.ts';
-import type { SiteConfig } from '../core/config.ts';
-import type { ImageView, PageContext, Pagination } from '../core/theme.ts';
+import { ADMIN_LINK_CLASS, ADMIN_LINK_SCRIPT } from '@kanf/lily';
+import type { ImageView, PageContext, Pagination, SiteConfig } from '@kanf/lily';
 import { THEME_INIT, THEME_TOGGLE } from './client.ts';
 import { ASSET } from './meta.ts';
 

@@ -6,10 +6,13 @@
  * テーマ経由で CSS まで引き込まれる (Node からは読めない)。
  *
  * 逆に言うと**テーマや CSS に繋がる import を足すと E2E が起動しなくなる**。
- * `core/paths.ts` は DOM もランタイムも触らない純粋なモジュールなので読んでよい
- * (`tsconfig.e2e.json` も同じ理由で既に見ている)。
+ *
+ * **lily はバレル (`@kanf/lily`) ではなくサブパスから読む。** バレルは core 一式を
+ * 引き込むので、workerd のランタイム型が要る。E2E のプロジェクトは DOM lib で
+ * 動くので、それを入れると `Request` / `Response` の宣言が二重になる。
+ * `@kanf/lily/paths` は Workers の型を 1 つも使わない。
  */
-import { createPaths } from '../core/paths.ts';
+import { createPaths } from '@kanf/lily/paths';
 
 /**
  * マウント位置。**mount を変えるときに触るのはここ 1 行**（ユニットテストも E2E も

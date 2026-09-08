@@ -10,8 +10,20 @@ import {
   setStubUser,
 } from '../routes/helpers.ts';
 import { createLily } from '../../src/core/app.ts';
-import { SITE as FUSHIHARA } from '../../src/site/meta.ts';
 import { defaultTheme } from '../../src/theme/index.ts';
+
+/**
+ * 参照実装（`blog/src/site/`）から写したときに消し忘れそうな固有名詞。
+ *
+ * **lily は自分を載せるサイトを知らない**ので、値そのものをここに書く。
+ * 設定から引くと「設定に無いものは検査できない」ことになり、写し漏れを
+ * 見つけるという目的に届かない。
+ *
+ * **大小文字の両方を挙げる。** `toContain` は大小文字を区別するので、
+ * `fushihara` だけだと参照実装がフッタに出している著者名
+ * （`KAN Fushihara (伏原 幹)`）を写しても素通りする。
+ */
+const SITE_SPECIFIC = ['fushihara', 'Fushihara', 'ふしはらねっと', '伏原', 'ratatoskr'];
 
 beforeEach(resetDb);
 
@@ -53,8 +65,8 @@ describe('標準テーマ', () => {
     expect(html).toContain(`<meta property="og:image" content="${ROOT_SITE}/ogp.png" />`);
   });
 
-  it('fushihara.net 固有の値が 1 つも混ざっていない', async () => {
-    // 参照実装 (`src/site/`) から写したときに、固有名詞を消し忘れていないか。
+  it('特定のサイトの固有名詞が 1 つも混ざっていない', async () => {
+    // 参照実装から写したときに、固有名詞を消し忘れていないか。
     // **記事とタグを実際に出す。** 種を撒かないと記事ページもタグページも 404 に
     // なり、404 の HTML を 3 回見るだけになる（postPage / tagPage / postList /
     // postMeta / pager を 1 行も通らない）。
@@ -74,7 +86,7 @@ describe('標準テーマ', () => {
     expect(pages[2], 'タグページに記事が無い').toContain('href="/start-blog/"');
 
     for (const html of pages) {
-      for (const leaked of [FUSHIHARA.name, FUSHIHARA.author, FUSHIHARA.url, 'fushihara']) {
+      for (const leaked of SITE_SPECIFIC) {
         expect(html, `${leaked} が漏れている`).not.toContain(leaked);
       }
     }

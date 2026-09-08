@@ -11,7 +11,14 @@ import {
   stubBluesky,
   xrpcCalls,
 } from '../fixtures/bluesky.ts';
-import { apiJson, ROOT_LANG, seedPost, setStubBluesky, setStubUser } from '../routes/helpers.ts';
+import {
+  apiJson,
+  ROOT_LANG,
+  ROOT_SITE,
+  seedPost,
+  setStubBluesky,
+  setStubUser,
+} from '../routes/helpers.ts';
 
 /**
  * 告知の口。**上流は必ずスタブで止める**（`fixtures/bluesky.ts`）。
@@ -74,7 +81,7 @@ describe('告知する', () => {
     const record = sentRecord();
     expect(record.embed.external).toMatchObject({
       // root mount のテストアプリなので `/start-blog/`。
-      uri: 'https://blog.example.com/start-blog/',
+      uri: `${ROOT_SITE}/start-blog/`,
       title: 'はじめての記事',
       description: 'ためしに書いた',
     });

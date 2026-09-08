@@ -7,15 +7,18 @@ import { createPost, publishPost, setRenderedHtml } from '../../src/core/db/post
 import { setPostTags } from '../../src/core/db/tags.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../../src/core/render/index.ts';
 import type { PostRow } from '../../src/core/db/types.ts';
-import { lily } from '../../src/config.ts';
 import { normalizeMountPath } from '../../src/core/paths.ts';
-import { MOUNT_PATH } from '../../src/site/meta.ts';
 import { defaultTheme } from '../../src/theme/index.ts';
 import { db, paths } from '../db/helpers.ts';
 
-export const SITE = 'https://fushihara.net';
+/**
+ * **lily は自分を載せるサイトを知らない。** テストのアプリも、実在の
+ * deployment ではなくここで組んだフィクスチャ。利用側の配線 (`src/config.ts` が
+ * Access を選べているか等) は利用側のリポジトリが見る。
+ */
+export const SITE = 'https://example.test';
 
-export const ROOT_SITE = 'https://blog.example.com';
+export const ROOT_SITE = 'https://root.example.test';
 
 /**
  * root mount のアプリの言語。`<html lang>` と Bluesky の告知に出る。
@@ -32,17 +35,23 @@ export const ROOT_LANG = 'en';
  */
 export const ROOT_ASSETS = ['favicon.ico', 'ogp.png'];
 /**
- * このデプロイの mount（先頭スラッシュ付き・末尾スラッシュ無し）。
+ * マウント位置のフィクスチャ。**root ではない**ところに置くのが要点で、
+ * `getRoot()` の root mount と対にして「core に mount が焼き付いていない」ことを
+ * 見る。
  *
- * **テストに `/blog` を直接書かない。** `/blog-next` での並走と本番の `/blog` を
- * 行き来するたびに全 spec を書き換えることになるうえ、`mountPath` を第一級の設定に
- * している意味が消える（`e2e/helpers.ts` が同じ理由で同じことをしている）。
+ * **テストに `/blog` を直接書かない。** ここを動かすだけで全 spec が追随する。
  */
+const MOUNT_PATH = '/blog';
 export const MOUNT: string = normalizeMountPath(MOUNT_PATH);
 
-/** `/blog` にマウントした本番同等のアプリ。 */
+/** mount 付きのアプリ。 */
 export async function get(path: string): Promise<Response> {
-  return await lily.fetch(new Request(`${SITE}${path}`), env);
+  return await mountedApp.fetch(new Request(`${SITE}${path}`), env);
+}
+
+/** 同じアプリに、ヘッダを付けて取りに行く（Accept / Cookie / If-None-Match）。 */
+export async function getWith(path: string, init: RequestInit): Promise<Response> {
+  return await mountedApp.fetch(new Request(`${SITE}${path}`, init), env);
 }
 
 /**
@@ -97,11 +106,44 @@ export const ROOT_SITE_CONFIG: SiteConfig = {
 };
 
 /**
- * root mount のアプリ。core に `/blog` が焼き付いていないことを見るために使う。
+ * mount 付きのサイト設定。root mount と**わざと全部の値を変えてある**ので、
+ * どちらかを焼き込んだ実装は必ずどちらかで落ちる。
+ */
+export const SITE_CONFIG: SiteConfig = {
+  url: SITE,
+  name: 'マウント付き',
+  description: 'mounted',
+  author: 'だれか',
+  lang: 'ja',
+  timeZone: 'Asia/Tokyo',
+  ogImage: { url: `${SITE}${MOUNT}/ogp.png`, width: 1200, height: 630 },
+  favicon: `${SITE}${MOUNT}/favicon.ico`,
+};
+
+/**
+ * `<mount>` にマウントしたアプリ。**利用側の deployment ではなくフィクスチャ。**
  *
- * **テーマは標準テーマ（`src/theme/`）。** fushihara.net のテーマを読むと、
- * core のテストがサイト層に依存する（切り出したときに一緒に持っていけない）。
- * 本番の配線は `get()` 側のアプリ（`src/config.ts`）が見ている。
+ * 配る静的アセットは root mount と別の一覧にしてある（`favicon.svg` はこちらに
+ * だけある）。core が一覧を持っていないことを、2 つのアプリの差で見る。
+ */
+export const MOUNTED_ASSETS = ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'ogp.png'];
+
+const mountedApp = createLily({
+  site: SITE_CONFIG,
+  mountPath: MOUNT_PATH,
+  theme: defaultTheme,
+  assets: MOUNTED_ASSETS,
+  ogImageAsset: 'ogp.png',
+  media: { images: true },
+  auth: () => stubAuth,
+  bluesky: () => stubBlueskyCredentials,
+});
+
+/**
+ * root mount のアプリ。core に mount が焼き付いていないことを見るために使う。
+ *
+ * **テーマは標準テーマ（`src/theme/`）。** 利用側のテーマを読むと、core の
+ * テストがそのサイトに依存する。
  */
 const rootApp = createLily({
   site: ROOT_SITE_CONFIG,
@@ -117,7 +159,7 @@ const rootApp = createLily({
 });
 
 export async function getRoot(path: string): Promise<Response> {
-  return await rootApp.fetch(new Request(`https://blog.example.com${path}`), env);
+  return await rootApp.fetch(new Request(`${ROOT_SITE}${path}`), env);
 }
 
 /** root mount のアプリに、受け入れる形式を伝えて取りに行く。 */
@@ -176,7 +218,7 @@ export async function seedPost(options: SeedOptions = {}): Promise<PostRow> {
  */
 export async function api(path: string, init?: RequestInit): Promise<Response> {
   setStubUser({ id: 'admin', email: 'kan@example.com' });
-  const request = new Request(`https://blog.example.com${path}`, init);
+  const request = new Request(`${ROOT_SITE}${path}`, init);
   // ブラウザは同一オリジンでも非 GET には Origin を付ける。CSRF の防御が
   // それを見ているので、テストのリクエストも同じ形にする。
   if (!request.headers.has('Origin')) request.headers.set('Origin', ROOT_SITE);

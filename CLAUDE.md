@@ -59,29 +59,41 @@ npm run test:e2e # Playwright。本番ビルドを preview で配信して deskt
 npm run typecheck
 ```
 
-ブログは別プロジェクトなので、`blog/` に降りて別の npm scripts を使う:
+ブログは別プロジェクトが 2 つ（`lily/` が CMS、`blog/` がその利用側）。
+**必ず lily を先に用意する** —— blog のビルドは管理画面を作らず lily の成果物を
+コピーするだけで、lily の実行時依存（hono / shiki / zod …）も `file:` の
+シンボリックリンク越しに `lily/node_modules` から解決されるため。
 
 ```bash
-cd blog
+cd lily
 npm install
+npm run build            # 管理画面（Vue）を dist/admin へ。パッケージに同梱するもの
+npm test                 # Vitest。実 workerd + 実 D1 で動く（608 件）
+npm run typecheck        # wrangler types → tsc（src / 管理画面 の 2 プロジェクト）
+
+cd ../blog
+npm install
+npm run build            # 静的アセットの合流（shared/public + blog/public + lily の管理画面）
 npm run db:migrate:local # ローカル D1 にマイグレーションを当てる
 npm run db:seed:local    # 開発用の記事を入れる（seeds/dev.sql）
-npm run build            # 静的アセット（shared/public + blog/public のコピー + 管理画面）
-npm run dev              # localhost:8787。上の 3 つを先に流しておくこと
-npm test                 # Vitest。実 workerd + 実 D1 で動く
+npm run dev              # localhost:8787
+npm test                 # Vitest。**配線だけ**（Access / cron / 自前テーマ / 日付の一致）
 npm run test:e2e         # Playwright。wrangler dev に対して回す（localhost:8788）
-npm run typecheck        # wrangler types → tsc（src / e2e / 管理画面 の 3 プロジェクト）
+npm run typecheck        # wrangler types → tsc（src / e2e の 2 プロジェクト）
 npm run deploy           # build して wrangler deploy
 ```
 
+lily を用意せずに blog を触ると `scripts/build.mjs` が理由付きで止まる
+（素通しすると、失敗するのは後ろの `wrangler` の bundle か空の管理画面になる）。
+
 **ビルドしていないと `wrangler` も `vitest` も動かない**（`assets.directory` が
-`dist/` を指すため。`npm test` は `pretest` で自動的に走る）。管理画面は
+`dist/` を指すため。どちらも `pretest` で自動的に走る）。管理画面は
 `http://localhost:8787/blog/admin/` で、ローカルは `ACCESS_TEAM` が空なので
 `localhostOnly` に落ちて開ける。
 
 lint の設定はない。型チェックは本体側が `tsc -b` で 4 つのプロジェクト
-（app / worker / test / e2e）を、ブログ側が別の `tsc` で 3 つ
-（src / e2e / 管理画面）をそれぞれ見る。本体の `tsc -b` は `blog/` を含まない。
+（app / worker / test / e2e）、lily が `tsc` + `vue-tsc` で 2 つ（src / 管理画面）、
+blog が `tsc` で 2 つ（src / e2e）をそれぞれ見る。本体の `tsc -b` はどちらも含まない。
 
 テストの外部 API は Vitest では `vi.stubGlobal('fetch')`、E2E では
 `page.route()` で止めてある。CI を api.github.com のレートリミットや、
@@ -544,16 +556,45 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 `.wema-board` セレクタでこちらが勝つ。wema が JS からインライン設定するのは
 `--wema-note-color`（ノート左端の帯）だけなので、他はすべて CSS で上書きできる。
 
-## ブログ（blog/）
+## ブログ（blog/）と CMS（lily/）
 
-**`/blog` を配っているのは `blog/`。** D1 を正とする自作 CMS（**lily**）で、
-2026-08-29 に Astro から切り替え、8/30 に Astro を消して `lily/` をここへ改名した。
-設計の正本は [issue #5](https://github.com/kan/fushihara.net/issues/5)、現状は
-`blog/README.md`、**守るべき外向きの契約は `blog/CONTRACT.md`**、配線を動かす手順と
-踏んだ穴は `blog/SWITCHOVER.md`。
+**`/blog` を配っているのは `blog/`。中身の CMS は `lily/`。** 2026-09-08 に
+`blog/src/core` を npm パッケージ `@kanf/lily` として `lily/` へ切り出し、
+`blog/` をその利用側に組み替えた（[issue #6](https://github.com/kan/fushihara.net/issues/6)）。
 
-**独立したプロジェクト。** 自分の `package.json` / `wrangler.jsonc` / `tsconfig.json`
-を持ち、本体の `tsc -b` にも入っていない。共有しているのは `shared/` だけ。
+```
+lily/   CMS。fushihara.net を 1 つも知らない。npm パッケージ @kanf/lily
+blog/   fushihara.net としての設定・テーマ・静的アセット・E2E
+```
+
+**依存は `file:../lily`。** `npm install` が `blog/node_modules/@kanf/lily` を
+`../lily` へのシンボリックリンクにするので、lily の `.ts` を直せばそのまま効く。
+npm workspace にしなかったのは、ルートを workspace root にすると本体サイトの
+依存と混ざるため（`blog/` を独立させてある意味が消える）。
+
+**管理画面と migrations だけは別扱い。** 前者は lily がビルド済みを同梱し、
+`blog/scripts/build.mjs` が `node_modules/@kanf/lily/dist/admin` をコピーする
+（利用側に Vue のツールチェインを要求しない）。後者は `wrangler.jsonc` の
+`migrations_dir` が `./node_modules/@kanf/lily/migrations` を**直接指す**
+（`migrations_dir` はパスなので、パッケージの中を指せる。コピーの仕組みが要らない）。
+
+**テーマの CSS は `rules` の Text ルールで文字列になる。これは node_modules にも効く。**
+ただし `fallthrough: true` を付けること。付けないと wrangler の既定ルール
+（`**/*.txt` `**/*.html` `**/*.sql`）がまるごと無効になる。
+
+設計の正本は [issue #5](https://github.com/kan/fushihara.net/issues/5)、CMS の現状は
+`lily/README.md`、利用側は `blog/README.md`、**守るべき外向きの契約は
+`blog/CONTRACT.md`**、配線を動かす手順と踏んだ穴は `blog/SWITCHOVER.md`。
+
+**どちらも独立したプロジェクト。** 自分の `package.json` / `tsconfig.json` を持ち、
+本体の `tsc -b` にも入っていない。`shared/` を読むのは `blog/` だけで、
+**lily は読まない**（npm で配るものが、載せる側のリポジトリのファイルを読めない）。
+
+**テストの分かれ方**: CMS そのもの（ルーティング・フィード・管理 API・テーマの
+差し替え可能性・portable な往復）は `lily/test/` が利用側を 1 つも知らない状態で見る。
+`blog/test/` が見るのは fushihara.net の配線だけ（Access の選ばれ方・cron・自前テーマ・
+`shared/date.ts` との日付の一致）。E2E は `blog/e2e/` にあり、**lily を入れ替えても
+そのまま合否判定に使える**（切り出しの検証はこれで取った）。
 
 **記事はリポジトリに無い。** 原本は D1 で、書くのは管理画面（`/blog/admin/`）。
 だから「記事を書く」だけならコミットも push も発生しない。Astro のころ
@@ -571,15 +612,15 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
   （query layer 越しに見ても、制約が効いているかの検証にならない）
 - `wrangler` を叩くときは `-c ./wrangler.jsonc` が要る（リポジトリ直下に本体の
   `.wrangler/deploy/config.json` があると、どちらの設定か分からず落ちる）
-- **記事の出し入れは portable な zip（`blog/src/core/transfer/`）。** 形は
+- **記事の出し入れは portable な zip（`lily/src/core/transfer/`）。** 形は
   `posts/<canonical>/index.md` + 添付で、Astro 版の frontmatter がそのまま読める。
   よそから記事を持ち込むときもこの経路を通す（`CONTRACT.md`）
 - **Worker 名は `fushihara-blog`、D1 と R2 は `fushihara-net-lily` 系のまま。**
   名前を揃えるために記事と添付を引っ越す理由がないため
-- **ここだけ TypeScript が 6 系で止まっている。** 本体は 7 系で動いているが、blog の
+- **lily だけ TypeScript が 6 系で止まっている。** 本体は 7 系で動いているが、lily の
   `typecheck` は管理画面のために `vue-tsc` を通す。TS 7.0 はネイティブ（Go）実装で
   `typescript/lib/tsc` を公開しないので、それを require する vue-tsc（Volar）が
   起動できず `ERR_PACKAGE_PATH_NOT_EXPORTED` で落ちる。`.github/dependabot.yml` の
-  `/blog` エントリで **7.0.x だけ**を ignore してある（Volar 向けの API が安定する
-  7.1 の PR は届くので、上げられるかは CI が判定する）。本体に vue-tsc は無いので
-  この制約は効かない
+  エントリで **7.0.x だけ**を ignore してある（Volar 向けの API が安定する
+  7.1 の PR は届くので、上げられるかは CI が判定する）。本体にも blog にも vue-tsc は
+  無いので、この制約はそちらには効かない

@@ -1,7 +1,11 @@
 name: CI / blog
 
-# ブログ (lily) は本体とは別の Worker なので、ワークフローも分けてある。
+# ブログは本体とは別の Worker なので、ワークフローも分けてある。
 # 記事を 1 本足しただけで本体の E2E まで回るのを避けるのが目的。
+#
+# **CMS の本体は `lily/`（npm パッケージ `@kanf/lily`）で、`blog/` はその利用側。**
+# blog は lily に `file:../lily` で依存しているので、lily が変われば blog も
+# 出し直す必要がある。paths に両方を入れてあるのはそのため。
 #
 # 本体の deploy.yml にある `changes` ジョブ (deployed タグとの差分判定) は
 # 持ち込んでいない。上の paths フィルタが既に「ブログに関係する変更のときだけ
@@ -12,14 +16,16 @@ on:
     branches: [main]
     paths:
       - 'blog/**'
+      - 'lily/**'
       # shared/ も見る。ブログは shared/date.ts（公開日時の JST 変換）を読み、
       # ビルドが shared/public を配信物にコピーする。ここを外すと、shared だけの
-      # 変更で壊れても気付けない。
+      # 変更で壊れても気付けない。**lily は shared/ を読まない。**
       - 'shared/**'
       - '.github/workflows/deploy-blog.yml'
   pull_request:
     paths:
       - 'blog/**'
+      - 'lily/**'
       - 'shared/**'
       - '.github/workflows/deploy-blog.yml'
   workflow_dispatch:
@@ -32,6 +38,23 @@ defaults:
     working-directory: blog
 
 jobs:
+  # CMS そのもの。**利用側を 1 つも知らない状態で通ること**を見る。
+  lily:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lily
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: lily/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -40,7 +63,24 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: blog/package-lock.json
+          cache-dependency-path: |
+            lily/package-lock.json
+            blog/package-lock.json
+      # **lily を先に用意する。これは省けない。** 理由が 2 つある。
+      #
+      # 1. blog のビルドは管理画面を作らず、lily が同梱する `dist/admin` を
+      #    コピーするだけ
+      # 2. **`file:` で参照しているあいだ、lily の実行時依存 (hono / shiki /
+      #    zod …) は `lily/node_modules` にしか入らない。** blog だけ `npm ci`
+      #    した木では bundle できず、`wrangler` が
+      #    `Could not resolve 'shiki'` で落ちる
+      #
+      # どちらも `blog/scripts/build.mjs` が理由付きで止めるので、順序を崩しても
+      # 素の esbuild エラーにはならない。npm から入れる形に変えれば 2 は消える。
+      - run: npm ci
+        working-directory: lily
+      - run: npm run build
+        working-directory: lily
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -56,7 +96,7 @@ jobs:
           retention-days: 7
 
   deploy:
-    needs: test
+    needs: [lily, test]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -65,15 +105,27 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: blog/package-lock.json
+          cache-dependency-path: |
+            lily/package-lock.json
+            blog/package-lock.json
+      # **テストと同じ順序で lily を先に用意する。** 理由は test ジョブの
+      # 同じ箇所に書いた（管理画面の実体と、`file:` 越しの実行時依存）。
+      - run: npm ci
+        working-directory: lily
+      - run: npm run build
+        working-directory: lily
       - run: npm ci
       # wrangler.jsonc の assets.directory が dist/ を指すので、これが無いと
-      # デプロイする中身が無い (静的アセットのコピー + 管理画面のビルド)。
+      # デプロイする中身が無い (共有と専用の静的アセット + lily の管理画面)。
       - run: npm run build
       # **マイグレーションはデプロイより先。** 逆にすると、新しい列を読むコードが
       # 古いスキーマに当たる時間ができる。裏を返すと migrations/ は追加のみで
       # 書くという前提で、列や表を落とすときはこの順序では守れない
       # (そのときは 2 回に分けて出す)。
+      #
+      # **スキーマの実体は lily。** `wrangler.jsonc` の `migrations_dir` が
+      # `node_modules/@kanf/lily/migrations` を直接指しているので、上の
+      # `npm ci` が済んでいれば当てるものが揃っている。
       - run: npm run db:migrate
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

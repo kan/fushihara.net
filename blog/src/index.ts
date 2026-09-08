@@ -1,7 +1,7 @@
 /**
  * Worker のエントリ。ルーティングと見た目は `config.ts` が組んだアプリが持つ。
  */
-import { runBackup } from './core/backup.ts';
+import { runBackup } from '@kanf/lily';
 import { lily } from './config.ts';
 
 /**

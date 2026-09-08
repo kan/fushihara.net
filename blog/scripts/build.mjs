@@ -2,25 +2,86 @@
  * 配信する静的アセットを 1 つのディレクトリにまとめる。
  *
  * `wrangler.jsonc` の `assets.directory` はプロジェクトに 1 つしか持てないので、
- * 本体サイトと共有の `shared/public` と、管理画面のビルド成果物をここで合流させる。
+ * 本体サイトと共有の `shared/public`・ブログ専用の `public`・**lily が同梱する
+ * 管理画面のビルド成果物**をここで合流させる。
  *
- * 管理画面のビルド (`vite build`) は別に走る。こちらは**コピーだけ**なので速く、
- * テストの前段としても回せる。
+ * **管理画面はビルドしない。** lily がパッケージに `dist/admin` を入れて配るので、
+ * 利用側に Vue のツールチェインが要らない（`vue` も `vite` も devDependency に
+ * 無い）。lily を上げたら `npm install` の後にここを回すこと。
  */
-import { cp, mkdir } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dist = join(root, 'dist');
 
+/**
+ * lily のパッケージの場所。**`node_modules` の位置を決め打ちにしない**
+ * （workspace や pnpm の配置で黙って空の `admin/` が配られる）。
+ */
+const require = createRequire(import.meta.url);
+const lily = dirname(require.resolve('@kanf/lily/package.json'));
+
+/**
+ * lily が使える状態か。**素通しさせない。**
+ *
+ * ここを通らないと、失敗するのは後ろ（`wrangler` の bundle か `<mount>/admin/`）で、
+ * どちらも原因が読めない形で出る。
+ */
+await checkLily();
+
+// 前回の成果物を捨ててから作る。**上書きだけだと古いものが残る** ――
+// 管理画面のアセットはファイル名にハッシュが入るので、lily を上げるたびに
+// 使われないバンドルが積もり、そのままデプロイで上がっていく。
+await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
-// favicon 3 点。実体は本体サイトと共有 (lily を切り出すときはサイト側の
-// ディレクトリから来る)。
+
+// favicon 3 点。実体は本体サイトと共有。
 await cp(join(root, '..', 'shared', 'public'), dist, { recursive: true });
 // **ブログ専用のものを後から被せる。** 同じ名前があればこちらが勝つ。
 // 今は ogp.png（本体は「fushihara.net」、ブログは「ふしはらねっとのぶろぐ」）。
 // 共有に置くと 1 枚しか持てず、どちらのリンクを貼っても同じ絵が出る。
 await cp(join(root, 'public'), dist, { recursive: true });
 
-console.log(`静的アセットを ${dist} に置いた`);
+await cp(join(lily, 'dist', 'admin'), join(dist, 'admin'), { recursive: true });
+
+console.log(`静的アセットを ${dist} に置いた (lily は ${lily})`);
+
+async function checkLily() {
+  // **`index.html` まで見る。** ディレクトリの有無だけだと、中断した vite build や
+  // 古い dist が残っているときに通ってしまい、空の管理画面がそのまま配られる。
+  const entry = join(lily, 'dist', 'admin', 'index.html');
+  try {
+    await stat(entry);
+  } catch {
+    fail(`管理画面のビルド成果物が無い (${entry})`);
+  }
+
+  // **lily の実行時依存が解決できること。**
+  //
+  // `file:` で参照しているあいだ、lily の依存 (hono / shiki / zod …) は
+  // `blog/node_modules` ではなく `lily/node_modules` に入る。だから
+  // `blog` だけ `npm ci` しても、bundle の段になって初めて
+  // `Could not resolve 'shiki'` で落ちる。npm から入れる形に変えれば消える問題
+  // なので、ここでは**先に分かる**ようにするだけにしてある。
+  //
+  // 名前は lily の `package.json` から取る（ここに書くと、依存を入れ替えた日に
+  // この検査だけ古い名前を見続ける）。
+  const manifest = JSON.parse(await readFile(join(lily, 'package.json'), 'utf8'));
+  const [dependency] = Object.keys(manifest.dependencies ?? {});
+  if (dependency === undefined) return;
+  try {
+    createRequire(join(lily, 'package.json')).resolve(dependency);
+  } catch {
+    fail(`lily の依存が入っていない (${dependency} を解決できない)`);
+  }
+}
+
+function fail(reason) {
+  throw new Error(
+    `${reason}。lily をローカルの file: 依存で使っているなら、` +
+      '`(cd ../lily && npm install && npm run build)` を先に回すこと。',
+  );
+}

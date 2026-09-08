@@ -25,7 +25,9 @@
     "noUncheckedIndexedAccess": true,
     "noUncheckedSideEffectImports": true
   },
-  // src/ のうち E2E が読むものだけを引き込む。app 一式は入れない
-  // (Workers のランタイム型が要るので、この lib では型検査できない)。
-  "include": ["e2e", "playwright.config.ts", "src/site/meta.ts", "src/core/transfer/zip.ts", "src/core/paths.ts", "../shared/theme.ts"]
+  // **lily は `@kanf/lily/paths` と `/zip` のサブパスから読む。** バレル
+  // (`@kanf/lily`) を読むと core 一式が入り、workerd のランタイム型が要るので
+  // この lib（DOM 入り）では型検査できない —— `Request` / `Response` の宣言が
+  // 二重になる。あの 2 つは Workers の型を 1 つも使わないので、ここから読める。
+  "include": ["e2e", "playwright.config.ts", "src/site/meta.ts", "../shared/theme.ts"]
 }

@@ -1,21 +1,24 @@
 import { env } from 'cloudflare:test';
 import { createPaths, type Paths } from '../../src/core/paths.ts';
-import { ASSETS, MOUNT_PATH, SITE } from '../../src/site/meta.ts';
 
 export const db = env.DB;
 
 /**
- * 記事パスの規則。**本番と同じ予約語**（route + `src/site/meta.ts` のアセット）で見る。
+ * 記事パスの規則。**アセットを 1 つ以上挙げた状態で見る。**
  *
  * 書き込みの口はどれも `PostPaths` を要求するので、テストごとに素のオブジェクトを
  * 作ると「予約語を知らない規則」で通ってしまい、`admin` や `favicon.ico` を弾いて
- * いるかの検証にならない。`site/meta.ts` は何も import しないので、ここから引いても
- * テーマや CSS を引き込まない。
+ * いるかの検証にならない。
+ *
+ * ここは DB 層のテストが使うものなので、アプリを組む `routes/helpers.ts` とは
+ * 別に持つ（あちらを読むと、DB だけ見たいテストが workerd のアプリごと引き込む）。
+ * **予約語の一覧はどちらも同じ考え方**で、食い違っても困らない（DB 層は
+ * 渡されたものしか見ない）。
  */
 export const paths: Paths = createPaths({
-  site: SITE,
-  mountPath: MOUNT_PATH,
-  assets: ASSETS,
+  site: { url: 'https://example.test' },
+  mountPath: '/blog',
+  assets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'ogp.png'],
 });
 
 /**

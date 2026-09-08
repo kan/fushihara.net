@@ -1,7 +1,5 @@
-import { env } from 'cloudflare:test';
 import { afterEach, describe, expect, it } from 'vitest';
-import { authMode, lily } from '../../src/config.ts';
-import { get, getRoot, getRootRequest, MOUNT, ROOT_SITE, setStubUser, SITE } from './helpers.ts';
+import { getRoot, getRootRequest, ROOT_SITE, setStubUser } from './helpers.ts';
 
 afterEach(() => setStubUser(null));
 
@@ -65,35 +63,6 @@ describe('保護境界', () => {
   it('公開側は認証を要らない', async () => {
     expect((await getRoot('/')).status).toBe(200);
     expect((await getRoot('/rss.xml')).status).toBe(200);
-  });
-});
-
-describe('本番の設定 (Cloudflare Access)', () => {
-  it('Access の設定が無くても実ドメインからは開かない (fail closed)', async () => {
-    // **テストとローカルはここが空。** `.dev.vars` が wrangler.jsonc の値
-    // (本番の Access) を打ち消しているので、選ばれるのは localhostOnly。
-    // Access を手元で再現できない以上この経路が要るが、**実ドメインからは
-    // 必ず拒否する**ので、設定を入れ忘れたまま公開しても管理画面は開かない。
-    expect(authMode(env)).toBe('localhost');
-    expect((await get(`${MOUNT}/api/me`)).status).toBe(403);
-    expect((await get(`${MOUNT}/admin/`)).status).toBe(403);
-  });
-
-  it('ACCESS の設定が片方でも欠けたら Access にはしない', () => {
-    // 片方だけ設定して「Access で守られているつもり」になるのが一番危ない。
-    // 実際に選ばれたアダプタは起動時に 1 度だけログへ出る。
-    expect(authMode({ ACCESS_TEAM: 'team', ACCESS_AUD: 'aud' })).toBe('access');
-    expect(authMode({ ACCESS_TEAM: 'team', ACCESS_AUD: '' })).toBe('localhost');
-    expect(authMode({ ACCESS_TEAM: '', ACCESS_AUD: 'aud' })).toBe('localhost');
-    expect(authMode({})).toBe('localhost');
-  });
-
-  it('スタブではなく実物のアダプタが掛かっている', async () => {
-    // テスト用スタブを通すと素通りしてしまうので、本番アプリが Access を
-    // 使っていることをここで確かめる。
-    setStubUser({ id: 'user-1' });
-    const res = await lily.fetch(new Request(`${SITE}${MOUNT}/api/me`), env);
-    expect(res.status).toBe(403);
   });
 });
 

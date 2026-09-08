@@ -1,12 +1,11 @@
 import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { lily } from '../../src/config.ts';
 import { addAlias } from '../../src/core/db/post-paths.ts';
 import { setPreviewToken } from '../../src/core/db/posts.ts';
 import { createMedia, setOgpMedia } from '../../src/core/db/media.ts';
 import { hashPreviewToken, newPreviewToken } from '../../src/core/tokens.ts';
 import { db, paths, resetDb } from '../db/helpers.ts';
-import { get, getRoot, MOUNT, seedPost, SITE } from './helpers.ts';
+import { get, getRoot, getWith, MOUNT, seedPost, SITE } from './helpers.ts';
 
 beforeEach(resetDb);
 
@@ -35,7 +34,7 @@ describe('一覧', () => {
   it('記事が無くてもページは出る', async () => {
     const res = await get(`${MOUNT}/`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('まだ記事がありません');
+    expect(await res.text()).toContain('No posts yet.');
   });
 
   it('20 件ごとに分かれ、前後のページへ辿れる', async () => {
@@ -404,10 +403,7 @@ describe('スタイルシート', () => {
 
   it('If-None-Match が一致したら 304 を返す', async () => {
     const etag = (await get(`${MOUNT}/styles.css`)).headers.get('etag')!;
-    const res = await lily.fetch(
-      new Request(`${SITE}${MOUNT}/styles.css`, { headers: { 'If-None-Match': etag } }),
-      env,
-    );
+    const res = await getWith(`${MOUNT}/styles.css`, { headers: { 'If-None-Match': etag } });
     expect(res.status).toBe(304);
     expect(await res.text()).toBe('');
   });

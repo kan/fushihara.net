@@ -13,7 +13,7 @@ import { expect, test as setup } from '@playwright/test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createZip, type ZipEntry } from '../src/core/transfer/zip.ts';
+import { createZip, type ZipEntry } from '@kanf/lily/zip';
 import { MOUNT, ORIGIN } from './helpers.ts';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/posts', import.meta.url));

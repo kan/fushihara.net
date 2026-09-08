@@ -1,10 +1,8 @@
 /**
  * fushihara.net の設定。**`core/` はここを知らない。**
  */
-import { createLily } from './core/app.ts';
-import type { BlueskyCredentials } from './core/bluesky.ts';
-import { cloudflareAccess } from './core/auth/access.ts';
-import { localhostOnly } from './core/auth/localhost.ts';
+import { cloudflareAccess, createLily, localhostOnly } from '@kanf/lily';
+import type { BlueskyCredentials } from '@kanf/lily';
 import { ASSET, ASSETS, MOUNT_PATH, SITE } from './site/meta.ts';
 import { theme } from './site/theme.ts';
 

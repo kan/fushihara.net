@@ -1,17 +1,16 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { lily } from '../../src/config.ts';
 import { ADMIN_HINT } from '../../src/core/admin-contract.ts';
 import { resetDb } from '../db/helpers.ts';
 import {
   get,
   getRoot,
+  getWith,
   MOUNT,
   ROOT_LANG,
   ROOT_SITE,
   seedPost,
   setStubUser,
-  SITE,
 } from './helpers.ts';
 
 beforeEach(resetDb);
@@ -33,7 +32,7 @@ async function assetName(): Promise<string> {
 
 /** cookie を付けて公開ページを取る。**同じ HTML が返ることを見る**ために使う。 */
 async function getWithCookie(path: string, cookie: string): Promise<Response> {
-  return await lily.fetch(new Request(`${SITE}${path}`, { headers: { Cookie: cookie } }), env);
+  return await getWith(path, { headers: { Cookie: cookie } });
 }
 
 describe('管理画面の入口 HTML', () => {

@@ -1,6 +1,5 @@
-import { createScheduledController, env } from 'cloudflare:test';
+import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import worker from '../src/index.ts';
 import { runBackup } from '../src/core/backup.ts';
 import { exportArchive } from '../src/core/transfer/index.ts';
 import { db, resetDb } from './db/helpers.ts';
@@ -113,27 +112,3 @@ describe('バックアップ', () => {
   });
 });
 
-describe('cron から走らせる', () => {
-  it('scheduled ハンドラが控えを置く', async () => {
-    // **エントリごと呼ぶ。** `runBackup` を直接叩くテストだけだと、
-    // `src/index.ts` の配線（binding の名前・保持数の受け渡し）を誰も見ない。
-    await seedPost({ path: 'p' });
-
-    const controller = createScheduledController({
-      scheduledTime: new Date('2026-08-30T18:30:00.000Z'),
-      cron: '30 18 * * *',
-    });
-    await worker.scheduled?.(controller, env);
-
-    expect(await keys()).toHaveLength(1);
-  });
-
-  it('BACKUP が無い deployment では何もしない（落とさない）', async () => {
-    // lily を OSS として配ったときに、控え先を用意しない構成があり得る。
-    const controller = createScheduledController({ scheduledTime: new Date(), cron: '30 18 * * *' });
-    const without = { ...env, BACKUP: undefined } as unknown as typeof env;
-
-    await expect(worker.scheduled?.(controller, without)).resolves.toBeUndefined();
-    expect(await keys()).toHaveLength(0);
-  });
-});
