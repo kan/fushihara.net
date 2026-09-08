@@ -84,8 +84,12 @@ src/
               feeds.ts が機械向け（と静的アセット）、media.ts が添付、
               api.ts が保護境界
     theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
+    date.ts   日付整形の部品。core は使わず、テーマと管理画面が設定の
+              timeZone を渡して使う
+  theme/      lily の標準テーマ。サイト固有の値を 1 つも持たない Theme 実装
   site/       fushihara.net 固有（レイアウト・CSS・文言・OGP・クライアント JS）
-    meta.ts   mount とサイト名。**何も import しない**（E2E が Node から読む）
+    meta.ts   mount とサイト名。**テーマや CSS を import しない**
+              （E2E が Node から読む）
   admin/      Vue の管理画面。別ビルド（vite）で dist/admin に出る
   config.ts   サイト設定。createLily() に渡す
 test/         Vitest
@@ -102,6 +106,41 @@ e2e/          Playwright。fixtures/ を import で入れて wrangler dev に対
    画像は `./sample.png` の相対参照のまま保存し、公開 URL は描画時に解決する
 3. **`mountPath` は第一級の設定。** `/blog` にも root にもマウントできる。
    URL を組むのは `core/paths.ts` だけ
+
+## テーマ（`core/theme.ts` と `src/theme/`）
+
+`core` は HTML を 1 バイトも持たない。ページを組むのは `Theme` を実装した側で、
+core が渡すのは**ページに出すデータだけ**（`PageContext` と各 View 型）。
+
+実装は 2 つある。
+
+| どれ | 何 |
+|---|---|
+| `src/site/` | fushihara.net のブログとしてのテーマ。本体サイトと同じトークン（`shared/tokens.css`）と同じ日付関数（`shared/date.ts`）を読む |
+| `src/theme/` | **lily の標準テーマ。** サイト固有の値を 1 つも持たない |
+
+**2 本目があることに意味がある。** テーマが 1 つしか無いあいだは、core が本当に
+テーマから独立しているかを確かめる方法がない。実際、`test/routes/helpers.ts` の
+root mount のアプリ ——「core に `/blog` が焼き付いていない」ことを見るためのもの
+—— は fushihara.net のテーマを読んでいた。今は標準テーマを読む。
+
+標準テーマが守っていること（`test/theme/default.test.ts` が見張る）:
+
+- 名前・説明・著者・言語・タイムゾーン・OGP の絵・タブのアイコンはすべて
+  `SiteConfig` から出る
+- mount を知らない。URL は `context.urls` が組む
+- **静的アセットのファイル名を知らない。** 何を配るかは `PageConfig.assets` 次第
+  なので、`<link rel="icon">` は `SiteConfig.favicon`（絶対 URL）があるときだけ
+  出す。**`ogImage` と同じ形**で、core は絵の配信にも URL の組み立てにも関与しない
+- **外部へリクエストを出さない**（webfont を読まない）。npm で配るテーマが
+  利用側の CSP とプライバシー方針を勝手に決めない
+- 画面に出る文言は `src/theme/text.ts` だけ。**翻訳の仕組みは持たない**
+  （別の言語で出したい deployment はテーマを写す。`Theme` は 4 関数と
+  スタイルシート 1 本なので、写すのが一番安い）
+
+日付は `core/date.ts` に `SiteConfig.timeZone` を渡して組み、読み手向けの表記は
+`SiteConfig.lang` で `Intl` に任せる。`<time datetime>` は ISO 8601 のままなので、
+機械が読む側は表示形式に左右されない。
 
 ## 描画（`core/render/`）
 
@@ -256,14 +295,14 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 | 添付の寸法をヘッダから読む規則 | `core/media/dimensions.ts` |
 | portable な形式（frontmatter のキーと並び） | `core/transfer/format.ts` |
 | その形式の YAML をどこまで読むか | `core/transfer/frontmatter.ts` |
-| 日時の JST 変換（公開ページ） | `shared/date.ts` |
-| 日時の変換（管理画面。`SiteConfig.timeZone` で切り出す） | `src/admin/date.ts` |
+| 日時の JST 変換（fushihara.net の公開ページ） | `shared/date.ts` |
+| 日時の変換（標準テーマと管理画面。`SiteConfig.timeZone`） | `core/date.ts` |
 | 見た目・文言・OGP（差し替え点） | `core/theme.ts` の `Theme` を `site/` が実装 |
 | キャッシュ方針 | `core/routes/cache.ts` |
 | 保存済み HTML と描画の使い分け | `core/delivery.ts` |
 | 開始タグの中の `src` / `href` の書き換え | `core/render/html.ts` の `rewriteUrlAttributes` |
 | D1 のバインドパラメータ上限（100）への対処 | `core/db/chunk.ts` |
-| 管理画面と配信側の契約（meta の名前・目印の cookie） | `core/admin-contract.ts` |
+| 管理画面と配信側の契約（meta の名前・目印の cookie・リンクを出すスクリプトと class） | `core/admin-contract.ts` |
 | 管理画面のハッシュ URL の形 | `core/paths.ts` の `ADMIN_HASH` |
 | 告知の投稿の組み立て（本文・facet・リンクカード） | `core/bluesky.ts` |
 | 「この記事の OGP はどれか」 | `core/db/media.ts` の `getOgpMedia` / `setOgpMedia` |
@@ -502,7 +541,11 @@ git の履歴・レビュー・ロールバックの外に出る。今どうな�
 載っていると管理者にリンクが出ない）。
 
 - リンクの実体は**最初から HTML にあり、`hidden` で隠してあるだけ**。配る HTML は
-  全員同じで、外すのは `src/site/client.ts` の数行
+  全員同じで、外すのは数行のスクリプト
+- **スクリプトと class は `core/admin-contract.ts` が持つ**（`ADMIN_LINK_SCRIPT` /
+  `ADMIN_LINK_CLASS`）。見た目の話ではなく cookie をどう読むかという契約なので、
+  テーマごとに書き直す理由がない（実際 `src/site/` と `src/theme/` で 1 バイトも
+  違わなかった）。テーマがするのはリンクを出すことと、スクリプトを差し込むことだけ
 - 目印は `core/routes/admin.ts` が入口 HTML に付ける cookie。**権限は何も持たない**
   （偽造しても、出るのは Access のログインへ行くリンクだけ）
 - **目印は名前と値を 1 つの単位で持つ**（`core/admin-contract.ts` の `ADMIN_HINT`）。

@@ -1,21 +1,43 @@
-/* ブログの見た目。**色とフォントのトークンは shared/tokens.css が唯一の正本**で、
- * 本体サイト (src/style.css) も同じファイルを読む。
+/* 標準テーマの見た目。**このファイル 1 枚で完結する。**
  *
- * Astro 版は先頭で @import していたが、こちらは Worker がバンドルした文字列を
- * 配信するので @import は解決されない。tokens.css と連結するのは
- * `site/stylesheet.ts` の仕事。 */
-
-/* ブログ側だけで使う色。shared には置かない (本体サイトに散文も
- * コードブロックも無いため)。light-dark() は shared が敷いた
- * color-scheme に従うので、ここでも 1 回書けば両テーマ揃う。 */
+ * lily は npm で配られるので、配信するサイトのトークン (fushihara.net の
+ * `shared/tokens.css` のようなもの) を読むことはできない。色もフォントもここに置く。
+ *
+ * 色は `light-dark(ライト値, ダーク値)` で 1 回だけ書く。どちらが使われるかは
+ * `color-scheme` が決めるので、2 つのパレットがずれようがない。 */
 :root {
-  /* ライトは地の #F5F5F7 より一段濃くしないとインラインコードの枠が消える */
+  /* 既定はダーク。JS 無しでも OS 設定に従い、明示的な [data-theme] が両方に勝つ。 */
+  color-scheme: dark;
+
+  --bg: light-dark(#F5F5F7, #0A0A0F);
+  --surface: light-dark(#FFFFFF, #1A1A2E);
+  --border: light-dark(#D8D8DE, #444);
+  --border-hover: light-dark(#B0B0BA, #666);
+  --text: light-dark(#1A1A2E, #EAEAEA);
+  --text-muted: light-dark(#6B6B72, #888);
+  --link: light-dark(#C81E4A, #F25570);
+  --link-hover: light-dark(#B81238, #FF6B81);
+  --accent: #E94560;
+
   --code-bg: light-dark(#E6E6EE, #161622);
   --code-border: light-dark(#E1E4E8, #2C2C44);
   --rule: light-dark(#E4E4E9, #2A2A3C);
   --chip-bg: light-dark(#EDEDF2, #22223A);
 
+  /* **外部フォントを読まない。** npm で配るテーマが第三者へリクエストを出すと、
+   * 利用側の CSP・プライバシー方針・オフライン動作を勝手に決めることになる。
+   * 書体を変えたい deployment はこの 2 行を上書きする。 */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
   --measure: 42rem;
+}
+
+:root[data-theme='light'] { color-scheme: light; }
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) { color-scheme: light; }
 }
 
 *,
@@ -68,31 +90,20 @@ a:hover {
   padding: 1.5rem 0;
 }
 
-/* パンくず。h1 でも p でも同じ見た目にするので font-size を明示する */
+/* サイト名。h1 でも p でも同じ見た目にするので font-size を明示する */
 .site-header .brand {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
+  min-width: 0;
 }
 
-.site-header .brand a {
-  color: var(--text);
-}
-
-.site-header .brand a:hover {
-  color: var(--link);
-}
-
-.site-header .brand .sep {
-  color: var(--text-muted);
-  font-weight: 400;
-}
+.site-header .brand a { color: var(--text); }
+.site-header .brand a:hover { color: var(--link); }
 
 .site-header nav {
   display: flex;
+  align-items: center;
   gap: 1rem;
   margin-left: auto;
   font-size: 0.9rem;
@@ -107,7 +118,7 @@ a:hover {
 }
 
 /* === Theme toggle ===
- * アイコンは両方 HTML に置いて CSS で出し分ける。静的生成では描画時のテーマが
+ * アイコンは両方 HTML に置いて CSS で出し分ける。サーバー側では訪問者のテーマが
  * 分からないので、JS でアイコンを差し込むと一瞬まちがった方が見えてしまう。 */
 .theme-toggle {
   display: inline-flex;
@@ -116,9 +127,9 @@ a:hover {
   width: 36px;
   height: 36px;
   padding: 0;
-  border: 1px solid var(--note-border);
+  border: 1px solid var(--border);
   border-radius: 50%;
-  background-color: var(--note-bg);
+  background-color: var(--surface);
   color: var(--text-muted);
   cursor: pointer;
   transition: color 0.2s ease, border-color 0.2s ease, background-color 0.25s ease;
@@ -126,7 +137,7 @@ a:hover {
 
 .theme-toggle:hover {
   color: var(--accent);
-  border-color: var(--note-border-hover);
+  border-color: var(--border-hover);
 }
 
 .theme-toggle:focus-visible {
@@ -205,7 +216,7 @@ a.tag:hover {
 
 /* 添え物のテキスト。今はページ送りの「2 / 5」だけが使う。
  * **クラスを出しているのに規則が無いと、地の文と同じ濃さで出る**（見た目が
- * 少し違うだけなので、画面を見るまで気付けない。実際しばらく気付いていなかった）。 */
+ * 少し違うだけなので、画面を見るまで気付けない）。 */
 .muted { color: var(--text-muted); }
 
 /* === Article === */
@@ -265,9 +276,7 @@ a.tag:hover {
   text-decoration: none;
 }
 
-.prose .link-card:hover {
-  border-color: var(--accent);
-}
+.prose .link-card:hover { border-color: var(--accent); }
 
 /* 潰れる幅では縦に積む。文字が 2 文字ぶんしか入らない箱にしない。 */
 @media (width < 30rem) {
@@ -378,7 +387,7 @@ a.tag:hover {
 
 /* === 脚注 ===
  * remark が付ける見出しは sr-only。**このクラスの CSS を書かないと、本文の
- * 途中に「脚注」という h2 が見えてしまう**（読み上げには要るので消さない）。 */
+ * 途中に見出しが見えてしまう**（読み上げには要るので消さない）。 */
 .sr-only {
   position: absolute;
   width: 1px;

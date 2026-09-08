@@ -1,13 +1,18 @@
 /**
- * ブラウザで動かす小さなスクリプト。ページに直書きする。
+ * 標準テーマがページに直書きする小さなスクリプト。
  *
- * **`STORAGE_KEY` は `shared/theme.ts` から埋め込む。** ここがずれると
- * `/` と `/blog/` を行き来したときにテーマの選択が引き継がれない。逆に言うと、
- * 埋め込んでいるのはそれだけで、判定そのもの (次のテーマ・初期値・保存の
- * try/catch) はこの文字列の中に短く書き直してある。**この 20 行を守るのは
- * `e2e/` のテーマの節**で、ブラウザで実際に動かして確かめる。
+ * **バンドラを前提にしない。** テーマは HTML を組んで返すだけの Worker 側の
+ * モジュールなので、ブラウザで動かすものは文字列として持ち、`<script>` に
+ * そのまま入れる。ビルド手順が 1 つも増えないのがこの形の眼目。
  */
-import { STORAGE_KEY } from '../../../shared/theme.ts';
+/**
+ * テーマの選択を保存するキー。
+ *
+ * **lily 自身の名前空間を使う。** 同じドメインに別のサイトが同居していても、
+ * 相手の設定を書き換えない。逆に、親サイトと選択を共有したい deployment は
+ * このテーマを写して自分のキーに変える（fushihara.net がそうしている）。
+ */
+export const STORAGE_KEY = 'lily-theme';
 
 const KEY = JSON.stringify(STORAGE_KEY);
 
@@ -28,6 +33,10 @@ export const THEME_INIT =
  * OS 設定に追従するかは保存値ではなく `chosen` フラグで見る。`getItem` は通るのに
  * `setItem` だけ throw する環境 (Safari プライベートモード) で、保存に失敗した
  * ユーザーの選択を OS 側の変更に奪われないため。
+ *
+ * **ラベルは `data-label-*` 属性から読み、無ければ触らない。** 属性名を変えた日に
+ * `setAttribute('aria-label', null)` が走ると、読み上げに文字列 `"null"` が出る
+ * （画面には何も出ないので気付けない）。HTML にある中立なラベルのまま残す方がよい。
  */
 export const THEME_TOGGLE = `(function(){
 var K=${KEY},root=document.documentElement,button=document.querySelector('.theme-toggle');
@@ -38,7 +47,8 @@ function write(v){try{localStorage.setItem(K,v)}catch(e){}}
 var stored=read(),chosen=stored==='light'||stored==='dark';
 var theme=chosen?stored:(mql.matches?'dark':'light');
 function apply(t){theme=t;root.dataset.theme=t;
-var label=(t==='dark'?'ライト':'ダーク')+'テーマに切り替え';
+var label=button.getAttribute(t==='dark'?'data-label-light':'data-label-dark');
+if(!label)return;
 button.setAttribute('aria-label',label);button.title=label}
 apply(theme);
 button.addEventListener('click',function(){chosen=true;var next=theme==='dark'?'light':'dark';write(next);apply(next)});

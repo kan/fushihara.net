@@ -1,8 +1,8 @@
 /**
  * 管理画面と、それを配る側の**契約**。
  *
- * `core/routes/admin.ts`（差し込む側）・`src/site/client.ts`（公開ページで読む側）・
- * `src/admin/`（管理画面）が同じ値を見る必要があるものだけを置く。
+ * `core/routes/admin.ts`（差し込む側）・テーマ（公開ページで読む側。`src/site/` と
+ * `src/theme/`）・`src/admin/`（管理画面）が同じ値を見る必要があるものだけを置く。
  *
  * **ここは何も import しない**（型を除く）。管理画面は vite で別にバンドルされるので、
  * route のモジュールから値を import すると hono ごとブラウザ側へ運ぶことになる。
@@ -45,3 +45,33 @@ export const ADMIN_HINT = 'lily_admin=1';
 
 /** 目印の寿命（秒）。切れても管理画面を開き直せば付き直る。 */
 export const ADMIN_HINT_MAX_AGE = 60 * 60 * 24 * 30;
+
+/**
+ * 管理画面へのリンクに付ける class。**目印を読む側と書く側の待ち合わせ場所。**
+ *
+ * テーマがリンクを出し、下のスクリプトがそれを探す。文字列を 2 箇所に書くと、
+ * 片方を変えた日にリンクが黙って出なくなる（画面には何も出ないので気付けない）。
+ */
+export const ADMIN_LINK_CLASS = 'admin-link';
+
+/**
+ * 管理画面へのリンクを出すスクリプト。**リンクの実体は最初から HTML にあり、
+ * `hidden` で隠してあるだけ。** ここがするのは目印の cookie を見て外すことだけ。
+ *
+ * **テーマではなく core が持つ。** 見た目の話ではなく、`ADMIN_HINT` の cookie を
+ * どう読むかという契約そのもので、テーマごとに書き直す理由がない（実際、
+ * `src/site/` と `src/theme/` で 1 バイトも違わなかった）。
+ *
+ * 訪問者ごとに HTML を変えないのがこの形の眼目で、公開ページを共有キャッシュに
+ * 載せたまま (`s-maxage`) 管理者にだけリンクを見せられる。cookie を立てるのは
+ * `core/routes/admin.ts`。
+ *
+ * 目印が認証のセッションより長生きすることはある。そのときリンクを押すと
+ * ログイン画面に行くだけで、押した人に見えるものは変わらない。
+ */
+export const ADMIN_LINK_SCRIPT = `(function(){
+var link=document.querySelector(${JSON.stringify(`.${ADMIN_LINK_CLASS}`)});
+if(!link)return;
+var has=document.cookie.split(';').some(function(part){return part.trim()===${JSON.stringify(ADMIN_HINT)}});
+if(has)link.hidden=false;
+})();`;

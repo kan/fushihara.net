@@ -2,6 +2,7 @@ import { env } from 'cloudflare:test';
 import { createLily } from '../../src/core/app.ts';
 import type { AuthAdapter, AuthUser } from '../../src/core/auth/index.ts';
 import type { BlueskyCredentials } from '../../src/core/bluesky.ts';
+import type { SiteConfig } from '../../src/core/config.ts';
 import { createPost, publishPost, setRenderedHtml } from '../../src/core/db/posts.ts';
 import { setPostTags } from '../../src/core/db/tags.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../../src/core/render/index.ts';
@@ -9,7 +10,7 @@ import type { PostRow } from '../../src/core/db/types.ts';
 import { lily } from '../../src/config.ts';
 import { normalizeMountPath } from '../../src/core/paths.ts';
 import { MOUNT_PATH } from '../../src/site/meta.ts';
-import { theme } from '../../src/site/theme.ts';
+import { defaultTheme } from '../../src/theme/index.ts';
 import { db, paths } from '../db/helpers.ts';
 
 export const SITE = 'https://fushihara.net';
@@ -76,21 +77,36 @@ export function setStubBluesky(credentials: BlueskyCredentials | null): void {
   stubBlueskyCredentials = credentials;
 }
 
-/** root mount。core に `/blog` が焼き付いていないことを見るために使う。 */
+/**
+ * root mount のサイト設定。**本番とわざと違う値にしてある**（テーマや core が
+ * 設定を読まずに焼き込んでいると、そこで落ちる）。テーマのテストが別の設定で
+ * アプリを組み直すときにも使う。
+ */
+export const ROOT_SITE_CONFIG: SiteConfig = {
+  url: ROOT_SITE,
+  name: 'ルート',
+  description: 'root mount',
+  author: 'someone',
+  lang: ROOT_LANG,
+  timeZone: 'UTC',
+  // **寸法は本番（1200x630）とわざと違う。** 同じにすると、設定を読まずに
+  // 寸法を焼き込んだテーマでもテストが通ってしまう。
+  ogImage: { url: `${ROOT_SITE}/ogp.png`, width: 800, height: 400 },
+  // タブのアイコン。`ROOT_ASSETS` で配っているものを指す。
+  favicon: `${ROOT_SITE}/favicon.ico`,
+};
+
+/**
+ * root mount のアプリ。core に `/blog` が焼き付いていないことを見るために使う。
+ *
+ * **テーマは標準テーマ（`src/theme/`）。** fushihara.net のテーマを読むと、
+ * core のテストがサイト層に依存する（切り出したときに一緒に持っていけない）。
+ * 本番の配線は `get()` 側のアプリ（`src/config.ts`）が見ている。
+ */
 const rootApp = createLily({
-  site: {
-    url: ROOT_SITE,
-    name: 'ルート',
-    description: 'root mount',
-    author: 'someone',
-    lang: ROOT_LANG,
-    timeZone: 'UTC',
-    // **寸法は本番（1200x630）とわざと違う。** 同じにすると、設定を読まずに
-    // 寸法を焼き込んだテーマでもテストが通ってしまう。
-    ogImage: { url: `${ROOT_SITE}/ogp.png`, width: 800, height: 400 },
-  },
+  site: ROOT_SITE_CONFIG,
   mountPath: '/',
-  theme,
+  theme: defaultTheme,
   // 配る静的アセット。**core は 1 つも知らない**ので、設定から来ていることは
   // ここが空でないと確かめられない。
   assets: ROOT_ASSETS,

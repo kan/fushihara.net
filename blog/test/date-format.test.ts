@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDateFormat } from '../../src/admin/date-format.ts';
+import { createDateFormat } from '../src/core/date.ts';
 
 const tokyo = createDateFormat('Asia/Tokyo');
 

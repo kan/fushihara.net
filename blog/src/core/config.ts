@@ -48,6 +48,18 @@ export type SiteConfig = {
    * 出さない）。
    */
   readonly ogImage: ImageView;
+  /**
+   * タブに出すアイコンの URL。**無ければテーマは `<link rel="icon">` を出さない。**
+   *
+   * `ogImage` と同じ考え方で、**core は絵の配信に関与しない**（`assets` で配っても、
+   * よそのドメインに置いてもよい）。テーマが `PageConfig.assets` のファイル名を
+   * 知る必要が無いのがこの形の眼目。
+   *
+   * **1 本だけ。** ico と svg と apple-touch-icon を出し分けたい deployment は、
+   * それ自体がその サイトの見た目の都合なのでテーマを写して書く
+   * （fushihara.net の `src/site/layout.ts` がそうしている）。
+   */
+  readonly favicon?: string;
 };
 
 /**

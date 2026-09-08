@@ -1,5 +1,9 @@
 /**
- * ページの外枠。fushihara.net のブログとしての見た目・文言・OGP はここに閉じる。
+ * 標準テーマのページの外枠。
+ *
+ * **サイト固有の値は 1 つも持たない。** 名前・説明・言語・OGP の絵は
+ * `PageContext.site`（= `SiteConfig`）から出る。URL を組むのは core
+ * (`context.urls`) で、テーマは mount がどこかを知らない。
  */
 import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
@@ -7,7 +11,7 @@ import { ADMIN_LINK_CLASS, ADMIN_LINK_SCRIPT } from '../core/admin-contract.ts';
 import type { SiteConfig } from '../core/config.ts';
 import type { ImageView, PageContext, Pagination } from '../core/theme.ts';
 import { THEME_INIT, THEME_TOGGLE } from './client.ts';
-import { ASSET } from './meta.ts';
+import { TEXT } from './text.ts';
 
 export type LayoutOptions = {
   /** ページ名。トップは省略してサイト名だけにする。 */
@@ -15,7 +19,7 @@ export type LayoutOptions = {
   readonly description?: string;
   readonly ogType?: 'website' | 'article';
   /**
-   * パンくずを `h1` で出すか。一覧ではパンくずがそのままページの見出しになるが、
+   * サイト名を `h1` で出すか。一覧ではサイト名がそのままページの見出しになるが、
    * 記事ページでは `h1` は記事タイトルのものなので段落に落とす。
    */
   readonly brandIsHeading?: boolean;
@@ -39,7 +43,7 @@ export function pageTitle(siteName: string, page?: string): string {
  * OGP の絵。**記事が選んでいなければサイト共通の 1 枚**（`site.ogImage`）。
  *
  * 寸法は**分かっているときだけ**書く。添付はヘッダから読めないことがあり
- * （`media/dimensions.ts`）、共通の絵の 1200x630 を当てると嘘になる。
+ * （`media/dimensions.ts`）、共通の絵の寸法を当てると嘘になる。
  */
 function ogImage(site: SiteConfig, image: ImageView | null) {
   const chosen: ImageView = image ?? site.ogImage;
@@ -81,12 +85,9 @@ export async function layout(
     </script>
 
     <link rel="stylesheet" href="${urls.stylesheet()}" />
-
-    <!-- .ico を先に書くのは、SVG に対応するブラウザがそちらを選ぶため
-         (本体の index.html と同じ並び)。 -->
-    <link rel="icon" href="${urls.asset(ASSET.favicon)}" sizes="32x32" />
-    <link rel="icon" href="${urls.asset(ASSET.faviconSvg)}" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="${urls.asset(ASSET.appleTouchIcon)}" />
+    <!-- タブのアイコン。設定にあるときだけ出す (何を配るかは PageConfig.assets
+         次第なので、テーマがファイル名を決め打ちすると存在しない URL を指す)。 -->
+    ${site.favicon ? html`<link rel="icon" href="${site.favicon}" />` : ''}
 
     <!-- 前後のページを示す。一覧が分かれていることをクローラに伝えるため。 -->
     ${options.pagination?.prevUrl
@@ -101,41 +102,36 @@ export async function layout(
     <meta property="og:title" content="${title}" />
     <meta property="og:description" content="${description}" />
     <meta property="og:type" content="${options.ogType ?? 'website'}" />
+    <meta property="og:site_name" content="${site.name}" />
     ${canonicalUrl === null ? '' : html`<meta property="og:url" content="${canonicalUrl}" />`}
     ${ogImage(site, options.image ?? null)}
     <!-- カードの形だけ指定する。**どのアカウントのものかは示さない**
-         (twitter:site は Astro から引き継いだだけで、何も担っていなかった)。 -->
+         (lily はサイトの SNS アカウントを知らないし、知る必要もない)。 -->
     <meta name="twitter:card" content="summary_large_image" />
-
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+JP:wght@400;600;700&display=swap"
-      rel="stylesheet"
-    />
   </head>
   <body>
     <div class="wrap">
       <header class="site-header">
-        <!-- パンくず。「どこの」「何か」を 1 行で示し、リンク先も 2 つに分かれる。
-             これがあるので nav に Portfolio へのリンクは要らない。 -->
-        <${brand} class="brand">
-          <a href="/">fushihara.net</a>
-          <span class="sep" aria-hidden="true">/</span>
-          <a href="${urls.index()}">blog</a>
-        </${brand}>
+        <${brand} class="brand"><a href="${urls.index()}">${site.name}</a></${brand}>
         <nav>
-          <a href="${urls.feed('rss')}">RSS</a>
+          <a href="${urls.feed('rss')}">${TEXT.rss}</a>
           <!-- 管理画面へのリンク。**全員に同じ HTML を配り**、管理画面を開いた
                ことがある端末でだけ client.ts が hidden 属性を外す。訪問者ごとに
                HTML を変えると、共有キャッシュに載ったそれが読者に配られる。 -->
           <a class="${ADMIN_LINK_CLASS}" href="${adminUrl}" rel="nofollow" hidden
-            >${options.adminUrl ? 'この記事を編集' : '管理'}</a
+            >${options.adminUrl ? TEXT.editThisPost : TEXT.admin}</a
           >
-          <!-- ここに書けるのは中立な文言まで。サーバー側では訪問者のテーマが
-               分からないため。読み込み後に client.ts が方向つきラベルへ差し替える
-               (JS が動かない環境ではこのまま)。 -->
-          <button class="theme-toggle" type="button" aria-label="テーマを切り替える">
+          <!-- ラベルは属性で持たせる。**文言をスクリプトの中に書かない**ので、
+               テーマを写して訳すときに触るのはこのファイルだけで済む。
+               読み込み後に client.ts が方向つきラベルへ差し替える
+               (JS が動かない環境では下の中立な文言のまま)。 -->
+          <button
+            class="theme-toggle"
+            type="button"
+            aria-label="${TEXT.toggleTheme}"
+            data-label-light="${TEXT.switchToLight}"
+            data-label-dark="${TEXT.switchToDark}"
+          >
             ${raw(MOON_ICON)}${raw(SUN_ICON)}
           </button>
         </nav>
@@ -156,7 +152,6 @@ export async function layout(
 </html>
 `);
 }
-
 
 // アイコンは両方置いて CSS で出し分ける。サーバー側では訪問者のテーマが
 // 分からないので、JS で差し込むと一瞬まちがった方が見える。

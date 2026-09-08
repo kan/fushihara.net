@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fromDateTimeInput, isoDate, toDateTimeInput } from '../../shared/date.ts';
-import { createDateFormat } from '../src/admin/date-format.ts';
+import { createDateFormat } from '../src/core/date.ts';
 import { SITE } from '../src/site/meta.ts';
 
 /**
