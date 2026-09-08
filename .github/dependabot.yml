@@ -11,6 +11,14 @@ updates:
       time: '09:00'
       timezone: Asia/Tokyo
     open-pull-requests-limit: 5
+    ignore:
+      # vitest 5 は @cloudflare/vitest-plugin の peer (vitest@^4.1.0) と衝突し、
+      # npm ci が ERESOLVE で落ちる (PR #16 で実測)。plugin は最新の 1.1.5 でも
+      # 4 系のままなので、対応版が出るまで 5.x を無視する。Worker のテストは
+      # plugin の workerd プールで動いているので、plugin を捨てて vitest だけ
+      # 上げる選択肢は無い。blog にも同じ ignore があるので、外すときは両方外す。
+      - dependency-name: vitest
+        versions: ['5.x']
     groups:
       # minor / patch は 1 本の PR にまとめる。個別に立つと数が多すぎて
       # 結局まとめてマージすることになり、レビューの単位として意味を成さない。
@@ -44,6 +52,11 @@ updates:
       # この ignore は blog のエントリにだけ要る。
       - dependency-name: typescript
         versions: ['7.0.x']
+      # vitest 5 が @cloudflare/vitest-plugin の peer と衝突する件 (PR #15 で
+      # 実測)。理由は本体 (directory: /) の同じ ignore に書いた。外すときは
+      # 両方外す。
+      - dependency-name: vitest
+        versions: ['5.x']
     groups:
       npm-minor-patch:
         update-types:
