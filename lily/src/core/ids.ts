@@ -16,3 +16,18 @@ export function nowIso(): string {
 export function toHex(bytes: Uint8Array): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
+
+/** バイト列を base64url に。URL にも cookie にもそのまま置ける形。 */
+export function toBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}
+
+/**
+ * 文字列の SHA-256。**バイト列で返す**ので、保存するなら `toHex()` を通す
+ * （DB に入っているのは hex）。
+ */
+export async function sha256(value: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
+}

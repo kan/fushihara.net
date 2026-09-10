@@ -8,6 +8,7 @@
  * 出てしまう。**今どうなっているかを確かめられれば足りる**ので、表示だけにしてある。
  */
 import { MOUNT } from '../api.ts';
+import { LOGOUT_URL } from '../auth.ts';
 import { go } from '../router.ts';
 import { MOUNT_LABEL, SITE } from '../site.ts';
 
@@ -47,4 +48,13 @@ const rows: { label: string; value: string; mount?: string }[] = [
     反映されます。サイト名はブラウザの題・OGP・フィードに、著者は記事下と Atom に
     出ます。太字はマウント位置で、route の設定と必ず対で変えるものです。
   </p>
+
+  <!-- ログアウトできる認証方式のときだけ出る。**素の form で送る** -->
+  <!-- （fetch ではないので、押すとページごとログイン画面へ移る）。 -->
+  <form v-if="LOGOUT_URL" class="logout" :action="LOGOUT_URL" method="post">
+    <button type="submit">ログアウト</button>
+    <p class="muted">
+      このブラウザのセッションを終わらせます。次に開くときはパスワードを入れ直します。
+    </p>
+  </form>
 </template>

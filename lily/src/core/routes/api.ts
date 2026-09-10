@@ -8,18 +8,24 @@
 import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
 import { createApi, type ApiEnv } from '../api/index.ts';
+import type { AuthContext } from '../auth/index.ts';
 import type { LilyBindings, LilyConfig } from '../config.ts';
 import { createPaths } from '../paths.ts';
 import { ROUTE } from './fixed.ts';
-import { requireAuth } from './require-auth.ts';
+import { protectAdmin, requireAuth } from './require-auth.ts';
 
 export type AppEnv<Bindings extends LilyBindings> = {
   Bindings: Bindings;
-  Variables: ApiEnv['Variables'];
+  /**
+   * `canLogout` は管理画面の側の境界が置く 1 bit。**管理画面の配信
+   * （`routes/admin.ts`）がボタンを出すかの判定に読む。**
+   */
+  Variables: ApiEnv['Variables'] & { canLogout?: boolean };
 };
 
 export function apiRoutes<Bindings extends LilyBindings>(
   config: LilyConfig<Bindings>,
+  authContext: AuthContext,
 ): Hono<AppEnv<Bindings>> {
   const app = new Hono<AppEnv<Bindings>>();
   const mount = createPaths(config).urls.mountPath;
@@ -54,7 +60,19 @@ export function apiRoutes<Bindings extends LilyBindings>(
     c.set('bluesky', config.bluesky?.(c.env) ?? null);
     await next();
   });
-  app.use(`${mount}/${ROUTE.admin}/*`, csrf(), requireAuth(config.auth, textForbidden));
+  /**
+   * 管理画面の側。**ログインの口が認証の手前に入る。**
+   *
+   * `csrf()` はその前に置く（ログインの POST も素のフォームなので、他所の
+   * サイトから投げられる形は同じ）。ログインの口を持たないアダプタでは
+   * `<mount>/admin/login` も保護されたままなので、Access の deployment では
+   * 今までと 1 バイトも変わらない。
+   */
+  app.use(
+    `${mount}/${ROUTE.admin}/*`,
+    csrf(),
+    protectAdmin({ adapterFor: config.auth, context: authContext, onFailure: textForbidden, mount }),
+  );
 
   app.route(`${mount}/${ROUTE.api}`, createApi(config));
 

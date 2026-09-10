@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test';
 import { createLily } from '../../src/core/app.ts';
 import type { AuthAdapter, AuthUser } from '../../src/core/auth/index.ts';
 import type { BlueskyCredentials } from '../../src/core/bluesky.ts';
-import type { SiteConfig } from '../../src/core/config.ts';
+import type { LilyBindings, LilyConfig, SiteConfig } from '../../src/core/config.ts';
 import { createPost, publishPost, setRenderedHtml } from '../../src/core/db/posts.ts';
 import { setPostTags } from '../../src/core/db/tags.ts';
 import { RENDERER_VERSION, renderMarkdown } from '../../src/core/render/index.ts';
@@ -128,16 +128,34 @@ export const SITE_CONFIG: SiteConfig = {
  */
 export const MOUNTED_ASSETS = ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'ogp.png'];
 
-const mountedApp = createLily({
-  site: SITE_CONFIG,
-  mountPath: MOUNT_PATH,
-  theme: defaultTheme,
-  assets: MOUNTED_ASSETS,
-  ogImageAsset: 'ogp.png',
-  media: { images: true },
-  auth: () => stubAuth,
-  bluesky: () => stubBlueskyCredentials,
-});
+/**
+ * 同じ設定で、**認証だけを差し替えた**アプリ。
+ *
+ * 認証方式ごとの配線（ログインの口・拒否のしかた）を見る spec が、設定を写さずに
+ * 済むようにしてある。写すと、フィクスチャを直した日に片方だけ古くなる。
+ */
+export function mountedAppWith(auth: LilyConfig<LilyBindings>['auth']) {
+  return createLily({
+    site: SITE_CONFIG,
+    mountPath: MOUNT_PATH,
+    theme: defaultTheme,
+    assets: MOUNTED_ASSETS,
+    ogImageAsset: 'ogp.png',
+    media: { images: true },
+    auth,
+    bluesky: () => stubBlueskyCredentials,
+  });
+}
+
+const mountedApp = mountedAppWith(() => stubAuth);
+
+/** 任意のアプリへ 1 本投げる。**`env` を渡すのを忘れない**ためのもの。 */
+export async function fetchOn(
+  app: ReturnType<typeof mountedAppWith>,
+  request: Request,
+): Promise<Response> {
+  return await app.fetch(request, env);
+}
 
 /**
  * root mount のアプリ。core に mount が焼き付いていないことを見るために使う。

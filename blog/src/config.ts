@@ -24,6 +24,10 @@ export const lily = createLily({
   // 二重の守りで、Access を経由しない経路で開かないようにするためのもの。
   // チーム名と AUD は wrangler.jsonc の vars（deployment 固有の値）。
   //
+  // lily の標準構成の既定は `passwordAuth`（secret のパスワード 1 つ）だが、
+  // ここは Access のまま。Zero Trust の設定が既にあり、**Worker の手前で止まる**
+  // 方が強いため。切り替えると管理画面にログアウトのボタンが出る。
+  //
   // 設定が無いときは localhostOnly に落ちる。**これは本番を開けない**:
   // host が localhost 以外なら必ず拒否するので、設定を入れ忘れたまま公開しても
   // 管理画面には入れない（fail closed のまま）。Access を手元で再現できないので、

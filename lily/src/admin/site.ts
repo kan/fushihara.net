@@ -38,8 +38,16 @@ export const SITE: Site = read();
  */
 export const MOUNT_LABEL: string = MOUNT === '' ? '/' : MOUNT;
 
+/**
+ * 配信時に差し込まれた値を読む。**受け皿は `index.html` にある。**
+ * 差し込みが無ければ空文字（vite の生成物を直に開いたとき）。
+ */
+export function readMeta(name: string): string {
+  return document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content ?? '';
+}
+
 function read(): Site {
-  const content = document.querySelector<HTMLMetaElement>(`meta[name="${SITE_META}"]`)?.content;
+  const content = readMeta(SITE_META);
   if (!content) return FALLBACK;
   let site: Site;
   try {

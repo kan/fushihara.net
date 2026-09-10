@@ -5,12 +5,12 @@
  * **保護は `routes/api.ts` が先に掛けている。** ここに届く時点で認証済み。
  */
 import { Hono } from 'hono';
-import { ADMIN_HINT, ADMIN_HINT_MAX_AGE, SITE_META, type AdminSiteMeta } from '../admin-contract.ts';
+import { LOGOUT_META, SITE_META, type AdminSiteMeta } from '../admin-contract.ts';
+import { setAdminHint } from '../admin-hint.ts';
+import type { AuthContext } from '../auth/index.ts';
 import type { LilyBindings, PageConfig } from '../config.ts';
 import { createPaths, siteOrigin } from '../paths.ts';
 import { ROUTE } from './fixed.ts';
-
-type Env = { Bindings: LilyBindings };
 
 /**
  * 認証の向こう側なので、共有キャッシュに残さない。ブラウザには ETag で
@@ -21,8 +21,18 @@ const PRIVATE = 'private, max-age=0, must-revalidate';
 /** vite が出す成果物の置き場所 (`build.outDir` の中)。 */
 const ASSET_DIR = 'assets';
 
-export function adminRoutes(config: PageConfig): Hono<Env> {
-  const app = new Hono<Env>();
+/**
+ * **配信側が認証について知るのはこの 1 bit だけ。** 置くのは保護境界
+ * （`routes/api.ts` → `protectAdmin`）で、必ず先に走る（`app.ts` の登録順）。
+ * 無ければボタンを出さない ―― 安全側の既定と一致する。
+ */
+type AdminEnv = {
+  Bindings: LilyBindings;
+  Variables: { canLogout?: boolean };
+};
+
+export function adminRoutes(config: PageConfig, authContext: AuthContext): Hono<AdminEnv> {
+  const app = new Hono<AdminEnv>();
   const mount = createPaths(config).urls.mountPath;
   const base = `${mount}/${ROUTE.admin}`;
 
@@ -36,22 +46,36 @@ export function adminRoutes(config: PageConfig): Hono<Env> {
   // タブが全部 `lily` だと見分けが付かない。
   const title = `${config.site.name} - lily`;
 
-  // **差し込むのは配信時。** ビルド時に焼かないのは、管理画面の成果物を deployment に
-  // 依存させないため (`src/admin/api.ts` の `MOUNT` と同じ理由で、`/blog` と
-  // `/blog-next` に同じものを配れる)。焼くと mount ごとにビルドが要る。
-  const rewriter = new HTMLRewriter()
-    .on('title', {
-      element(element) {
-        // setInnerContent は既定でテキストとして扱う (エスケープはこちらでしない)。
-        element.setInnerContent(title);
-      },
-    })
-    .on(`meta[name="${SITE_META}"]`, {
-      element(element) {
-        // 属性値のエスケープも rewriter の仕事。JSON を手で埋め込まない。
-        element.setAttribute('content', siteMetaJson);
-      },
-    });
+  /**
+   * **差し込むのは配信時。** ビルド時に焼かないのは、管理画面の成果物を deployment に
+   * 依存させないため (`src/admin/api.ts` の `MOUNT` と同じ理由で、`/blog` と
+   * `/blog-next` に同じものを配れる)。焼くと mount ごとにビルドが要る。
+   *
+   * ログアウトの口があるかは deployment ごとに決まる（アダプタは `env` から
+   * 作られる）ので、**取り得る形は 2 つだけ。** 2 本組んでおいて選ぶ。
+   */
+  const rewriterFor = (logoutUrl: string): HTMLRewriter =>
+    new HTMLRewriter()
+      .on('title', {
+        element(element) {
+          // setInnerContent は既定でテキストとして扱う (エスケープはこちらでしない)。
+          element.setInnerContent(title);
+        },
+      })
+      .on(`meta[name="${SITE_META}"]`, {
+        element(element) {
+          // 属性値のエスケープも rewriter の仕事。JSON を手で埋め込まない。
+          element.setAttribute('content', siteMetaJson);
+        },
+      })
+      .on(`meta[name="${LOGOUT_META}"]`, {
+        element(element) {
+          element.setAttribute('content', logoutUrl);
+        },
+      });
+
+  const withLogout = rewriterFor(authContext.logoutUrl);
+  const withoutLogout = rewriterFor('');
 
   app.get(base, (c) => c.redirect(`${base}/`, 308));
 
@@ -82,25 +106,17 @@ export function adminRoutes(config: PageConfig): Hono<Env> {
     // Headers を写すので、あとから append しても出て行くものは変わらない。
     const html = isHtml(headers);
     // 入口 HTML にだけ目印を付ける。アセットのたびに送っても増えるものは無い。
-    if (html) headers.append('Set-Cookie', adminHint(c.req.url, mount));
+    if (html) headers.append('Set-Cookie', setAdminHint(c.req.url, mount));
 
     const output = new Response(response.body, { status: response.status, headers });
-    return html ? rewriter.transform(output) : output;
+    if (!html) return output;
+
+    // ログアウトのボタンを出すかは保護境界が決めている (Access のようにセッションを
+    // Worker の外が握っている方式では押す物が無い)。**ここは 1 bit を読むだけ。**
+    return (c.get('canLogout') ? withLogout : withoutLogout).transform(output);
   });
 
   return app;
-}
-
-/**
- * 目印の Set-Cookie。
- *
- * **HttpOnly を付けない** (公開ページの JS が読むためのもの)。`SameSite=Lax` は
- * 他所のサイトからの遷移で送られないようにするため。https のときだけ `Secure` を
- * 付けるのは、E2E とローカルが http だから (本番は必ず https)。
- */
-function adminHint(requestUrl: string, mount: string): string {
-  const secure = new URL(requestUrl).protocol === 'https:' ? '; Secure' : '';
-  return `${ADMIN_HINT}; Path=${mount}/; Max-Age=${ADMIN_HINT_MAX_AGE}; SameSite=Lax${secure}`;
 }
 
 function isHtml(headers: Headers): boolean {

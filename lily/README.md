@@ -17,10 +17,10 @@ portable な export がこの 3 つで成立する（Cloudflare Images は「あ
 
 ```ts
 // src/config.ts
-import { createLily, localhostOnly } from '@kanf/lily';
+import { createLily, localhostOnly, passwordAuth } from '@kanf/lily';
 import { defaultTheme } from '@kanf/lily/theme';
 
-export const lily = createLily({
+export const lily = createLily<Env>({
   site: {
     url: 'https://example.com',
     name: 'ブログ',
@@ -32,7 +32,9 @@ export const lily = createLily({
   },
   mountPath: '/',
   theme: defaultTheme,
-  auth: () => localhostOnly(),
+  // secret が無いのは手元だけ（`.dev.vars` に書かなければ localhost に落ちる）。
+  // **本番で secret を入れ忘れても開かない**：どちらのアダプタも通さない。
+  auth: (env) => (env.ADMIN_PASSWORD ? passwordAuth({ password: env.ADMIN_PASSWORD }) : localhostOnly()),
 });
 ```
 
@@ -102,8 +104,8 @@ CI からビルド順序を消すだけで移せる。そのうえで、切り�
 - フィード（RSS 維持 + Atom 追加）、sitemap、favicon / ogp の配信
 - 添付の配信（R2 が原本、Cloudflare Images は任意の最適化層）と、
   `<img>` の `width` / `height` / `loading` / `decoding`
-- `AuthAdapter` と Cloudflare Access アダプタ、`<mount>/api/*` と
-  `<mount>/admin/*` の保護境界
+- `AuthAdapter` と 3 つのアダプタ（パスワード / Cloudflare Access / localhost）、
+  ログイン画面、`<mount>/api/*` と `<mount>/admin/*` の保護境界
 - 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
 - portable な import / export（Markdown 一式の zip。往復で identity と URL が保たれる）
 - `posts.json`（本体サイトの Blog 付箋が読む口）
@@ -155,15 +157,18 @@ src/
     paths.ts  mountPath と URL 生成、normalizePostPath / normalizeSegment
     slug.ts   タグ名 → slug（最後は normalizeSegment を通す）
     api/      管理 API。mount を知らない形で <mount>/api にマウントされる
-    auth/     AuthAdapter の型と Cloudflare Access アダプタ
+    auth/     AuthAdapter の型と 3 つのアダプタ（password が標準構成の既定、
+              Cloudflare Access、localhostOnly）とログイン画面
     feed/     RSS 2.0 と Atom。どちらも全文
     media/    画像の最適化（任意）、受け付ける形式の表、寸法をヘッダから読む
     render/   Markdown → HTML。保存する側と配信する側で 2 段に分ける
     transfer/ portable な import / export。frontmatter・zip・往復の規則
     routes/   fixed.ts が core の route 名の正本。public.ts が人向け、
               feeds.ts が機械向け（と静的アセット）、media.ts が添付、
-              api.ts が保護境界
-    theme.ts  テーマが実装する型。core は HTML を 1 バイトも持たない
+              api.ts が保護境界（require-auth.ts が中身）
+    admin-hint.ts 公開ページに管理リンクを出す目印の cookie。付ける側と消す側
+    theme.ts  テーマが実装する型。core は配信するページの HTML を持たない
+              （例外は auth/login-page.ts のログイン画面 1 枚）
     date.ts   日付整形の部品。core は使わず、テーマと管理画面が設定の
               timeZone を渡して使う
   theme/      標準テーマ。サイト固有の値を 1 つも持たない Theme 実装
@@ -185,8 +190,12 @@ test/         Vitest（利用側を 1 つも知らない状態で通ること）
 
 ## テーマ（`core/theme.ts` と `src/theme/`）
 
-`core` は HTML を 1 バイトも持たない。ページを組むのは `Theme` を実装した側で、
-core が渡すのは**ページに出すデータだけ**（`PageContext` と各 View 型）。
+`core` は**配信するページの** HTML を 1 バイトも持たない。ページを組むのは `Theme`
+を実装した側で、core が渡すのは**ページに出すデータだけ**（`PageContext` と各 View 型）。
+
+例外は**ログイン画面** 1 枚だけ（`core/auth/login-page.ts`）。あれは見た目ではなく
+認証の経路そのもので、テーマに持たせると自前のテーマを書いた deployment が全部
+実装しない限り管理画面へ入れなくなる（管理画面の中身も同じ理由で core が配っている）。
 
 実装は 2 つある。
 
@@ -431,12 +440,95 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 `<mount>/api/*` と `<mount>/admin/*` は `AuthAdapter` を通らないと届かない。
 **中身が無いうちから掛けてある**ので、route を足したときに保護を忘れる余地がない。
 
-- ローカルでは `localhostOnly` に落ちる。**本番は開けない**（host が
-  `localhost` / `127.0.0.1` 以外なら必ず拒否する。Cloudflare は host で
-  ルーティングするので、実ドメインに来た要求がこの条件を満たすことはない）
-- **core は認証の方式を 1 つも知らない。** fushihara.net は Cloudflare Access
-  アダプタを使うが、Deploy to Cloudflare は Access を自動プロビジョニングできない
-  ので、OSS の標準構成では別のアダプタが既定になる
+**core は認証の方式を 1 つも知らない。** アダプタは 3 つ同梱していて、どれを使うかは
+利用側が `auth: (env) => ...` で決める（`env` を受け取るのは、チーム名やパスワードの
+ような deployment 固有の値をリポジトリに焼き付けないため）。
+
+| アダプタ | 何 | 要るもの |
+|---|---|---|
+| `passwordAuth` | **標準構成の既定。** パスワード 1 つ | secret を 1 本 |
+| `cloudflareAccess` | Access が付ける JWT を検証する | Zero Trust の設定 |
+| `localhostOnly` | ローカル開発の抜け道。**本番では構造上通らない** | 何も |
+
+- 拒否した理由はレスポンスに載せない。どこまで合っていたかは、当てにいく手掛かりになる
+- **認証だけでは足りない。** セッションはどちらの方式でも Cookie なので、他所の
+  サイトから送られたリクエストにも付いて回る。body を読まない口（`unpublish` /
+  `rerender`）と multipart の口（`media`）は素のフォームから叩けるので、`csrf()` で
+  Origin を見る
+
+### `passwordAuth`（標準構成の既定）
+
+パスワードを Worker の secret に置き、ログインが通ると HMAC で署名した cookie を配る。
+**保存するものが 1 つも無い**（D1 のテーブルも migration も要らない）。
+
+```ts
+auth: (env) => (env.ADMIN_PASSWORD ? passwordAuth({ password: env.ADMIN_PASSWORD }) : localhostOnly()),
+```
+
+```bash
+npx wrangler secret put ADMIN_PASSWORD
+```
+
+Deploy to Cloudflare のボタンからデプロイするなら、`.dev.vars.example` に
+`ADMIN_PASSWORD=` の行を置いておけば**デプロイの画面で入力欄になる**
+（2025-07 から secret に対応した）。
+
+- **D1 に password hash を持たない。** Workers Free の CPU は 1 リクエスト 10ms で、
+  OWASP 推奨の PBKDF2 600,000 回はそこに収まらない。「標準構成が Free で動かない」か
+  「ハッシュを弱める」の二択になる。secret と突き合わせるだけなら KDF は要らない
+  ——**伸長して守るべき hash が DB に無い**
+- **初回セットアップ画面を作らない。** 「users が空のあいだは誰でも管理者になれる」
+  窓が開くため。secret はデプロイの時点で入っている
+- パスワードの突き合わせは**両方を SHA-256 に落としてから**行う（長さと
+  「何文字目まで合っていたか」を時間に出さない）
+- **セッションの鍵はパスワードそのもの。** secret を差し替えれば配ってあった
+  cookie はまとめて無効になる。別に `SESSION_SECRET` を置くとこの性質が消える
+  （パスワードを変えても盗まれた cookie が生き続ける）
+- cookie は `HttpOnly` / `SameSite=Lax` / `Path=<mount>/`、`Secure` は https のときだけ
+  （ローカルと E2E は http で、付けると手元で一度もログインできない）。寿命は既定
+  30 日で、**延長しない**
+- 総当たりに対しては**失敗時の待ちしか無い**（既定 500ms。CPU を使わないので Free
+  でも通る）。だから 12 文字未満のパスワードは受け付けない
+  （**短いパスワードで「守られているつもり」になるのを避ける**）
+- **「未設定」と「短すぎる」は最後まで分けて運ぶ。** 畳むと、短い secret を入れた
+  運用者の画面に「設定してください」と出続け、同じものを入れ直すループに入る。
+  secret の名前を画面に出すのは `secretName` を渡したときだけ ——**core は
+  deployment がその値を何という名前で持っているか知らない**
+- ログイン画面は `<mount>/admin/login`、ログアウトは `<mount>/admin/logout`
+  （POST のみ。GET だと画像や prefetch で落とされる）。**どちらも認証の手前**に
+  置かれる（`routes/require-auth.ts` の `protectAdmin`）
+- ログアウトは公開ページの目印（`lily_admin`）も一緒に消す。共有の端末に「Admin」の
+  リンクが残り続ける理由が無い（付ける側と消す側は `core/admin-hint.ts` に並べてある。
+  属性がずれると消えず、そのとき画面にもテストにも異常が出ない）
+- **画面からパスワードを変えられない**（変えるには secret を差し替える）。複数人・
+  パスワード変更画面が要るなら自前の `AuthAdapter` を書く。**2 つ目の要求が実際に
+  出てきたら**、そのとき D1 のアダプタを足す
+
+### アダプタに足すのは `handle` 1 つだけ
+
+「画面からログインできる方式かどうか」は 1 つの事実なので、`AuthAdapter` の
+optional なメンバーも 1 つにしてある。**`handle` があること自体が宣言**で、そこから
+core が 3 つを決める。
+
+| core が決めること | 根拠 |
+|---|---|
+| `<mount>/admin/login` と `/logout` をアダプタへ渡すか | `handle` の有無 |
+| 未認証のブラウザの画面遷移を、403 ではなくログインへ送るか | 同上 |
+| 管理画面にログアウトのボタンを出すか | 同上（`<meta name="lily:logout">` へ差し込む） |
+
+- **3 つを別々のメンバーにしない。** 「口はあるがボタンは出さない」のような食い違いを
+  型の上で作れてしまい、どれも画面には出ないので気付けない
+- **拒否のしかたを決めるのも core**（`protectAdmin` の `challenge`）。ブラウザの
+  画面遷移だけをログインへ送り、`/api/*` は 403 のままにする（リダイレクトすると、
+  管理画面がログイン HTML を JSON として読む）。判断の材料（メソッド・`Accept`・
+  ログイン画面の URL）はどれも core の持ち物で、アダプタ固有のものが 1 つも無い ——
+  アダプタ側に書かせると、2 つ目のアダプタを書いた人が写し損ねた日に
+  `src/admin/session.ts` の読み込み直しが黙って壊れる
+- **アダプタへ渡すのは 2 本のパスに来た要求だけ。** 全部渡すと、管理画面のアセット
+  1 本ごとにアダプタの判定が走り、「受け持たないパスは自分で弾く」仕事が全アダプタの
+  実装者に増える
+### `cloudflareAccess`
+
 - Access は Worker の手前でリクエストを止めるので、**ここでの検証は二重の守り**。
   Access を経由しない経路（route の設定漏れ・別ドメインからの直接アクセス）で
   管理画面が開かないようにするためのもの
@@ -445,7 +537,6 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
   欠けていれば `localhostOnly` に落ちる（＝本番では開かない）。片方だけ設定して
   「Access で守られているつもり」になるのが一番危ないので、判定は `authMode()`
   1 箇所に置き、**選んだ方を起動時に 1 度だけログへ出す**
-- 拒否した理由はレスポンスに載せない。どこまで合っていたかは、当てにいく手掛かりになる
 - **JWT が切れたあとの API は 403 を返し続ける。** 画面から直す手立ては
   トップレベルのナビゲーションで Access に通り直すことだけなので、管理画面が
   401 / 403 を見たら読み込み直す（`src/admin/session.ts`）。詳細は「管理画面」の
@@ -453,10 +544,17 @@ Markdown の画像記法から出た `<img>` には `width` / `height` / `loadin
 - **セッションの長さは Access 側の設定**（Zero Trust → Access → Applications →
   当該アプリの Session Duration）で、リポジトリからは変えられない。`wrangler.jsonc`
   の `vars` にあるのはチーム名と AUD だけ
-- **認証だけでは足りない。** Access の `CF_Authorization` は Cookie なので、
-  他所のサイトから送られたリクエストにも付いて回る。body を読まない口
-  （`unpublish` / `rerender`）と multipart の口（`media`）は素のフォームから
-  叩けるので、`csrf()` で Origin を見る
+- **管理画面にログアウトのボタンは出ない。** セッションを握っているのが Worker の
+  外（Access）なので、押しても何も起きないボタンになる。`handle` を持たない
+  ＝ログインの口が無い、から自動的にそうなる（未認証の画面遷移が 403 のままなのも
+  同じ理由。送る先が無い）
+
+### `localhostOnly`
+
+手元で管理画面を一度も開けなくならないための抜け道。**本番では構造上通らない。**
+判定はリクエストの host だけで、`localhost` / `127.0.0.1` 以外は必ず拒否する。
+Cloudflare は host でルーティングするので、実ドメインや `*.workers.dev` に来た
+要求がこの条件を満たすことはない。
 
 ## 管理 API
 
@@ -535,12 +633,21 @@ const { post } = await res.json();  // 型は handler から
 - **SPA の fallback から `assets/` を外してある。** ハッシュ付きのバンドルが
   無いときに `index.html` を 200 で返すと、古いタブが JS の代わりに HTML を
   受け取って構文エラーで固まる（404 なら再読み込みで直る）
+- **ログアウトは設定画面に置く。** `fetch` ではなく素の form の POST なので、
+  押すとページごとログイン画面へ移る（cookie を消すのはサーバー側の仕事で、
+  画面に持ち帰るものが無い）。ボタンが出るかは認証方式で決まる
+  （アダプタの `handle` の有無 → `<meta name="lily:logout">` → `admin/auth.ts`）
 
 ### セッションが切れたとき
 
-Access の JWT には期限がある。切れたあとの呼び出しは 403 で返り、画面には
-「forbidden」とだけ出る。**押し直しても直らない**ので、`src/admin/session.ts` が
-1 箇所で受けて読み込み直す。
+セッションには期限がある（Access の JWT も、`passwordAuth` の cookie も）。切れた
+あとの呼び出しは 403 で返り、画面には「forbidden」とだけ出る。**押し直しても
+直らない**ので、`src/admin/session.ts` が 1 箇所で受けて読み込み直す。
+
+読み込み直した先で何が出るかは方式で違うが、**管理画面はどちらも知らなくてよい**。
+Access ならログインの画面へ飛ばされ、`passwordAuth` なら core が
+`<mount>/admin/login` へ送る（`challenge`。画面遷移だけをリダイレクトし、API の
+呼び出しは 403 のままにしてあるのは、この読み込み直しの経路を壊さないため）。
 
 - **読み込み直す前に書きかけを sessionStorage へ退避し、戻ってきたら復元する。**
   保存前の本文はそこにしか無い（記事の正は D1 で、これは事故のときだけ使う控え）

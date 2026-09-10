@@ -9,6 +9,9 @@
          ここが空のまま (vite の生成物をそのまま開いたとき) は src/admin/site.ts の
          既定値に落ちる。 -->
     <meta name="lily:site" content="" />
+    <!-- ログアウトの口。**認証方式で決まる**ので、これも配信時に埋まる。
+         空のまま（Access のように押す物が無い方式）なら、設定画面にボタンを出さない。 -->
+    <meta name="lily:logout" content="" />
     <!-- 題も配信時に「<サイト名> - lily」へ差し替わる。これは差し替え前の既定値。 -->
     <title>lily</title>
   </head>

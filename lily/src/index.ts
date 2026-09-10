@@ -24,8 +24,8 @@ export type {
 } from './core/config.ts';
 
 /**
- * テーマが実装する型。**core は HTML を 1 バイトも持たない**ので、
- * 見た目はこのインターフェースを満たす側が全部決める。
+ * テーマが実装する型。**core は配信するページの HTML を 1 バイトも持たない**ので、
+ * 見た目はこのインターフェースを満たす側が全部決める（例外はログイン画面 1 枚）。
  */
 export type {
   ImageView,
@@ -37,11 +37,22 @@ export type {
   Theme,
 } from './core/theme.ts';
 
-/** 認証。既定のアダプタ 2 つと、自前で書くための型。 */
-export type { AuthAdapter, AuthResult, AuthUser } from './core/auth/index.ts';
+/**
+ * 認証。既定のアダプタ 3 つと、自前で書くための型。
+ *
+ * 標準構成の既定は `passwordAuth`（secret のパスワード 1 つ。D1 も migration も
+ * 要らない）。`cloudflareAccess` は Access を自分で用意した deployment 向け、
+ * `localhostOnly` はローカル開発用で、**本番では構造上通らない**。
+ */
+export type { AuthAdapter, AuthContext, AuthResult, AuthUser } from './core/auth/index.ts';
 export { readCookie } from './core/auth/index.ts';
 export { cloudflareAccess, type AccessOptions } from './core/auth/access.ts';
 export { localhostOnly } from './core/auth/localhost.ts';
+export {
+  passwordAuth,
+  MIN_PASSWORD_LENGTH,
+  type PasswordAuthOptions,
+} from './core/auth/password.ts';
 
 /** Bluesky への告知。資格情報は deployment が env から取り出して渡す。 */
 export type { BlueskyCredentials } from './core/bluesky.ts';

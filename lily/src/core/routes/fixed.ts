@@ -32,3 +32,16 @@ export const ROUTE = {
 } as const;
 
 export const FIXED_ROUTES: readonly string[] = Object.values(ROUTE);
+
+/**
+ * 認証アダプタが受け持つ口。**`<mount>/admin/` の下**にあるので、記事のパスとは
+ * ぶつからない（`admin` が既に予約語）。
+ *
+ * 名前を core が決めるのは、ここへ来た要求を認証の手前でアダプタへ渡すのが
+ * core の仕事だから（`routes/require-auth.ts` の `authEndpoints`）。アダプタが
+ * 自分でパスを決めると、core はそこへ要求を届けられない。
+ */
+export const AUTH_ROUTE = {
+  login: 'login',
+  logout: 'logout',
+} as const;

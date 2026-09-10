@@ -25,6 +25,17 @@ export const SITE_META = 'lily:site';
 export type AdminSiteMeta = SiteConfig;
 
 /**
+ * ログアウトの口を管理画面へ伝える `<meta>` の名前。受け皿は
+ * `src/admin/index.html`。
+ *
+ * **空なら管理画面はボタンを出さない。** ログアウトできるかどうかは認証方式で
+ * 決まり（Cloudflare Access のようにセッションを Worker の外が握っていると、
+ * 押す物が無い）、それを知っているのは配信の側だけ。ビルド済みの管理画面に
+ * 焼き込めないので、サイト設定と同じく配信時に差し込む。
+ */
+export const LOGOUT_META = 'lily:logout';
+
+/**
  * 「この端末では管理画面を開いたことがある」という目印。**権限は何も持たない。**
  *
  * 公開ページに管理画面へのリンクを出すためだけのもので、リンク先は認証が守っている
@@ -39,9 +50,12 @@ export type AdminSiteMeta = SiteConfig;
  * JS から読めないため。
  *
  * **名前と値を 1 つの単位で持つ。** 読む側は cookie の 1 項目とこれを丸ごと比べるので、
- * 名前だけを共有すると、値を変えた日に比較が黙って false になる。
+ * 名前だけを共有すると、値を変えた日に比較が黙って false になる。組み立てる側
+ * （付けるのと消すの）は `core/admin-hint.ts`。
  */
-export const ADMIN_HINT = 'lily_admin=1';
+export const ADMIN_HINT_NAME = 'lily_admin';
+export const ADMIN_HINT_VALUE = '1';
+export const ADMIN_HINT = `${ADMIN_HINT_NAME}=${ADMIN_HINT_VALUE}`;
 
 /** 目印の寿命（秒）。切れても管理画面を開き直せば付き直る。 */
 export const ADMIN_HINT_MAX_AGE = 60 * 60 * 24 * 30;
