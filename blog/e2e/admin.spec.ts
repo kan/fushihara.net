@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { SITE } from '../src/site/meta.ts';
 import { ID, MOUNT, ORIGIN, url } from './helpers.ts';
@@ -12,6 +13,39 @@ import { ID, MOUNT, ORIGIN, url } from './helpers.ts';
  * ローカルでは `ACCESS_TEAM` / `ACCESS_AUD` が空 (`.dev.vars`) なので
  * `localhostOnly` に落ちて開ける。本番は Cloudflare Access の内側。
  */
+/**
+ * 添付に使う実体のある PNG。**寸法をヘッダから読む**ので、中身が要る。
+ * フィクスチャの 1 枚を使い回す（内容は何でもよく、置き場所を 2 箇所に書かない）。
+ */
+const PNG = readFileSync(
+  new URL('./fixtures/posts/link-card/card-example-com-0a1b2c3d.png', import.meta.url),
+);
+
+function image(name: string) {
+  return { name, mimeType: 'image/png', buffer: PNG };
+}
+
+/** 画面が作った記事の id。**URL がその記事を指すまで待つ。** */
+async function createdPostId(page: import('@playwright/test').Page): Promise<string> {
+  await expect(page).toHaveURL(new RegExp(`${MOUNT}/admin/#/posts/[0-9a-f-]{36}$`));
+  return page.url().split('/').pop()!;
+}
+
+/**
+ * テストが作った記事を消す。**失敗した回でも消す**（`finally` から呼ぶ）。
+ * 残すと次の spec の一覧に混ざり、件数を見ているテストを巻き添えにする。
+ */
+async function deletePost(
+  request: import('@playwright/test').APIRequestContext,
+  publicId: string | null,
+): Promise<void> {
+  if (publicId === null) return;
+  const res = await request.delete(`${MOUNT}/api/posts/${publicId}`, {
+    headers: { Origin: ORIGIN },
+  });
+  expect(res.status(), await res.text()).toBe(200);
+}
+
 test.describe('管理画面', () => {
   test('一覧の日付は JST で出す', async ({ page }) => {
     // フィクスチャは 2026-08-20T08:00:00+09:00 = 2026-08-19T23:00:00Z。
@@ -301,6 +335,120 @@ test.describe('編集画面', () => {
     await description.fill('');
     await page.locator('.dropzone textarea').fill('自動で出る書き出し。\n\n次の段落。');
     await expect(description).toHaveAttribute('placeholder', '自動で出る書き出し。');
+  });
+
+  /**
+   * 添付は記事に紐づく（R2 のキーが記事とファイル名から決まる）ので、記事が無い
+   * あいだは受け取れない。**「先に保存してください」と突き放さない**で、そのとき
+   * 下書きとして保存してから添付する（issue #6）。
+   */
+  test('新規のまま画像を入れると、下書きとして保存されてから添付される', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'desktop',
+      '記事を作るので、同じサーバーに 2 プロジェクトからは掛けない',
+    );
+
+    const name = 'dropped.png';
+    let created: string | null = null;
+    try {
+      await page.goto(`${MOUNT}/admin/#/posts/new`);
+      // 隠し input に直接入れる。**ツールバーのボタンは押していない**ので、
+      // 差し込む位置を持ち回る分岐（`pickedAt`）はここでは通らない ——
+      // 見たいのは D&D も貼り付けも通る `insertFiles` から先。
+      const picker = page.locator('.toolbar input[type="file"]');
+      const body = page.locator('.dropzone textarea');
+
+      // **題が無いうちは作らない**（`ensureSaved`）。
+      await picker.setInputFiles(image(name));
+      await expect(page.locator('.notice.error')).toContainText('タイトルを入れてから');
+      await expect(page).toHaveURL(`${MOUNT}/admin/#/posts/new`);
+      await expect(body).toHaveValue('');
+
+      await page.locator('input[type="text"]').first().fill('画像から始める下書き');
+      await body.fill('書きかけの本文。');
+      await picker.setInputFiles(image(name));
+
+      // 記事が生まれ、URL もその記事を指す（**画面は作り直さない**ので、
+      // 先に書いてあった本文とカーソルの続きに差し込まれる）。
+      // **後始末の宛先はここで捕まえる**（下の assertion が落ちた回にも消せる）。
+      created = await createdPostId(page);
+
+      await expect(body).toHaveValue(`書きかけの本文。![](./${name})`);
+      await expect(page.locator('.media-list li', { hasText: name })).toHaveCount(1);
+
+      // 差し込んだ参照はプレビューで解決できている（`./…` の警告が出ない）。
+      await expect(page.locator('.preview img')).toHaveAttribute(
+        'src',
+        new RegExp(`${MOUNT}/media/.*/${name}$`),
+      );
+    } finally {
+      await deletePost(request, created);
+    }
+  });
+
+  /**
+   * 下書きが生まれるのは**画像を落とした副産物**なので、その往復のあいだも人は
+   * 打ち続けているし、2 枚目を落とすこともある。どちらも実際に踏める形で見る。
+   */
+  test('作っているあいだに打った内容は残り、下書きも 1 件しかできない', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'desktop',
+      '記事を作るので、同じサーバーに 2 プロジェクトからは掛けない',
+    );
+
+    /**
+     * 作成の応答を止めておく閂。**時間で待たない。**
+     *
+     * 「1500ms 眠らせて、そのあいだに 2 枚目を落とす」と書くと、詰まった回には
+     * 1 件目が先に返って二重作成の窓が閉じ、それでも全部の assertion が通る
+     * （＝何も検証していないテストになる）。開けるのはこちらのタイミング。
+     */
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let creates = 0;
+    await page.route(`**${MOUNT}/api/posts`, async (route) => {
+      if (route.request().method() !== 'POST') return await route.fallback();
+      creates += 1;
+      await held;
+      await route.continue();
+    });
+
+    let created: string | null = null;
+    try {
+      await page.goto(`${MOUNT}/admin/#/posts/new`);
+      const picker = page.locator('.toolbar input[type="file"]');
+      const body = page.locator('.dropzone textarea');
+      const title = page.locator('input[type="text"]').first();
+
+      await title.fill('競争する下書き');
+      await body.fill('先に書いた本文。');
+
+      // 1 枚目。**返る前に**題を書き直し、2 枚目を落とす。
+      await picker.setInputFiles(image('race-1.png'));
+      await title.fill('打ち直した題');
+      await picker.setInputFiles(image('race-2.png'));
+      release();
+
+      created = await createdPostId(page);
+
+      // 2 枚とも同じ記事に付く。作成は 1 回きり。
+      await expect(page.locator('.media-list li')).toHaveCount(2);
+      expect(creates).toBe(1);
+
+      // **往復のあいだの打鍵を巻き戻さない。** 送った時点の応答で欄を埋め直すと、
+      // 打ち直した題が黙って消える。
+      await expect(title).toHaveValue('打ち直した題');
+      expect(await body.inputValue()).toContain('先に書いた本文。');
+    } finally {
+      release();
+      await deletePost(request, created);
+    }
   });
 
   test('Bluesky の告知は公開してから、押すと配線を通る', async ({ page }) => {

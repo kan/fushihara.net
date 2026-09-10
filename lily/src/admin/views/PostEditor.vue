@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { fromDateTimeInput, toDateTimeInput } from '../date.ts';
 import { apiFetch, client, errorMessage, MOUNT } from '../api.ts';
-import { go, postRoute } from '../router.ts';
+import { go, postRoute, replaceRoute } from '../router.ts';
 import { onSessionLost, stash, unstash } from '../session.ts';
 import DateTimeInput from './DateTimeInput.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
@@ -37,6 +37,23 @@ type Detail = {
   }[];
 };
 
+/**
+ * 画面の中で作った記事の id。**新規の画面のまま記事が生まれることがある**
+ * （きっかけと理由は `ensureSaved`）。
+ *
+ * **route ではなくここに持つ。** route を動かすと `App.vue` の `key` が変わって
+ * 編集画面が作り直され、**書きかけとカーソルが飛ぶ** —— それが起きるのは画像を
+ * 差し込んでいる最中で、消えたことに気付きにくい。URL だけは `replaceRoute()` で
+ * 追随させるので、再読み込みやセッション切れからの復帰では同じ記事が開く。
+ */
+const createdId = ref<string | null>(null);
+
+/** 進行中の作成。**同時に 2 つ作らない**ための待ち合わせ場所（`create()`）。 */
+let creating: Promise<string | null> | null = null;
+
+/** いま編集しているのはどの記事か。**新規のうちは null。** */
+const postId = computed(() => props.publicId ?? createdId.value);
+
 const post = ref<Detail | null>(null);
 const title = ref('');
 const description = ref('');
@@ -66,18 +83,34 @@ const unresolved = ref<readonly string[]>([]);
 const error = ref('');
 const busy = ref(false);
 
-const saved = computed(() => props.publicId !== null);
+const saved = computed(() => postId.value !== null);
 
-function fill(detail: Detail): void {
+/**
+ * 記事を画面に反映する。**編集中の欄には触らない。**
+ *
+ * 作った直後（`create()`）はこちらだけを使う。作るきっかけは画像のドロップで、
+ * その往復のあいだも人は打ち続けている ―― 送った時点の値で欄を埋め直すと、
+ * **その間の打鍵が黙って消える**（差し込みは upload の前に捕まえた位置へ入るので、
+ * 消えたことにも気付きにくい）。
+ *
+ * 公開日時は「読み込んだ値」として控えるだけ。次の保存で送り返さないためで、
+ * 送り返すと欄が持たない秒が落ちて並びが変わる（`publishedAtChanged`）。
+ */
+function adopt(detail: Detail): void {
   post.value = detail;
+  newPath.value = detail.canonicalPath;
+  loadedPublishedAt.value =
+    detail.publishedAt === null ? '' : toDateTimeInput(new Date(detail.publishedAt));
+}
+
+/** 記事を画面に反映して、**編集中の欄もサーバーの値に揃える**（読み込みと保存）。 */
+function fill(detail: Detail): void {
+  adopt(detail);
   title.value = detail.title;
   description.value = detail.description ?? '';
   tags.value = detail.tags.map((tag) => tag.name);
   bodyMd.value = detail.bodyMd;
-  newPath.value = detail.canonicalPath;
-  publishedAt.value =
-    detail.publishedAt === null ? '' : toDateTimeInput(new Date(detail.publishedAt));
-  loadedPublishedAt.value = publishedAt.value;
+  publishedAt.value = loadedPublishedAt.value;
 }
 
 /**
@@ -102,6 +135,10 @@ async function run(work: () => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * 開いたときに 1 度だけ読む。**ここだけは `props` を見る**（新規の画面で作った
+ * 記事を読み直すことは無い。読むと、作った直後の値で書きかけを上書きする）。
+ */
 async function load(): Promise<void> {
   const id = props.publicId;
   if (id === null) return;
@@ -112,8 +149,9 @@ async function load(): Promise<void> {
   });
 }
 
-async function save(): Promise<void> {
-  const json = {
+/** 保存に送る中身。作るときも直すときも同じものを送る。 */
+function payload() {
+  return {
     title: title.value,
     description: description.value,
     bodyMd: bodyMd.value,
@@ -128,19 +166,50 @@ async function save(): Promise<void> {
       ? {}
       : { publishedAt: fromDateTimeInput(publishedAt.value) ?? undefined }),
   };
-  const id = props.publicId;
+}
 
+/**
+ * 下書きとして作る。**同時に 2 つ作らない。**
+ *
+ * 作るきっかけは「保存」だけではなく、画像のドロップ・貼り付け・カードにする、と
+ * 複数あり、それぞれ独立に走る。2 枚を続けて落とすと両方が「記事が無い」を見て、
+ * 同じ題の下書きが 2 件でき、先に上げた画像は誰も開かない方に付く。**進行中の
+ * 作成をここで覚える**ので、どの入口から来ても待ち合わせは 1 つ（画面ごとに
+ * 編集している記事は 1 つなので、モジュールではなくここに持つ）。
+ */
+function create(): Promise<string | null> {
+  creating ??= createOnce().finally(() => {
+    creating = null;
+  });
+  return creating;
+}
+
+async function createOnce(): Promise<string | null> {
   await run(async () => {
-    if (id === null) {
-      const res = await client.posts.$post({ json });
-      if (!res.ok) return await fail(res);
-      const created = await res.json();
-      unresolved.value = created.unresolvedMedia;
-      fill(created.post);
-      go(postRoute(created.post.publicId));
-      return;
-    }
-    const res = await client.posts[':publicId'].$patch({ param: { publicId: id }, json });
+    const res = await client.posts.$post({ json: payload() });
+    if (!res.ok) return await fail(res);
+    const created = await res.json();
+    unresolved.value = created.unresolvedMedia;
+    // **編集中の欄には触らない**（`adopt`）。URL だけ追随させる（`createdId`）。
+    adopt(created.post);
+    createdId.value = created.post.publicId;
+    replaceRoute(postRoute(created.post.publicId));
+  });
+  return createdId.value;
+}
+
+async function save(): Promise<void> {
+  const id = postId.value;
+  if (id === null) {
+    // **`create()` を直接呼ばない。** 題の検査と待ち合わせが付いてこない。
+    await ensureSaved();
+    return;
+  }
+  await run(async () => {
+    const res = await client.posts[':publicId'].$patch({
+      param: { publicId: id },
+      json: payload(),
+    });
     if (!res.ok) return await fail(res);
     const updated = await res.json();
     unresolved.value = updated.unresolvedMedia;
@@ -148,8 +217,31 @@ async function save(): Promise<void> {
   });
 }
 
+/**
+ * 添付できる状態にする。**記事が無ければ下書きとして保存してから返す。**
+ *
+ * 添付は記事に紐づく（R2 のキーが記事とファイル名から決まる）ので、記事が無い
+ * あいだは受け取れない。「先に保存してください」と突き放すと、書き始めてすぐ
+ * 画像を貼りたい場面で必ず引っかかる（issue #6）。
+ *
+ * **題だけは省略できない。** 記事のタイトルは空にできないので（`createPostSchema`
+ * と DB の CHECK。空白だけの題も同じく弾かれる）、代わりに「無題」を作ると一覧に
+ * 持ち主の分からない下書きが並ぶ。**ここで見るのはサーバーと同じ述語**で、
+ * 往復を 1 つ省くためのもの（読める日本語を出せるのも今のところここだけ）。
+ */
+async function ensureSaved(): Promise<string | null> {
+  const id = postId.value;
+  if (id !== null) return id;
+  // 作っている途中なら題は既に見てある（`create()` が待ち合わせる）。
+  if (creating === null && title.value.trim() === '') {
+    error.value = 'タイトルを入れてから画像やカードを入れる（下書きとして保存してから添付する）';
+    return null;
+  }
+  return await create();
+}
+
 async function setStatus(action: 'publish' | 'unpublish'): Promise<void> {
-  const id = props.publicId;
+  const id = postId.value;
   if (id === null) return;
   await run(async () => {
     const res =
@@ -162,7 +254,7 @@ async function setStatus(action: 'publish' | 'unpublish'): Promise<void> {
 }
 
 async function changePath(): Promise<void> {
-  const id = props.publicId;
+  const id = postId.value;
   if (id === null || post.value === null || newPath.value === post.value.canonicalPath) return;
   await run(async () => {
     const res = await client.posts[':publicId'].path.$put({
@@ -175,7 +267,7 @@ async function changePath(): Promise<void> {
 }
 
 async function removeAlias(path: string): Promise<void> {
-  const id = props.publicId;
+  const id = postId.value;
   if (id === null) return;
   await run(async () => {
     const res = await client.posts[':publicId'].paths.$delete({
@@ -188,7 +280,7 @@ async function removeAlias(path: string): Promise<void> {
 }
 
 async function issuePreview(): Promise<void> {
-  const id = props.publicId;
+  const id = postId.value;
   if (id === null) return;
   await run(async () => {
     const res = await client.posts[':publicId'].preview.$post({ param: { publicId: id } });
@@ -201,7 +293,7 @@ async function issuePreview(): Promise<void> {
 }
 
 async function revokePreview(): Promise<void> {
-  const id = props.publicId;
+  const id = postId.value;
   if (id === null) return;
   await run(async () => {
     const res = await client.posts[':publicId'].preview.$delete({ param: { publicId: id } });
@@ -221,7 +313,7 @@ async function revokePreview(): Promise<void> {
  * 保存前の書きかけを消すことになる（プレビューの発行と同じ扱い）。
  */
 async function announce(): Promise<void> {
-  const id = props.publicId;
+  const id = postId.value;
   if (id === null) return;
   if (!confirm('Bluesky に告知する。取り消せない。')) return;
   await run(async () => {
@@ -239,7 +331,7 @@ async function announce(): Promise<void> {
 }
 
 async function remove(): Promise<void> {
-  const id = props.publicId;
+  const id = postId.value;
   if (id === null) return;
   if (!confirm('この記事を消す。元に戻せない。')) return;
   await run(async () => {
@@ -256,11 +348,8 @@ async function remove(): Promise<void> {
  * URL の組み立てだけ `$url()` に任せて、パスを 2 箇所に書かないようにする。
  */
 async function upload(file: File): Promise<string | null> {
-  const id = props.publicId;
-  if (id === null) {
-    error.value = '先に保存してから画像を入れる（どの記事の添付か決まらないため）';
-    return null;
-  }
+  const id = await ensureSaved();
+  if (id === null) return null;
 
   const form = new FormData();
   form.append('file', file);
@@ -289,11 +378,8 @@ async function upload(file: File): Promise<string | null> {
  * プレビューが本文の `./card-….png` を解決できず、警告だけが出る。
  */
 async function makeCard(url: string): Promise<string | null> {
-  const id = props.publicId;
-  if (id === null) {
-    error.value = '先に保存してからカードにする（どの記事の添付か決まらないため）';
-    return null;
-  }
+  const id = await ensureSaved();
+  if (id === null) return null;
 
   let html: string | null = null;
   await run(async () => {
@@ -324,7 +410,7 @@ async function makeCard(url: string): Promise<string | null> {
  * 添付の一覧だけ差し替える（告知と同じ扱い）。
  */
 async function setOgp(mediaPublicId: string | null): Promise<void> {
-  const id = props.publicId;
+  const id = postId.value;
   if (id === null) return;
   await run(async () => {
     const res = await client.posts[':publicId'].ogp.$put({
@@ -366,7 +452,16 @@ type StashedDraft = {
   publishedAt: string;
 };
 
-const STASH_KEY = `lily:draft:${MOUNT}:${props.publicId ?? 'new'}`;
+/**
+ * 退避先のキー。**書くときの値で決まる。**
+ *
+ * 定数にできない ―― 新規の画面で画像を入れると下書きが生まれ、URL も
+ * `#/posts/<id>` に変わる。`new` のまま書くと、読み込み直した先（その記事の画面）
+ * が自分の控えを見つけられない。
+ */
+function stashKey(): string {
+  return `lily:draft:${MOUNT}:${postId.value ?? 'new'}`;
+}
 
 /**
  * 記事を読み込めたか。**読めていない画面の空欄を退避しない**ため。
@@ -379,7 +474,7 @@ const loaded = computed(() => props.publicId === null || post.value !== null);
 onUnmounted(
   onSessionLost(() => {
     if (!loaded.value) return;
-    stash(STASH_KEY, {
+    stash(stashKey(), {
       title: title.value,
       description: description.value,
       tags: tags.value,
@@ -393,7 +488,7 @@ const restored = ref(false);
 
 /** 読み込み直す前の編集内容を戻す。**読み込みが終わってから上書きする。** */
 function restore(): void {
-  const draft = unstash<StashedDraft>(STASH_KEY);
+  const draft = unstash<StashedDraft>(stashKey());
   if (draft === null) return;
   title.value = draft.title;
   description.value = draft.description;
@@ -415,7 +510,9 @@ watch(
     clearTimeout(timer);
     timer = setTimeout(async () => {
       const res = await client.render.$post({
-        json: { bodyMd: value, ...(props.publicId === null ? {} : { publicId: props.publicId }) },
+        // **記事が決まっていれば渡す。** 添付（`./sample.png`）を解決するのに要る
+        // ので、新規の画面で画像を入れて下書きが生まれた直後もそこから効く。
+        json: { bodyMd: value, ...(postId.value === null ? {} : { publicId: postId.value }) },
       });
       if (!res.ok) return;
       const rendered = await res.json();
@@ -595,7 +692,8 @@ onMounted(async () => {
     </div>
   </template>
   <p v-else class="muted" style="margin-top: 1rem">
-    保存すると URL・添付・プレビューを設定できる。
+    保存すると URL・添付・プレビューを設定できる。画像を入れると、そのとき下書きとして
+    保存する（添付は記事に紐づくため）。
   </p>
 
   <p class="muted" style="margin-top: 2rem">

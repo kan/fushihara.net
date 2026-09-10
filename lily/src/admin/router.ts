@@ -8,6 +8,15 @@ import { computed, ref } from 'vue';
 import { ADMIN_HASH } from '../core/paths.ts';
 import { takeStashedRoute } from './session.ts';
 
+/**
+ * いま見ている画面のハッシュ。
+ *
+ * **`replaceRoute()` はこれを動かさない**（動かすと画面が作り直される）ので、
+ * `location.hash` と食い違っていることがある。新規の画面で下書きが生まれた直後が
+ * それで、URL は `#/posts/<id>` を指しているのに `route.publicId` は `null` のまま。
+ * **「いまどの記事を編集しているか」を知りたい側は `route` を見ない**
+ * （編集画面が `postId` として持っている。`views/PostEditor.vue`）。
+ */
 const hash = ref(openingHash());
 
 addEventListener('hashchange', () => {
@@ -38,7 +47,7 @@ function openingHash(): string {
   const current = currentHash();
   if (current !== '/') return current;
   if (stashed === null || stashed === '/') return '/';
-  history.replaceState(null, '', `#${stashed}`);
+  replaceRoute(stashed);
   return stashed;
 }
 
@@ -71,4 +80,20 @@ export const NEW_POST_ROUTE = `${ADMIN_HASH.postPrefix}new`;
 
 export function go(path: string): void {
   location.hash = path;
+}
+
+/**
+ * 開いている画面はそのままに、**URL だけ**を差し替える。
+ *
+ * `history.replaceState` は `hashchange` を出さないので、`hash` も `route` も
+ * 動かない（上の `hash` の注記）。**それが目的**で、動かすと `App.vue` の `key` が
+ * 変わって画面が作り直される。使うのは「画面はそのままだが URL は変わった」
+ * 場面だけ ―― 読み込み直しの寄せ直し（`openingHash`）と、新規の画面で下書きが
+ * 生まれたとき（`views/PostEditor.vue` の `createdId`）。
+ *
+ * 履歴にも積まない。どちらも人が起こした遷移ではないので、「戻る」で行ける先に
+ * 増やす理由が無い。
+ */
+export function replaceRoute(path: string): void {
+  history.replaceState(null, '', `#${path}`);
 }

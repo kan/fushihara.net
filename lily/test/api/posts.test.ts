@@ -96,6 +96,16 @@ describe('作成と取得', () => {
   it('形が違う入力は 400', async () => {
     expect((await apiJson('POST', '/api/posts', { title: '' })).status).toBe(400);
     expect((await apiJson('POST', '/api/posts', {})).status).toBe(400);
+    // **空白だけの題も空と同じ。** DB の CHECK は空文字しか弾かないので、
+    // ここを通すと一覧に何も書いていない行が並ぶ。
+    expect((await apiJson('POST', '/api/posts', { title: '   ' })).status).toBe(400);
+    expect((await apiJson('POST', '/api/posts', { title: '　' })).status).toBe(400);
+  });
+
+  it('題の前後の空白は落として保存する', async () => {
+    const created = await apiJson('POST', '/api/posts', { title: '  余白つきの題  ' });
+    expect(created.status).toBe(201);
+    expect(created.body.post.title).toBe('余白つきの題');
   });
 
   it('使われているパスは 409', async () => {

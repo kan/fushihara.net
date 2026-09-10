@@ -22,8 +22,17 @@ const optionalText = z
   .transform((value) => (value.trim() === '' ? null : value))
   .nullable();
 
+/**
+ * 記事のタイトル。**空白だけも空と同じ。**
+ *
+ * DB の `CHECK (length(title) > 0)` は空文字しか弾かないので、`"   "` が通ると
+ * 一覧に何も書いていない行が並ぶ（管理画面が「題を入れてから」と言う判定とも
+ * 食い違う）。`trim()` を先に通すので、前後の空白は保存される値からも落ちる。
+ */
+const title = z.string().trim().min(1, 'タイトルは必須');
+
 export const createPostSchema = z.object({
-  title: z.string().min(1, 'タイトルは必須'),
+  title,
   bodyMd: z.string().default(''),
   description: optionalText.optional(),
   /** 省略すると public_id がそのまま URL になる。 */
@@ -37,7 +46,7 @@ export const createPostSchema = z.object({
 });
 
 export const updatePostSchema = z.object({
-  title: z.string().min(1).optional(),
+  title: title.optional(),
   bodyMd: z.string().optional(),
   description: optionalText.optional(),
   tags: z.array(z.string()).optional(),
