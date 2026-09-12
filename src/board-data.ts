@@ -18,11 +18,35 @@ const C = {
   poweredby: '#555',   // Subtle gray
 } as const;
 
+/**
+ * Powered by 付箋のアイコン 1 つ。**SVG を data URI にしてリンクで包むだけ。**
+ *
+ * 出どころは 3 種類（simple-icons / wema / lily）あるが、**出る形はどれも同じ**。
+ * 寸法や属性を直すときに 3 箇所を探さずに済むよう、包む側はここだけに置く。
+ */
+const iconLink = (svg: string, href: string) =>
+  `<a href="${href}" target="_blank"><img src="data:image/svg+xml,${encodeURIComponent(svg)}" width="22" height="22" style="vertical-align:middle"></a>`;
+
+/**
+ * lily のアイコン。**あちらにロゴが無いので、ここで起こした**（favicon も無い）。
+ * simple-icons にも無い。
+ *
+ * 先の尖った花弁 3 枚を根元（12,14）で束ね、そこから茎を下ろす。
+ *
+ * **花弁を 5 枚にしない。** 放射状になり、隣の Claude のアイコンと見分けが
+ * 付かなくなる。丸い花弁だと芽に見えるので尖らせてある。
+ */
+const lilyIcon = (href: string) => {
+  const petal = (deg: number) =>
+    `<path d="M12 14C9.4 10.5 9.4 6 12 2.5C14.6 6 14.6 10.5 12 14Z" transform="rotate(${deg} 12 14)"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#999">${petal(-55)}${petal(0)}${petal(55)}<path d="M12 14v7.5" stroke="#999" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  return iconLink(svg, href);
+};
+
 // Monochrome wema icon (official logo with #999 tones)
 const wemaIcon = (href: string) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M15 9.5C21 9.5 23.5 12 23.5 15" fill="none" stroke="#999" stroke-width="1.5" stroke-linecap="round"/><polygon points="23.5,17 21.5,14 25.5,14" fill="#999"/><rect x="2" y="4" width="13" height="11" rx="2" fill="#999"/><line x1="5" y1="8" x2="12" y2="8" stroke="#fff" opacity=".6" stroke-linecap="round"/><line x1="5" y1="11" x2="10" y2="11" stroke="#fff" opacity=".6" stroke-linecap="round"/><rect x="17" y="17" width="13" height="11" rx="2" fill="#999"/><line x1="20" y1="21" x2="27" y2="21" stroke="#fff" opacity=".6" stroke-linecap="round"/><line x1="20" y1="24" x2="25" y2="24" stroke="#fff" opacity=".6" stroke-linecap="round"/></svg>`;
-  const uri = `data:image/svg+xml,${encodeURIComponent(svg)}`;
-  return `<a href="${href}" target="_blank"><img src="${uri}" width="22" height="22" style="vertical-align:middle"></a>`;
+  return iconLink(svg, href);
 };
 
 export const GITHUB_USER = 'kan';
@@ -60,6 +84,9 @@ export const OSS_REPOS = [
   'roji',
   'pike',
   'wema',
+  // wema の隣に置く。**どちらもこのサイトを動かしている @kanf の npm パッケージ**で、
+  // wema が `/` の付箋ボード、lily が `/blog` の CMS。
+  'lily',
   'musql',
   'booch',
   'ratatoskr',
@@ -80,11 +107,11 @@ export const ossRow = (name: string, extra = '') =>
   `<div class="oss-row"><a href="https://github.com/${GITHUB_USER}/${name}" target="_blank">${name}</a>${extra}</div>`;
 
 // Build a data URI from a simple-icons path (monochrome #999)
-const siIcon = (si: { path: string }, href: string) => {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#999"><path d="${si.path}"/></svg>`;
-  const uri = `data:image/svg+xml,${encodeURIComponent(svg)}`;
-  return `<a href="${href}" target="_blank"><img src="${uri}" width="22" height="22" style="vertical-align:middle"></a>`;
-};
+const siIcon = (si: { path: string }, href: string) =>
+  iconLink(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#999"><path d="${si.path}"/></svg>`,
+    href,
+  );
 
 export const boardData: WemaBoardData = {
   version: 1,
@@ -163,9 +190,14 @@ export const boardData: WemaBoardData = {
     {
       id: 'oss',
       x: 900, y: 400,
-      // 高さは OSS_REPOS の件数で決まる。増やすと縦スクロールが出るので、
-      // e2e/render.spec.ts の「付箋の中身がはみ出さない」で検知する。
-      width: 280, height: 250,
+      // **高さは OSS_REPOS の件数で決まる実測値ちょうど**（7 件で 258px）。
+      // 増やすと縦スクロールが出るので `e2e/render.spec.ts` の「付箋の中身が
+      // はみ出さない」で検知する。
+      //
+      // **余らせないこと。** 背を高くすると右下固定の `poweredby` に食い込む
+      // （詳細と下限は `test/layout.test.ts` の「vh 700 以上では poweredby に
+      // 他のノートが重ならない」）。
+      width: 280, height: 258,
       // star と説明は main.ts が API から足す。落ちた日は名前とリンクだけが残る。
       text: `<b>OSS Projects</b><br><br>${OSS_REPOS.map((n) => ossRow(n)).join('')}` +
         moreLink(`https://github.com/${GITHUB_USER}?tab=repositories`),
@@ -193,7 +225,12 @@ export const boardData: WemaBoardData = {
         siIcon(siCloudflareworkers, 'https://workers.cloudflare.com'),
         siIcon(siVite, 'https://vitejs.dev'),
         siIcon(siTypescript, 'https://www.typescriptlang.org'),
+        // wema が `/` の付箋ボード、lily が `/blog` の CMS。**どちらも自作**なので
+        // 並べて置く（simple-icons に無いぶん、アイコンは手で起こしてある）。
+        // **行き先は npm で揃える** —— ここは「何で動いているか」の一覧なので、
+        // リポジトリより「入れて使えるもの」を指す方が筋が通る。
         wemaIcon('https://www.npmjs.com/package/@kanf/wema'),
+        lilyIcon('https://www.npmjs.com/package/@kanf/lily'),
         siIcon(siClaude, 'https://claude.com/product/claude-code'),
         siIcon(siGithub, 'https://github.com/kan/fushihara.net'),
       ].join(''),

@@ -50,6 +50,45 @@ describe('OSS_REPOS', () => {
   });
 });
 
+/**
+ * **中身がアイコンだけなので、壊れても画面に出ない。** リンク先が違っていても、
+ * 新しいタブで開かなくなっていても、絵は同じように並ぶ。
+ */
+describe('Powered by', () => {
+  const text = boardData.notes.find((n) => n.id === 'poweredby')!.text;
+  const links = [...text.matchAll(/<a\s+href="([^"]+)"([^>]*)>/g)];
+
+  it('どのリンクも https で、新しいタブで開く', () => {
+    expect(links.length).toBeGreaterThan(0);
+    for (const [, href, attrs] of links) {
+      expect(href, href).toMatch(/^https:\/\//);
+      expect(attrs, href).toContain('target="_blank"');
+    }
+  });
+
+  // 自作の 2 つは npm を指す。**ここは「何で動いているか」の一覧**なので、
+  // リポジトリより「入れて使えるもの」を指す（wema に揃えた）。
+  it('自作パッケージは npm を指す', () => {
+    for (const pkg of ['@kanf/wema', '@kanf/lily']) {
+      expect(text).toContain(`https://www.npmjs.com/package/${pkg}`);
+    }
+  });
+
+  // **リンクの数だけアイコンがあること。** 片方だけ足すと、絵の無いリンクか
+  // どこにも行かない絵ができる。**SVG として読めるかはここでは見ない** ――
+  // 壊れた XML は「img が出ない」形で現れるので、実際に描かせる E2E の領分
+  // （`e2e/render.spec.ts` の「Powered by のアイコンが全部デコードできる」）。
+  it('リンクと同じ数のアイコンがある', () => {
+    const uris = [...text.matchAll(/src="data:image\/svg\+xml,([^"]+)"/g)];
+    expect(uris.length).toBe(links.length);
+    for (const [, encoded] of uris) {
+      const svg = decodeURIComponent(encoded);
+      expect(svg.startsWith('<svg'), svg.slice(0, 40)).toBe(true);
+      expect(svg.endsWith('</svg>'), svg.slice(-40)).toBe(true);
+    }
+  });
+});
+
 describe('EXTRA_SKILLS', () => {
   it('空でなく、重複もない', () => {
     expect(EXTRA_SKILLS.length).toBeGreaterThan(0);

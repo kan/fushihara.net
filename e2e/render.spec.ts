@@ -144,6 +144,25 @@ test('付箋の中身がはみ出さない（縦スクロールが出ない）',
   expect(overflowing).toEqual([]);
 });
 
+// アイコンは手書きの SVG を data URI にしたもの（wema / lily）。**XML なので
+// 閉じ忘れや `--` 1 つで丸ごと壊れる**が、壊れても「絵が出ない」だけで
+// エラーは出ない（favicon で実際に踏んだ）。実際に描かせて確かめる。
+test('Powered by のアイコンが全部デコードできる', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  // **1 往復で全部見る。** `gotoAndSettle` の後は描き終わっているので、
+  // アイコンごとに待ちながら往復する必要がない。
+  const icons = await page.locator('[data-note-id="poweredby"]').evaluate((note) =>
+    [...note.querySelectorAll('img')].map((img) => ({
+      src: (img.getAttribute('src') ?? '').slice(0, 60),
+      width: img.naturalWidth,
+    })),
+  );
+
+  expect(icons.length).toBeGreaterThan(0);
+  for (const icon of icons) expect(icon.width, icon.src).toBeGreaterThan(0);
+});
+
 test('リンクが新しいタブで開く形になっている', async ({ page }) => {
   await gotoAndSettle(page);
 
