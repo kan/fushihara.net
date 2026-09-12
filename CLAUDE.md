@@ -591,8 +591,10 @@ npm は `publishConfig` の `exports` を書き換えないので、「開発は
 ただし `fallthrough: true` を付けること。付けないと wrangler の既定ルール
 （`**/*.txt` `**/*.html` `**/*.sql`）がまるごと無効になる。
 
-設計の正本は [issue #5](https://github.com/kan/fushihara.net/issues/5)、CMS の現状は
-`lily/README.md`、利用側は `blog/README.md`、**守るべき外向きの契約は
+設計の正本は [issue #5](https://github.com/kan/fushihara.net/issues/5)、CMS の使い方と
+公開 API は `lily/README.md`、**「なぜそうなっているか」は `lily/DESIGN.md`**
+（README がそのまま npm のパッケージページになるので分けてある。DESIGN は
+パッケージに入らない）、利用側は `blog/README.md`、**守るべき外向きの契約は
 `blog/CONTRACT.md`**、配線を動かす手順と踏んだ穴は `blog/SWITCHOVER.md`。
 
 **どちらも独立したプロジェクト。** 自分の `package.json` / `tsconfig.json` を持ち、
