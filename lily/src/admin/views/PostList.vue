@@ -46,6 +46,18 @@ const tagsError = ref('');
 const loading = ref(true);
 
 /**
+ * 今の renderer で描かれていない記事の数。**`0` のあいだは画面に何も出さない。**
+ *
+ * 配信側は保存済みの `body_html` をそのまま返すので、lily を更新して出力が
+ * 変わっても**古い HTML のままだと気付けない**。ここが唯一の知らせる場所。
+ */
+const stale = ref(0);
+const rerendering = ref(false);
+const rerenderError = ref('');
+/** 解決できない画像参照を持っていた記事。再描画のあいだに溜める。 */
+const rerenderWarnings = ref<string[]>([]);
+
+/**
  * 選択欄に出すタグ。**いま絞り込んでいる slug が無ければ足す。**
  *
  * 行のタグを押した直後や `/tags` が読めなかったときに、一覧は絞られているのに
@@ -118,6 +130,75 @@ async function loadTags(): Promise<void> {
   }
 }
 
+/**
+ * 再描画の残り。**読めなかったら黙って 0 にする。**
+ *
+ * これは付随的な知らせで、記事を読み書きする邪魔をしてはいけない。出せないなら
+ * 「知らせが出ない」だけで、一覧そのものは今までどおり使える。
+ */
+async function loadStale(): Promise<void> {
+  try {
+    const res = await client.rerender.$get();
+    stale.value = res.ok ? (await res.json()).remaining : 0;
+  } catch {
+    // 回線が切れていても知らせが消えるだけ。**握り潰すのはここだけ**
+    // （押した先の失敗は下の `rerenderAll` が画面に出す）。
+    stale.value = 0;
+  }
+}
+
+/** 画面を離れたら描き直しを止める合図。**`onUnmounted` で立てる。** */
+let leaving = false;
+
+/**
+ * 残りが 0 になるまで描き直す。**1 回の `POST` は 50 件までしか進まない**
+ * （Workers の subrequest の上限があるので、サーバー側が区切っている）。
+ */
+async function rerenderAll(): Promise<void> {
+  rerendering.value = true;
+  rerenderError.value = '';
+  rerenderWarnings.value = [];
+
+  let previous = Infinity;
+  try {
+    for (;;) {
+      const res = await client.rerender.$post();
+      // **画面を離れたら止める。** 続けると、消えたコンポーネントの ref に
+      // 書き込みながら裏で回り続ける。一覧に戻ると減りかけの件数でボタンが
+      // また出るので、押されると 2 本目の loop が同じ記事を重ねて描き直す。
+      if (leaving) return;
+
+      if (!res.ok) {
+        rerenderError.value = await errorMessage(res);
+        return;
+      }
+      const body = await res.json();
+      stale.value = body.remaining;
+      rerenderWarnings.value.push(...body.warnings.map((warning) => warning.publicId));
+
+      if (body.remaining === 0) return;
+      // **減らないなら止める。** 数百件あれば十数回投げるので、こちらが直せない
+      // 何か（描画で毎回落ちる記事など）に当たると永久に API を叩き続ける。
+      //
+      // **`rendered` が 0 かでは見ない。** サーバーは残りを数えるのと同じ条件で
+      // 対象を引くので、`rendered === 0` は `remaining === 0` と同じ意味にしか
+      // ならず、1 行上で既に抜けている。「1 記事の失敗で全体を落とさない」形に
+      // 変えた日に素通りする。
+      if (body.remaining >= previous) {
+        rerenderError.value = `${body.remaining} 件が残ったまま減らなくなった。Worker のログを見ること。`;
+        return;
+      }
+      previous = body.remaining;
+    }
+  } catch (error) {
+    // **投げた先が落ちたことも画面に出す。** 十数回の往復のどこかで回線が切れる
+    // ことはあるので、黙って終わると「押したのに何も起きなかった」に見える。
+    rerenderError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    rerendering.value = false;
+  }
+}
+
 function move(step: number): void {
   offset.value = Math.max(0, offset.value + step * PER_PAGE);
 }
@@ -136,8 +217,12 @@ watch(typed, (value) => {
   }, TYPING_PAUSE);
 });
 
-// 打ち終える前に画面を離れたときに、消えたコンポーネントの ref を触らせない。
-onUnmounted(() => clearTimeout(typingTimer));
+// 打ち終える前／描き直しの途中で画面を離れたときに、消えたコンポーネントの
+// ref を触らせない。
+onUnmounted(() => {
+  clearTimeout(typingTimer);
+  leaving = true;
+});
 
 // 絞り込みを変えたら先頭のページに戻す。3 ページ目で絞ると空に見えるため。
 watch(filters, () => {
@@ -148,6 +233,7 @@ watch([offset, filters], load);
 onMounted(() => {
   void load();
   void loadTags();
+  void loadStale();
 });
 
 /**
@@ -192,6 +278,19 @@ function day(value: string | null): string {
     </select>
     <button v-if="filtered" @click="clearFilters">絞り込みを解除</button>
   </div>
+
+  <!-- lily を更新して出力が変わったときだけ出る。配信は保存済みの HTML を返すので、
+       ここに出さないと古いまま気付けない。 -->
+  <p v-if="stale > 0" class="notice">
+    この renderer で描かれていない記事が {{ stale }} 件ある。
+    <button :disabled="rerendering" @click="rerenderAll">
+      {{ rerendering ? '描き直している…' : 'まとめて描き直す' }}
+    </button>
+  </p>
+  <p v-if="rerenderError" class="notice error">{{ rerenderError }}</p>
+  <p v-if="rerenderWarnings.length" class="notice">
+    解決できない画像の参照を持つ記事: {{ rerenderWarnings.join(', ') }}
+  </p>
 
   <p v-if="tagsError" class="notice error">タグの一覧を読めなかった: {{ tagsError }}</p>
   <p v-if="error" class="notice error">{{ error }}</p>

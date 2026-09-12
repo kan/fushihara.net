@@ -570,6 +570,38 @@ describe('再描画', () => {
     const result = await apiJson('POST', '/api/rerender');
     expect(result.body.warnings[0].unresolvedMedia).toEqual(['./missing.png']);
   });
+
+  /**
+   * 管理画面が知らせを出すのに読む口。**`GET` は 1 行も書かない** ――
+   * 配信側での lazy 再描画を採らなかったのと同じ理由（`GET` が D1 に書くと、
+   * 一覧から詳細を開くだけで書き込みが起きる）。
+   */
+  describe('残りの件数 (GET)', () => {
+    it('今の renderer と、描き直しが要る件数を返す', async () => {
+      await createPost({ bodyMd: 'ひとつめ\n' });
+      await createPost({ bodyMd: 'ふたつめ\n', title: 'ふたつめ' });
+      expect((await apiJson('GET', '/api/rerender')).body).toMatchObject({ remaining: 0 });
+
+      await makeStale();
+      const result = await apiJson('GET', '/api/rerender');
+      expect(result.body.remaining).toBe(2);
+      // 版そのものは core の持ち物。**古い版と違うこと**だけを見る
+      // （上げるたびにテストを書き換えることにならないように）。
+      expect(result.body.rendererVersion).not.toBe('0');
+    });
+
+    it('数えるだけで、描き直しも版の書き換えもしない', async () => {
+      const post = await createPost({ bodyMd: '## 見出し\n' });
+      await makeStale();
+
+      await apiJson('GET', '/api/rerender');
+
+      const row = await getPostByPublicId(db, post.publicId);
+      expect(row?.body_html).toBe('<p>古い</p>');
+      expect(row?.renderer_version).toBe('0');
+      expect((await apiJson('GET', '/api/rerender')).body.remaining).toBe(1);
+    });
+  });
 });
 
 describe('プレビューの描画', () => {

@@ -170,6 +170,118 @@ test.describe('一覧の絞り込み', () => {
   });
 });
 
+/**
+ * lily を更新して出力が変わったときの知らせ。**配信は保存済みの `body_html` を
+ * そのまま返すので、古い HTML のままでも画面には何も出ない。** ここが唯一の
+ * 気付ける場所なので、出ることと押せることを見張る。
+ *
+ * **サーバー側は lily の単体テストが実 D1 で見ている**（数える口が書き込まない
+ * ことも込み）。ここで確かめるのは画面の側 —— 0 件なら何も出さないこと、
+ * 押したら残りが 0 になるまで繰り返すこと、進まなくなったら止まること。
+ * 本物の記事を古い renderer の状態にするには D1 を直接書くしかなく、それは
+ * ブラウザ越しの検証でやることではない。
+ */
+test.describe('再描画の案内', () => {
+  const NOTICE = 'この renderer で描かれていない記事が';
+  const BUTTON = 'まとめて描き直す';
+
+  /**
+   * 再描画の口を偽サーバーに差し替える。**`GET`（残り件数）はここが返し、
+   * テストは `POST` の振る舞いだけを書く。**
+   */
+  function mockRerender(
+    page: import('@playwright/test').Page,
+    remaining: number,
+    onPost: (route: import('@playwright/test').Route) => Promise<void>,
+  ) {
+    return page.route(`**${MOUNT}/api/rerender`, async (route) => {
+      if (route.request().method() === 'GET') {
+        return await route.fulfill({ json: { rendererVersion: '9', remaining } });
+      }
+      await onPost(route);
+    });
+  }
+
+  test('残りが 0 なら何も出さない', async ({ page }) => {
+    // **件数の応答が届くまで待つ。** `toHaveCount(0)` は最初に成立した時点で
+    // 通るので、待たないと「知らせが後から出る」回帰を素通りさせる
+    // （一覧の描画を待っても、こちらは別のリクエスト）。
+    const counted = page.waitForResponse(
+      (res) => res.url().endsWith(`${MOUNT}/api/rerender`) && res.request().method() === 'GET',
+    );
+    await page.goto(`${MOUNT}/admin/`);
+    expect((await (await counted).json()).remaining).toBe(0);
+
+    await expect(page.getByText(NOTICE)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: BUTTON })).toHaveCount(0);
+  });
+
+  test('残りがあれば知らせ、押すと 0 になるまで繰り返す', async ({ page }) => {
+    // **1 回の POST は 50 件までしか進まない**（Workers の subrequest の上限が
+    // あるので、サーバー側が区切っている）。120 件だと 3 回要る。
+    let remaining = 120;
+    let posts = 0;
+    await mockRerender(page, remaining, async (route) => {
+      posts += 1;
+      const rendered = Math.min(50, remaining);
+      remaining -= rendered;
+      await route.fulfill({
+        json: {
+          rendered,
+          remaining,
+          warnings: [{ publicId: ID.renderingSample, unresolvedMedia: ['./x.png'] }],
+        },
+      });
+    });
+
+    await page.goto(`${MOUNT}/admin/`);
+    await expect(page.getByText(`${NOTICE} 120 件ある`)).toBeVisible();
+
+    await page.getByRole('button', { name: BUTTON }).click();
+    await expect(page.getByText(NOTICE)).toHaveCount(0);
+    expect(posts).toBe(3);
+
+    // 解決できない参照は**捨てない**。まとめて描き直すと、記事を開かずに
+    // 直す機会がここしか無い。
+    await expect(page.getByText('解決できない画像の参照を持つ記事')).toContainText(ID.renderingSample);
+  });
+
+  test('残っているのに減らなくなったら止まる', async ({ page }) => {
+    // **「描いたのに残りが減らない」形で作る。** `rendered: 0` では作らない ――
+    // サーバーは残りを数えるのと同じ条件で対象を引くので、`rendered === 0` は
+    // `remaining === 0` と同じ意味にしかならず、実際には返ってこない応答になる。
+    // 減らないのは「1 記事の失敗で全体を落とさない」形に変えたときに起きる。
+    let posts = 0;
+    await mockRerender(page, 5, async (route) => {
+      posts += 1;
+      await route.fulfill({ json: { rendered: 5, remaining: 5, warnings: [] } });
+    });
+
+    await page.goto(`${MOUNT}/admin/`);
+    await page.getByRole('button', { name: BUTTON }).click();
+
+    await expect(page.getByText('5 件が残ったまま減らなくなった')).toBeVisible();
+    // 押せる状態に戻っていること（押しっぱなしで固まらない）。
+    await expect(page.getByRole('button', { name: BUTTON })).toBeEnabled();
+    await page.waitForTimeout(500);
+    // **2 回投げて止まる。** 1 回目は比べる相手がいないので進み、2 回目で
+    // 「減っていない」と分かる。
+    expect(posts).toBe(2);
+  });
+
+  test('投げた先が落ちたら画面に出す', async ({ page }) => {
+    // 数百件あれば十数回往復するので、途中で切れることはある。黙って終わると
+    // 「押したのに何も起きなかった」にしか見えない。
+    await mockRerender(page, 5, (route) => route.abort('connectionreset'));
+
+    await page.goto(`${MOUNT}/admin/`);
+    await page.getByRole('button', { name: BUTTON }).click();
+
+    await expect(page.locator('.notice.error')).toBeVisible();
+    await expect(page.getByRole('button', { name: BUTTON })).toBeEnabled();
+  });
+});
+
 test.describe('公開ページの管理リンク', () => {
   test('管理画面を開いた端末にだけ出て、その記事の編集画面へ行ける', async ({ page }) => {
     const link = page.locator('.admin-link');

@@ -603,6 +603,23 @@ export function createApi(config: PageConfig) {
     })
 
     /**
+     * 再描画がどれだけ残っているか。**同じパスで `GET` が「あと何件か」、
+     * `POST` が「進める」。**
+     *
+     * lily を更新して出力が変わっても、配信側は保存済みの `body_html` を
+     * そのまま返すので、**古い HTML のままでも画面には何も出ない。** 管理画面が
+     * これを見て、`remaining > 0` のときだけ知らせる。
+     *
+     * **配信側での lazy 再描画は採らない。**「`GET` は D1 に書かない」を壊す
+     * （一覧から詳細を開くだけで書き込みが起きる）。cron での自動再描画も採らない
+     * ―― 静かに全記事を書き換えるうえ、cron を張っていない deployment には効かない。
+     */
+    .get('/rerender', async (c) => {
+      const remaining = await countPostsNeedingRender(c.env.DB, RENDERER_VERSION);
+      return c.json({ rendererVersion: RENDERER_VERSION, remaining });
+    })
+
+    /**
      * `body_html` は派生データなので、renderer を更新したら作り直す。
      * 下書きも含めて、**今の renderer で描かれていない記事だけ**が対象。
      *

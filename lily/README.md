@@ -92,6 +92,7 @@ lily より厳しい設定（`exactOptionalPropertyTypes` など）の人のと�
 - `AuthAdapter` と 3 つのアダプタ（パスワード / Cloudflare Access / localhost）、
   ログイン画面、`<mount>/api/*` と `<mount>/admin/*` の保護境界
 - 管理 API（記事の CRUD・公開/取り下げ・パス変更・プレビュー URL・添付・再描画）
+- 再描画の案内（lily を更新して出力が変わったら、管理画面の一覧が残り件数を出す）
 - portable な import / export（Markdown 一式の zip。往復で identity と URL が保たれる）
 - `posts.json`（本体サイトの Blog 付箋が読む口）
 - E2E（`e2e/`。フィクスチャは import で入れる）
