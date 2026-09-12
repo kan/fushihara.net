@@ -98,12 +98,23 @@ a:hover {
   font-size: 0.9rem;
 }
 
+/* 著作権表示を左、CMS の出どころを右に置く。**狭ければ折り返す** ――
+ * そのとき space-between は効かなくなり、2 行とも左に揃う（右端にぶら下がった
+ * 1 語より読みやすい）。`p` の既定マージンは潰す（flex の行に縦の隙間が出る）。 */
 .site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
   margin-top: 4rem;
   padding: 2rem 0;
   border-top: 1px solid var(--rule);
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+.site-footer p {
+  margin: 0;
 }
 
 /* === Theme toggle ===

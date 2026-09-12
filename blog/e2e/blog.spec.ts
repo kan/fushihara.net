@@ -157,6 +157,20 @@ test.describe('ナビゲーション', () => {
     await page.goto(POST);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(POST_TITLE);
   });
+
+  // **一覧と記事の両方で見る。** 外枠は共通の `layout()` だが、そこに分岐が
+  // 入った日に片方だけ消えても気付けるようにする。
+  test('footer に著作権表示と lily へのリンクが出る', async ({ page }) => {
+    for (const path of [url.index(), POST]) {
+      await page.goto(path);
+      const footer = page.locator('.site-footer');
+      await expect(footer, path).toContainText('©');
+      await expect(footer.getByRole('link', { name: 'lily' }), path).toHaveAttribute(
+        'href',
+        'https://github.com/kan/lily',
+      );
+    }
+  });
 });
 
 test.describe('リンクカード', () => {

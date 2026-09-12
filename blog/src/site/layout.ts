@@ -144,6 +144,11 @@ export async function layout(
 
       <footer class="site-footer">
         <p>&copy; ${site.author}</p>
+        <!-- CMS の出どころ。**リンク先は GitHub** ―― npm のページより先に
+             「これは何か」が読める（README が入口で、issue もそこにある）。
+             lily の標準テーマは何も出さないので、これは fushihara.net が
+             自分のテーマで出している。 -->
+        <p>Powered by <a href="https://github.com/kan/lily">lily</a></p>
       </footer>
     </div>
 
