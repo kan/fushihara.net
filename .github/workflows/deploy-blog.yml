@@ -62,7 +62,10 @@ jobs:
       #
       # `npm ci` より前に置く。パッケージを入れなくても判定できるうえ、
       # 入れてから落ちると待ち時間が無駄になる。
-      - name: file: 依存が残っていないか
+      # **`name` は引用符で囲むこと。** `file:` を素で書くと YAML が入れ子の
+      # マッピングとして読み、**ワークフローがジョブを 1 つも起こさずに落ちる**
+      # （ログも残らないので、原因が画面から辿れない。実際に踏んだ）。
+      - name: 'file: 依存が残っていないか'
         run: |
           if grep -q '"file:' package.json; then
             echo '::error::package.json が file: 依存のまま。`git checkout -- package.json package-lock.json && npm ci` で戻すこと（blog/README.md の「lily の直し方」）'
