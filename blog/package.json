@@ -21,7 +21,7 @@
   },
   "//dependencies": "CMS の本体は lily (別リポジトリ github.com/kan/lily)。ここに残るのはテーマが使うもの (hono/html) だけ",
   "dependencies": {
-    "@kanf/lily": "^0.1.0",
+    "@kanf/lily": "^0.4.0",
     "hono": "^4.13.5"
   },
   "devDependencies": {

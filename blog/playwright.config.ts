@@ -42,6 +42,15 @@ export default defineConfig({
      * (「一覧の日付は JST で出す」が意味を失う)。
      */
     timezoneId: 'America/New_York',
+    // **`locale` はここで指定しない。** 既定の `en-US` のままにする。
+    //
+    // 上の `timezoneId` と同じ理由で、公開ページのハーネスは端末の設定をサイト設定
+    // (`lang: 'ja'`) とずらしておきたい。揃えてしまうと、テーマが `site.lang` では
+    // なく `navigator.language` を見るようになった日に、出力がたまたま一致して
+    // テストが緑のまま通る。
+    //
+    // 管理画面だけは端末の言語で出るのが仕様なので、`e2e/admin.spec.ts` が
+    // ファイル単位で `ja-JP` に上書きしている。
   },
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

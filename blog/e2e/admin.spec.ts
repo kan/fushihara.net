@@ -13,6 +13,22 @@ import { ID, MOUNT, ORIGIN, url } from './helpers.ts';
  * ローカルでは `ACCESS_TEAM` / `ACCESS_AUD` が空 (`.dev.vars`) なので
  * `localhostOnly` に落ちて開ける。本番は Cloudflare Access の内側。
  */
+
+/**
+ * **ブラウザの言語。管理画面の文言はこれで決まる**（lily 0.4.0 の i18n）。
+ *
+ * `SiteConfig.lang` / `uiLang` が効くのは**公開ページとログイン画面**までで、
+ * 管理画面はビルド済みの SPA が自分で選ぶ —— 運用者が設定画面で選んだもの
+ * （`localStorage` の `lily-admin-locale`）、無ければ `navigator.languages`、
+ * それも合わなければ英語。既定の Chromium は `en-US` なので、指定しないと
+ * 管理画面が英語で出てこのファイルが 28 件落ちる（実際に踏んだ）。
+ *
+ * **このファイルだけに掛ける。** `playwright.config.ts` の既定は `en-US` のままで、
+ * 公開ページのハーネスは端末の設定をサイト設定とずらしておきたい（理由は
+ * あちらの `timezoneId` と同じ）。
+ */
+test.use({ locale: 'ja-JP' });
+
 /**
  * 添付に使う実体のある PNG。**寸法をヘッダから読む**ので、中身が要る。
  * フィクスチャの 1 枚を使い回す（内容は何でもよく、置き場所を 2 箇所に書かない）。
@@ -85,15 +101,26 @@ test.describe('見出しと設定', () => {
     await page.goto(`${MOUNT}/admin/`);
     await page.getByRole('link', { name: '設定' }).click();
 
-    const settings = page.locator('.settings');
+    // **`.settings` は 1 つではない。** lily 0.4.0 で「この画面の言語」を選ぶ欄が
+    // 別の `dl.settings` として増えた。見たいのはサイト設定の方なので、中身で絞る
+    // （`.first()` だと、あちらが並び順を変えた日に黙って別の表を見はじめる）。
+    const settings = page.locator('.settings').filter({ hasText: 'サイト名' });
     await expect(settings).toContainText(SITE.name);
     await expect(settings).toContainText(SITE.author);
     // **公開 URL はマウントまで込みで 1 つ**。分けて出すと、実際に配信されている
     // URL がどれなのか読み取れない。マウントの部分だけ太字にしてある。
     await expect(settings).toContainText(`${SITE.url}${MOUNT}`);
     await expect(settings.locator('dd strong')).toHaveText(MOUNT);
-    // 変更する口は無い。ここに入力欄が生えたら、この画面の前提が変わっている。
-    await expect(page.locator('.settings input, .settings button')).toHaveCount(0);
+    // **サイト設定を変える口は無い。** 値の出どころはソースで、ここは映すだけ。
+    //
+    // **数えるのは画面全体で、サイト設定の表の中だけではない。** 絞ると、別の表に
+    // 編集欄が生えた日に 0 件のまま通ってしまう。いま 1 件あるのは言語の選択欄で、
+    // あれが変えるのは**この端末の表示**だけ（`localStorage` の
+    // `lily-admin-locale`）。2 件目が出たらここが落ちる ―― そのときは
+    // 「ここは映すだけ」という前提が変わっているので、素通しさせない。
+    await expect(page.locator('.settings input, .settings button, .settings select')).toHaveCount(
+      1,
+    );
   });
 });
 
