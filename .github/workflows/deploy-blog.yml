@@ -3,12 +3,13 @@ name: CI / blog
 # ブログは本体とは別の Worker なので、ワークフローも分けてある。
 # 記事を 1 本足しただけで本体の E2E まで回るのを避けるのが目的。
 #
-# **CMS の本体は `lily/`（npm パッケージ `@kanf/lily`）で、`blog/` はその利用側。**
-# blog は lily に `file:../lily` で依存しているので、lily が変われば blog も
-# 出し直す必要がある。paths に両方を入れてあるのはそのため。
+# **CMS の本体は [`@kanf/lily`](https://github.com/kan/lily) で、`blog/` はその
+# 利用側。** あちらは別リポジトリなので、lily を上げるのは dependabot の PR か
+# 手での `npm install` 経由になり、**どちらも `blog/package-lock.json` が動く**
+# ―― つまり `blog/**` の paths でそのまま拾える。
 #
 # 本体の deploy.yml にある `changes` ジョブ (deployed タグとの差分判定) は
-# 持ち込んでいない。上の paths フィルタが既に「ブログに関係する変更のときだけ
+# 持ち込んでいない。下の paths フィルタが既に「ブログに関係する変更のときだけ
 # 動く」を保証しているうえ、毎回フルデプロイなので、テスト失敗で出し損ねた
 # 変更も次の push で丸ごと出し直される。
 on:
@@ -16,7 +17,6 @@ on:
     branches: [main]
     paths:
       - 'blog/**'
-      - 'lily/**'
       # shared/ も見る。ブログは shared/date.ts（公開日時の JST 変換）を読み、
       # ビルドが shared/public を配信物にコピーする。ここを外すと、shared だけの
       # 変更で壊れても気付けない。**lily は shared/ を読まない。**
@@ -25,7 +25,6 @@ on:
   pull_request:
     paths:
       - 'blog/**'
-      - 'lily/**'
       - 'shared/**'
       - '.github/workflows/deploy-blog.yml'
   workflow_dispatch:
@@ -38,32 +37,10 @@ defaults:
     working-directory: blog
 
 jobs:
-  # CMS そのもの。**利用側を 1 つも知らない状態で通ること**を見る。
-  #
-  # **分離したらこのジョブごと消える。** 同じ内容が `lily/.github/workflows/ci.yml`
-  # に置いてあり（いまは GitHub が読まないので動かない）、lily が別リポジトリへ
-  # 出た時点でそちらが引き継ぐ。中身を変えたら両方直すこと。
-  lily:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: lily
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: lily/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      # **emit を型検査とは別に回す。** `typecheck` は `--noEmit` なので、
-      # 配る形だけが壊れる状態を通してしまう。管理画面は次の `npm test` が
-      # `pretest` で作るので、`build` ではなく `build:lib` にする（`build` だと
-      # vite が 2 回走る）。
-      - run: npm run build:lib
-      - run: npm test
-
+  # CMS そのものを見るジョブはここに無い。**`kan/lily` の CI が見ている**
+  # （利用側を 1 つも知らない状態で typecheck + emit + 実 workerd の test）。
+  # こちらが判定するのは、**その lily を載せた fushihara.net のブログが
+  # 今までどおり配れているか**だけ。
   test:
     runs-on: ubuntu-latest
     steps:
@@ -72,29 +49,30 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            lily/package-lock.json
-            blog/package-lock.json
-      # **lily を先に用意する。これは省けない。** 理由が 3 つある。
+          cache-dependency-path: blog/package-lock.json
+
+      # **`file:` 依存のまま push されていないこと。**
       #
-      # 1. **lily の `exports` は `dist/lib` を指す** (tsc が出した .js + .d.ts)。
-      #    ビルドしていない木には `@kanf/lily` の実体が無い
-      # 2. blog のビルドは管理画面を作らず、lily が同梱する `dist/admin` を
-      #    コピーするだけ
-      # 3. **`file:` で参照しているあいだ、lily の実行時依存 (hono / shiki /
-      #    zod …) は `lily/node_modules` にしか入らない。** blog だけ `npm ci`
-      #    した木では bundle できず、`wrangler` が
-      #    `Could not resolve 'shiki'` で落ちる
+      # lily を手元の木へ向けて往復するとき `npm install ../lily` を使うと、
+      # `package.json` が `"@kanf/lily": "file:../lily"` に書き換わり lockfile も
+      # 一緒に更新される。**両者が整合しているので `npm ci` は成功する**
+      # —— 指す先が無くても dangling symlink を張って exit 0 で終わる。
+      # 落ちるのは後ろの `tsc` や `wrangler` で、そこに出るのは素の
+      # 「モジュールが見つからない」だけ。原因が読めないので、ここで名指しで止める。
       #
-      # どれも `blog/scripts/build.mjs` が理由付きで止めるので、順序を崩しても
-      # 素の esbuild エラーにはならない。npm から入れる形に変えれば 1 と 3 は消える。
-      - run: npm ci
-        working-directory: lily
-      # `build` は 2 本立て (dist/admin + dist/lib)。ここでの目的は blog に渡す
-      # ものを作ることで、**emit が壊れていないか自体は `lily` ジョブも見ている**
-      # (並列なので、どちらが先に落ちるかは決まらない)。
-      - run: npm run build
-        working-directory: lily
+      # `npm ci` より前に置く。パッケージを入れなくても判定できるうえ、
+      # 入れてから落ちると待ち時間が無駄になる。
+      - name: file: 依存が残っていないか
+        run: |
+          if grep -q '"file:' package.json; then
+            echo '::error::package.json が file: 依存のまま。`git checkout -- package.json package-lock.json && npm ci` で戻すこと（blog/README.md の「lily の直し方」）'
+            exit 1
+          fi
+
+      # **lily を先にビルドする手は要らなくなった。** npm から入る `@kanf/lily`
+      # には `dist/lib`（CMS 本体）も `dist/admin`（管理画面）も同梱されていて、
+      # 実行時依存 (hono / shiki / zod …) も `blog/node_modules` に入る。
+      # `file:` で参照していたころは、そのどれも自前で用意する必要があった。
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -110,7 +88,7 @@ jobs:
           retention-days: 7
 
   deploy:
-    needs: [lily, test]
+    needs: [test]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -119,15 +97,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            lily/package-lock.json
-            blog/package-lock.json
-      # **テストと同じ順序で lily を先に用意する。** 理由は test ジョブの
-      # 同じ箇所に書いた（管理画面の実体と、`file:` 越しの実行時依存）。
-      - run: npm ci
-        working-directory: lily
-      - run: npm run build
-        working-directory: lily
+          cache-dependency-path: blog/package-lock.json
       - run: npm ci
       # wrangler.jsonc の assets.directory が dist/ を指すので、これが無いと
       # デプロイする中身が無い (共有と専用の静的アセット + lily の管理画面)。

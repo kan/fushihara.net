@@ -59,20 +59,12 @@ npm run test:e2e # Playwright。本番ビルドを preview で配信して deskt
 npm run typecheck
 ```
 
-ブログは別プロジェクトが 2 つ（`lily/` が CMS、`blog/` がその利用側）。
-**必ず lily を先に用意する** —— blog のビルドは管理画面を作らず lily の成果物を
-コピーするだけで、lily の実行時依存（hono / shiki / zod …）も `file:` の
-シンボリックリンク越しに `lily/node_modules` から解決されるため。
+ブログは独立したプロジェクト。**CMS 本体の lily はこのリポジトリに無い**
+（`@kanf/lily`。実体は [kan/lily](https://github.com/kan/lily)）ので、
+`npm ci` で普通に入る ―― 管理画面も migrations も同梱されている。
 
 ```bash
-cd lily
-npm install
-npm run build            # 配るものを 2 つとも作る（tsc → dist/lib、vite → dist/admin）
-npm run build:lib:watch  # blog で試しながら lily を直すとき用（exports は dist/lib）
-npm test                 # Vitest。実 workerd + 実 D1 で動く（608 件）
-npm run typecheck        # wrangler types → tsc（src / 管理画面 の 2 プロジェクト）
-
-cd ../blog
+cd blog
 npm install
 npm run build            # 静的アセットの合流（shared/public + blog/public + lily の管理画面）
 npm run db:migrate:local # ローカル D1 にマイグレーションを当てる
@@ -84,8 +76,9 @@ npm run typecheck        # wrangler types → tsc（src / e2e の 2 プロジェ
 npm run deploy           # build して wrangler deploy
 ```
 
-lily を用意せずに blog を触ると `scripts/build.mjs` が理由付きで止まる
+`npm ci` を忘れたまま blog を触ると `scripts/build.mjs` が理由付きで止まる
 （素通しすると、失敗するのは後ろの `wrangler` の bundle か空の管理画面になる）。
+lily を手元の木へ向けて往復する手順は `blog/README.md` の「lily の直し方」。
 
 **ビルドしていないと `wrangler` も `vitest` も動かない**（`assets.directory` が
 `dist/` を指すため。どちらも `pretest` で自動的に走る）。管理画面は
@@ -93,8 +86,9 @@ lily を用意せずに blog を触ると `scripts/build.mjs` が理由付きで
 `localhostOnly` に落ちて開ける。
 
 lint の設定はない。型チェックは本体側が `tsc -b` で 4 つのプロジェクト
-（app / worker / test / e2e）、lily が `tsc` + `vue-tsc` で 2 つ（src / 管理画面）、
-blog が `tsc` で 2 つ（src / e2e）をそれぞれ見る。本体の `tsc -b` はどちらも含まない。
+（app / worker / test / e2e）、blog が `tsc` で 2 つ（src / e2e）を見る。
+本体の `tsc -b` は blog を含まない。**lily の型は `.d.ts` として入ってくる**ので、
+あちらのソースはこちらの検査に掛からない（掛けているのは lily 側の CI）。
 
 テストの外部 API は Vitest では `vi.stubGlobal('fetch')`、E2E では
 `page.route()` で止めてある。CI を api.github.com のレートリミットや、
@@ -557,29 +551,28 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 `.wema-board` セレクタでこちらが勝つ。wema が JS からインライン設定するのは
 `--wema-note-color`（ノート左端の帯）だけなので、他はすべて CSS で上書きできる。
 
-## ブログ（blog/）と CMS（lily/）
+## ブログ（blog/）と CMS（@kanf/lily）
 
-**`/blog` を配っているのは `blog/`。中身の CMS は `lily/`。** 2026-09-08 に
-`blog/src/core` を npm パッケージ `@kanf/lily` として `lily/` へ切り出し、
-`blog/` をその利用側に組み替えた（[issue #6](https://github.com/kan/fushihara.net/issues/6)）。
+**`/blog` を配っているのは `blog/`。中身の CMS は
+[`@kanf/lily`](https://github.com/kan/lily)（別リポジトリ）。** 2026-09-08 に
+`blog/src/core` を npm パッケージとして切り出し、2026-09-12 に別リポジトリへ出して
+publish した（[issue #6](https://github.com/kan/fushihara.net/issues/6)）。
 
 ```
-lily/   CMS。fushihara.net を 1 つも知らない。npm パッケージ @kanf/lily
-blog/   fushihara.net としての設定・テーマ・静的アセット・E2E
+@kanf/lily  CMS。fushihara.net を 1 つも知らない。npm から入る
+blog/       fushihara.net としての設定・テーマ・静的アセット・E2E
 ```
 
-**依存は `file:../lily`。** `npm install` が `blog/node_modules/@kanf/lily` を
-`../lily` へのシンボリックリンクにする。npm workspace にしなかったのは、ルートを
-workspace root にすると本体サイトの依存と混ざるため（`blog/` を独立させてある
-意味が消える）。
+**このリポジトリに lily のソースは無い。** 直したいときは
+[kan/lily](https://github.com/kan/lily) を clone して、あちらでタグ（`v*`）を
+打つと CI が publish する。こちらへ届くのは dependabot の PR か、手で
+`npm install @kanf/lily@latest` したときだけ。
 
-**ただし lily の `exports` は `dist/lib`**（`tsc` が出した `.js` + `.d.ts`）を指す。
-ソースをそのまま配るのは、利用側の tsconfig が lily のソースにも適用されるので
-やめた。**`.ts` を直しただけでは blog に届かない** ―― `npm run build:lib:watch` を
-併走させること。`blog/scripts/build.mjs` が古い `dist/lib` を弾くので、忘れると
-理由付きで止まる（判定は `lily/scripts/check-fresh.mjs`。黙って通すと**古い成果物に
-対してテストが通る**）。
-npm は `publishConfig` の `exports` を書き換えないので、「開発は src」はできない。
+**往復したいときだけ `file:` か `npm link` で手元の木へ向ける。** そのときは
+lily の `exports` が `dist/lib`（`tsc` が出した `.js` + `.d.ts`）を指すので、
+**`.ts` を直しただけでは blog に届かない** ―― あちらで `npm run build:lib:watch` を
+併走させること。`blog/scripts/build.mjs` が古い `dist/lib` を弾く（判定は lily の
+`scripts/check-fresh.mjs`。黙って通すと**古い成果物に対してテストが通る**）。
 
 **管理画面と migrations だけは別扱い。** 前者は lily がビルド済みを同梱し、
 `blog/scripts/build.mjs` が `node_modules/@kanf/lily/dist/admin` をコピーする
@@ -592,20 +585,21 @@ npm は `publishConfig` の `exports` を書き換えないので、「開発は
 （`**/*.txt` `**/*.html` `**/*.sql`）がまるごと無効になる。
 
 設計の正本は [issue #5](https://github.com/kan/fushihara.net/issues/5)、CMS の使い方と
-公開 API は `lily/README.md`、**「なぜそうなっているか」は `lily/DESIGN.md`**
+公開 API は [lily の README](https://github.com/kan/lily#readme)、**「なぜそう
+なっているか」は [`DESIGN.md`](https://github.com/kan/lily/blob/main/DESIGN.md)**
 （README がそのまま npm のパッケージページになるので分けてある。DESIGN は
 パッケージに入らない）、利用側は `blog/README.md`、**守るべき外向きの契約は
 `blog/CONTRACT.md`**、配線を動かす手順と踏んだ穴は `blog/SWITCHOVER.md`。
 
-**どちらも独立したプロジェクト。** 自分の `package.json` / `tsconfig.json` を持ち、
+**`blog/` は独立したプロジェクト。** 自分の `package.json` / `tsconfig.json` を持ち、
 本体の `tsc -b` にも入っていない。`shared/` を読むのは `blog/` だけで、
 **lily は読まない**（npm で配るものが、載せる側のリポジトリのファイルを読めない）。
 
 **テストの分かれ方**: CMS そのもの（ルーティング・フィード・管理 API・テーマの
-差し替え可能性・portable な往復）は `lily/test/` が利用側を 1 つも知らない状態で見る。
-`blog/test/` が見るのは fushihara.net の配線だけ（Access の選ばれ方・cron・自前テーマ・
-`shared/date.ts` との日付の一致）。E2E は `blog/e2e/` にあり、**lily を入れ替えても
-そのまま合否判定に使える**（切り出しの検証はこれで取った）。
+差し替え可能性・portable な往復）は lily のリポジトリが利用側を 1 つも知らない状態で
+見る。`blog/test/` が見るのは fushihara.net の配線だけ（Access の選ばれ方・cron・
+自前テーマ・`shared/date.ts` との日付の一致）。E2E は `blog/e2e/` にあり、**lily を
+入れ替えてもそのまま合否判定に使える** —— 切り出しも分離も、これが通ることで判定した。
 
 **記事はリポジトリに無い。** 原本は D1 で、書くのは管理画面（`/blog/admin/`）。
 だから「記事を書く」だけならコミットも push も発生しない。Astro のころ
@@ -623,15 +617,14 @@ npm は `publishConfig` の `exports` を書き換えないので、「開発は
   （query layer 越しに見ても、制約が効いているかの検証にならない）
 - `wrangler` を叩くときは `-c ./wrangler.jsonc` が要る（リポジトリ直下に本体の
   `.wrangler/deploy/config.json` があると、どちらの設定か分からず落ちる）
-- **記事の出し入れは portable な zip（`lily/src/core/transfer/`）。** 形は
+- **記事の出し入れは portable な zip（lily の `src/core/transfer/`）。** 形は
   `posts/<canonical>/index.md` + 添付で、Astro 版の frontmatter がそのまま読める。
   よそから記事を持ち込むときもこの経路を通す（`CONTRACT.md`）
 - **Worker 名は `fushihara-blog`、D1 と R2 は `fushihara-net-lily` 系のまま。**
   名前を揃えるために記事と添付を引っ越す理由がないため
-- **lily だけ TypeScript が 6 系で止まっている。** 本体は 7 系で動いているが、lily の
-  `typecheck` は管理画面のために `vue-tsc` を通す。TS 7.0 はネイティブ（Go）実装で
+- **lily だけ TypeScript が 6 系で止まっている**（あちらのリポジトリの話）。
+  管理画面のために `vue-tsc` を通すが、TS 7.0 はネイティブ（Go）実装で
   `typescript/lib/tsc` を公開しないので、それを require する vue-tsc（Volar）が
-  起動できず `ERR_PACKAGE_PATH_NOT_EXPORTED` で落ちる。`.github/dependabot.yml` の
-  エントリで **7.0.x だけ**を ignore してある（Volar 向けの API が安定する
-  7.1 の PR は届くので、上げられるかは CI が判定する）。本体にも blog にも vue-tsc は
-  無いので、この制約はそちらには効かない
+  起動できず `ERR_PACKAGE_PATH_NOT_EXPORTED` で落ちる。ignore はあちらの
+  `.github/dependabot.yml` にある。**本体にも blog にも vue-tsc は無いので、この
+  制約はこちらに効かない**（本体は 7 系で動いている）

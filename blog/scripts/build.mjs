@@ -22,7 +22,9 @@ const dist = join(root, 'dist');
  * （workspace や pnpm の配置で黙って空の `admin/` が配られる）。
  */
 const require = createRequire(import.meta.url);
-const lily = dirname(require.resolve('@kanf/lily/package.json'));
+const lily = dirname(
+  resolveOrFail(() => require.resolve('@kanf/lily/package.json'), '@kanf/lily が入っていない'),
+);
 
 /**
  * lily が使える状態か。**素通しさせない。**
@@ -68,31 +70,43 @@ async function checkLily() {
   // **パスを書かず `exports` を引く。** 置き場所を変えた日に、この検査だけ
   // 古い場所を見続けるのを避ける。出口は 5 つあるが、どれも同じ `tsc` の
   // 1 回で出るので、バレルが解決できれば残りも揃っている。
-  try {
-    require.resolve('@kanf/lily');
-  } catch {
-    fail('lily のビルド成果物が無い (@kanf/lily を解決できない)');
-  }
+  resolveOrFail(
+    () => require.resolve('@kanf/lily'),
+    'lily のビルド成果物が無い (@kanf/lily を解決できない)',
+  );
 
   await checkFresh();
 
-  // **lily の実行時依存が解決できること。**
+  // **lily の実行時依存 (hono / shiki / zod …) が解決できること。**
   //
-  // `file:` で参照しているあいだ、lily の依存 (hono / shiki / zod …) は
-  // `blog/node_modules` ではなく `lily/node_modules` に入る。だから
-  // `blog` だけ `npm ci` しても、bundle の段になって初めて
-  // `Could not resolve 'shiki'` で落ちる。npm から入れる形に変えれば消える問題
-  // なので、ここでは**先に分かる**ようにするだけにしてある。
+  // npm から入れているあいだは npm が面倒を見るので、ここが落ちるのは
+  // **lily をローカルの木へ向けているとき** —— あちらの依存は
+  // `lily/node_modules` にしか入らないので、blog だけ `npm ci` した木では
+  // bundle の段になって初めて `Could not resolve 'shiki'` で落ちる。
+  // ここでは**先に分かる**ようにする。
   //
   // 名前は lily の `package.json` から取る（ここに書くと、依存を入れ替えた日に
   // この検査だけ古い名前を見続ける）。
   const manifest = JSON.parse(await readFile(join(lily, 'package.json'), 'utf8'));
   const [dependency] = Object.keys(manifest.dependencies ?? {});
   if (dependency === undefined) return;
+  resolveOrFail(
+    () => createRequire(join(lily, 'package.json')).resolve(dependency),
+    `lily の依存が入っていない (${dependency} を解決できない)`,
+  );
+}
+
+/**
+ * 解決できなければ理由を付けて止める。**素の `ERR_MODULE_NOT_FOUND` を出さない。**
+ *
+ * このファイルの検査は 3 つとも「`resolve` して、駄目なら `fail()`」の形。
+ * 素のまま投げると、`npm ci` を忘れただけの人にスタックトレースを読ませることになる。
+ */
+function resolveOrFail(resolve, reason) {
   try {
-    createRequire(join(lily, 'package.json')).resolve(dependency);
+    return resolve();
   } catch {
-    fail(`lily の依存が入っていない (${dependency} を解決できない)`);
+    fail(reason); // 必ず throw する。
   }
 }
 
@@ -108,9 +122,9 @@ async function checkLily() {
  * あちらのビルド設定が決めることで、こちらに写すと lily が運ぶものを増やした日に
  * ここだけ古くなる。
  *
- * **`scripts/` はパッケージに入らない**ので、このモジュールがあるのは `file:` で
- * 参照しているあいだだけ。npm から入れた木には比べる相手の `src/` も無いので、
- * そもそも出番がない。
+ * **`scripts/` はパッケージに入らない**ので、このモジュールがあるのは lily を
+ * ローカルの木へ向けているあいだだけ（`file:` や `npm link`）。npm から入れた
+ * 普段の木には比べる相手の `src/` も無いので、そもそも出番がない。
  */
 async function checkFresh() {
   const checker = join(lily, 'scripts', 'check-fresh.mjs');
@@ -128,7 +142,8 @@ async function checkFresh() {
 
 function fail(reason) {
   throw new Error(
-    `${reason}。lily をローカルの file: 依存で使っているなら、` +
-      '`(cd ../lily && npm install && npm run build)` を先に回すこと。',
+    `${reason}。@kanf/lily をローカルの木へ向けている（file: や npm link）なら、` +
+      'あちらで `npm install && npm run build` を先に回すこと。' +
+      '普段どおり npm から入れているなら `npm ci` をやり直す。',
   );
 }

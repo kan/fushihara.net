@@ -30,47 +30,11 @@ updates:
     commit-message:
       prefix: deps
 
-  # CMS (lily/) は独自の package.json を持つ独立プロジェクトで、本体の
-  # npm ci には入らない。**管理画面 (Vue) と CMS の依存はここにある。**
-  # PR は deploy-blog.yml の pull_request トリガー (paths: lily/**) が拾う。
+  # ブログ (blog/) は lily の利用側。残っている依存は CMS 本体の
+  # **`@kanf/lily`**（別リポジトリ github.com/kan/lily。npm から入る）と、
+  # 自前テーマが使う hono、テストとデプロイの道具だけ。
   #
-  # **分離したらこのエントリごと消える。** 同じ内容が lily/.github/dependabot.yml
-  # に置いてあり (いまは GitHub が読まないので動かない)、lily が別リポジトリへ
-  # 出た時点でそちらが引き継ぐ。中身を変えたら両方直すこと。
-  - package-ecosystem: npm
-    directory: /lily
-    schedule:
-      interval: weekly
-      day: monday
-      time: '09:00'
-      timezone: Asia/Tokyo
-    open-pull-requests-limit: 5
-    ignore:
-      # TypeScript 7.0 はネイティブ (Go) 実装で typescript/lib/tsc を公開しない
-      # ため、それを require する vue-tsc (Volar) が起動できず、lily の
-      # typecheck が ERR_PACKAGE_PATH_NOT_EXPORTED で落ちる (PR #11 で実測)。
-      # Volar が使えるプログラマティック API は TS 7.1 で安定予定なので、
-      # 7.0.x だけを無視して 7.1 の PR は受け取る (可否は CI が判定する)。
-      # **vue-tsc を通すのは lily だけ**なので、この ignore はここにだけ要る。
-      - dependency-name: typescript
-        versions: ['7.0.x']
-      # vitest 5 が @cloudflare/vitest-plugin の peer と衝突する件 (PR #15 で
-      # 実測)。理由は本体 (directory: /) の同じ ignore に書いた。外すときは
-      # 3 つとも外す。
-      - dependency-name: vitest
-        versions: ['5.x']
-    groups:
-      npm-minor-patch:
-        update-types:
-          - minor
-          - patch
-    # どの package.json の更新かが件名で分かるようにする。
-    commit-message:
-      prefix: deps(lily)
-
-  # ブログ (blog/) は lily の利用側。残っている依存は hono (自前テーマが
-  # hono/html を使う) と、テストとデプロイの道具だけ。
-  # **@kanf/lily は file: 依存なので Dependabot の対象外**（同じリポジトリの中）。
+  # **lily 自身の依存はここが見ない。** あちらのリポジトリの dependabot が見る。
   - package-ecosystem: npm
     directory: /blog
     schedule:

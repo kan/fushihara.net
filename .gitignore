@@ -26,8 +26,6 @@ dist-ssr
 
 # wrangler types の生成物
 worker-configuration.d.ts
-# lily の emit 用（ランタイム型だけ。lily/tsconfig.build.json を見よ）
-lily/build-types.d.ts
 
 # Playwright
 /test-results/

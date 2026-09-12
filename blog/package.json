@@ -19,9 +19,9 @@
     "deploy": "npm run build && wrangler deploy -c ./wrangler.jsonc",
     "test:e2e": "playwright test"
   },
-  "//dependencies": "CMS の本体は lily。ここに残るのはテーマが使うもの (hono/html) だけ",
+  "//dependencies": "CMS の本体は lily (別リポジトリ github.com/kan/lily)。ここに残るのはテーマが使うもの (hono/html) だけ",
   "dependencies": {
-    "@kanf/lily": "file:../lily",
+    "@kanf/lily": "^0.1.0",
     "hono": "^4.13.5"
   },
   "devDependencies": {

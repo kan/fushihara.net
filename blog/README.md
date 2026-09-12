@@ -1,11 +1,11 @@
 # blog
 
-`fushihara.net/blog` を配る Worker。**CMS の本体は [`../lily/`](../lily/)**
-（npm パッケージ `@kanf/lily`）で、ここはその**利用側**。
+`fushihara.net/blog` を配る Worker。**CMS の本体は
+[`@kanf/lily`](https://github.com/kan/lily)**（別リポジトリ）で、ここはその**利用側**。
 
 ```
-lily/   CMS。サイトを 1 つも知らない
-blog/   fushihara.net としての設定・テーマ・静的アセット・E2E  ← ここ
+@kanf/lily  CMS。サイトを 1 つも知らない。npm から入る
+blog/       fushihara.net としての設定・テーマ・静的アセット・E2E  ← ここ
 ```
 
 Worker 名は `fushihara-blog`。**D1（`fushihara-net-lily`）と R2
@@ -20,11 +20,8 @@ Worker 名は `fushihara-blog`。**D1（`fushihara-net-lily`）と R2
 ## コマンド
 
 ```bash
-# **lily を先に。** `@kanf/lily` の実体は lily の dist/lib（tsc が出した
-# .js + .d.ts）で、管理画面も lily が同梱する dist/admin をコピーするだけ。
-# どちらもビルドしないと出てこない（scripts/build.mjs が気付いて落とす）。
-(cd ../lily && npm install && npm run build)
-
+# lily は npm から入る。CMS 本体 (dist/lib) も管理画面 (dist/admin) も
+# migrations も同梱されているので、用意する手は要らない。
 npm install
 npm run build            # 静的アセットの合流（shared/public + public + lily の管理画面）
 npm test                 # Vitest。**ここで見るのは配線だけ**（下記）
@@ -46,17 +43,30 @@ npm run dev              # localhost:8787
 
 ## lily の直し方（開発の往復）
 
-`package.json` の依存が `"@kanf/lily": "file:../lily"` なので、`npm install` は
-`node_modules/@kanf/lily` を `../lily` への**シンボリックリンク**にする
-（`npm link` も再インストールも要らない）。
+**lily は別リポジトリ**（[kan/lily](https://github.com/kan/lily)）。普段はここへ
+npm から入るので、上げるのは dependabot の PR か手での `npm install` 経由。
+あちらを直したいときは clone して、タグ（`v*`）を打つと CI が publish する。
 
-**ただし `exports` が指すのは lily の `dist/lib`。** ソースをそのまま配るのは
-やめたので、**`.ts` を直しただけではここに 1 バイトも届かない。** 往復するあいだは
-watch を併走させる。
+**publish を待たずに試したいときだけ、手元の木へ向ける。`npm link` を使う。**
 
 ```bash
-(cd ../lily && npm run build:lib:watch)
+(cd ../lily && npm link && npm run build:lib:watch)   # 別の端末で
+npm link @kanf/lily
 ```
+
+**`exports` が指すのは lily の `dist/lib`**（`tsc` が出した `.js` + `.d.ts`）。
+ソースをそのまま配るのはやめたので、**`.ts` を直しただけではここに 1 バイトも
+届かない。** だから watch を併走させる。
+
+**終わったら `npm ci` で戻す。** `npm link` は `node_modules` にリンクを張るだけで
+`package.json` を触らないので、これで元に戻る。
+
+**`npm install ../lily` は使わないこと。** あれは `package.json` を
+`"@kanf/lily": "file:../lily"` に書き換え、lockfile も一緒に更新する。
+**両者が整合しているので `npm ci` は何も言わずにリンクを張り直し**、`package.json`
+は `file:` を向いたまま残る ―― 戻したつもりで push すると、CI も本番のデプロイも
+`../lily` を探して落ちる。うっかりやったときは
+`git checkout -- package.json package-lock.json && npm ci`。
 
 **古い `dist/lib` に当たっていないかは `scripts/build.mjs` が見ている**（判定は
 lily の `scripts/check-fresh.mjs` にある。`src/x.ts` ↔ `dist/lib/x.js` の対応は
@@ -67,7 +77,7 @@ lily の `scripts/check-fresh.mjs` にある。`src/x.ts` ↔ `dist/lib/x.js` �
 **管理画面（Vue）・`style.css`・migrations は watch の外。**
 
 - 管理画面か lily の `style.css` を直したら `(cd ../lily && npm run build)` →
-  `npm run build`（`tsc` の watch は `.css` を見ない）
+  `npm run build`（`tsc` の watch は `.css` も `dist/admin` も見ない）
 - migrations を足したら `npm run db:migrate:local`
   （`wrangler.jsonc` の `migrations_dir` が `node_modules/@kanf/lily/migrations` を
   直接指しているので、**コピーは要らない**）
@@ -91,7 +101,7 @@ e2e/          Playwright。fixtures/ を import で入れて wrangler dev に対
 
 **CMS そのもののテストは lily にある。** ルーティング・フィード・管理 API・
 テーマの差し替え可能性・portable な往復は、利用側を 1 つも知らない状態で
-あちらが見る（`lily/test/`）。
+[あちらのリポジトリ](https://github.com/kan/lily)が見る。
 
 こちらが見るのは fushihara.net の配線だけ。
 
