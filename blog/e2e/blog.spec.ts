@@ -165,10 +165,12 @@ test.describe('ナビゲーション', () => {
       await page.goto(path);
       const footer = page.locator('.site-footer');
       await expect(footer, path).toContainText('©');
-      await expect(footer.getByRole('link', { name: 'lily' }), path).toHaveAttribute(
+      const lily = footer.getByRole('link', { name: 'lily' });
+      await expect(lily, path).toHaveAttribute(
         'href',
-        'https://github.com/kan/lily',
+        'https://www.npmjs.com/package/@kanf/lily',
       );
+      await expect(lily, path).toHaveAttribute('target', '_blank');
     }
   });
 });
