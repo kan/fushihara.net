@@ -4,8 +4,11 @@
   // (DOM を触るあれを Workers ランタイム型と同じプロジェクトに入れると
   // Request / Response / caches の型が衝突する。lily 側で分けてある)。
   //
-  // `@kanf/lily` は TypeScript のソースを配るので、`tsc` はパッケージの中まで
-  // 型を見る。**利用側から見て型が閉じていることが、ここで一緒に確かめられる。**
+  // `@kanf/lily` が配るのは `tsc` がビルドした `.js` + `.d.ts` (`dist/lib`)。
+  // **`src/` は入っていない**ので、ここの厳しさは lily のソースに当たらない
+  // (それが `.d.ts` を配る理由)。lily を直したときは向こうで `npm run build:lib`
+  // を回すこと —— さもないと**古い `.d.ts` に対して型検査が通る**
+  // (`scripts/build.mjs` が mtime で見張っているので、`npm test` なら止まる)。
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",

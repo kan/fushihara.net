@@ -20,9 +20,9 @@ Worker 名は `fushihara-blog`。**D1（`fushihara-net-lily`）と R2
 ## コマンド
 
 ```bash
-# **lily を先に。** blog のビルドは管理画面を作らず、lily が同梱する
-# dist/admin をコピーするだけなので、これが無いと空の管理画面が配られる
-# （scripts/build.mjs が気付いて落とす）。
+# **lily を先に。** `@kanf/lily` の実体は lily の dist/lib（tsc が出した
+# .js + .d.ts）で、管理画面も lily が同梱する dist/admin をコピーするだけ。
+# どちらもビルドしないと出てこない（scripts/build.mjs が気付いて落とす）。
 (cd ../lily && npm install && npm run build)
 
 npm install
@@ -47,12 +47,27 @@ npm run dev              # localhost:8787
 ## lily の直し方（開発の往復）
 
 `package.json` の依存が `"@kanf/lily": "file:../lily"` なので、`npm install` は
-`node_modules/@kanf/lily` を `../lily` への**シンボリックリンク**にする。
-lily の `.ts` を直せばそのまま効く（`npm link` も再インストールも要らない）。
+`node_modules/@kanf/lily` を `../lily` への**シンボリックリンク**にする
+（`npm link` も再インストールも要らない）。
 
-**管理画面（Vue）と migrations だけは別。**
+**ただし `exports` が指すのは lily の `dist/lib`。** ソースをそのまま配るのは
+やめたので、**`.ts` を直しただけではここに 1 バイトも届かない。** 往復するあいだは
+watch を併走させる。
 
-- 管理画面を直したら `(cd ../lily && npm run build)` → `npm run build`
+```bash
+(cd ../lily && npm run build:lib:watch)
+```
+
+**古い `dist/lib` に当たっていないかは `scripts/build.mjs` が見ている**（判定は
+lily の `scripts/check-fresh.mjs` にある。`src/x.ts` ↔ `dist/lib/x.js` の対応は
+向こうのビルド設定の持ち物なので、こちらに写していない）。古ければ理由付きで
+止まる ―― 黙って通すと、**古い成果物に対して型検査もテストも通り、変更が
+検証されない。**
+
+**管理画面（Vue）・`style.css`・migrations は watch の外。**
+
+- 管理画面か lily の `style.css` を直したら `(cd ../lily && npm run build)` →
+  `npm run build`（`tsc` の watch は `.css` を見ない）
 - migrations を足したら `npm run db:migrate:local`
   （`wrangler.jsonc` の `migrations_dir` が `node_modules/@kanf/lily/migrations` を
   直接指しているので、**コピーは要らない**）

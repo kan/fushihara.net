@@ -39,6 +39,10 @@ defaults:
 
 jobs:
   # CMS そのもの。**利用側を 1 つも知らない状態で通ること**を見る。
+  #
+  # **分離したらこのジョブごと消える。** 同じ内容が `lily/.github/workflows/ci.yml`
+  # に置いてあり（いまは GitHub が読まないので動かない）、lily が別リポジトリへ
+  # 出た時点でそちらが引き継ぐ。中身を変えたら両方直すこと。
   lily:
     runs-on: ubuntu-latest
     defaults:
@@ -53,6 +57,11 @@ jobs:
           cache-dependency-path: lily/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      # **emit を型検査とは別に回す。** `typecheck` は `--noEmit` なので、
+      # 配る形だけが壊れる状態を通してしまう。管理画面は次の `npm test` が
+      # `pretest` で作るので、`build` ではなく `build:lib` にする（`build` だと
+      # vite が 2 回走る）。
+      - run: npm run build:lib
       - run: npm test
 
   test:
@@ -66,19 +75,24 @@ jobs:
           cache-dependency-path: |
             lily/package-lock.json
             blog/package-lock.json
-      # **lily を先に用意する。これは省けない。** 理由が 2 つある。
+      # **lily を先に用意する。これは省けない。** 理由が 3 つある。
       #
-      # 1. blog のビルドは管理画面を作らず、lily が同梱する `dist/admin` を
+      # 1. **lily の `exports` は `dist/lib` を指す** (tsc が出した .js + .d.ts)。
+      #    ビルドしていない木には `@kanf/lily` の実体が無い
+      # 2. blog のビルドは管理画面を作らず、lily が同梱する `dist/admin` を
       #    コピーするだけ
-      # 2. **`file:` で参照しているあいだ、lily の実行時依存 (hono / shiki /
+      # 3. **`file:` で参照しているあいだ、lily の実行時依存 (hono / shiki /
       #    zod …) は `lily/node_modules` にしか入らない。** blog だけ `npm ci`
       #    した木では bundle できず、`wrangler` が
       #    `Could not resolve 'shiki'` で落ちる
       #
-      # どちらも `blog/scripts/build.mjs` が理由付きで止めるので、順序を崩しても
-      # 素の esbuild エラーにはならない。npm から入れる形に変えれば 2 は消える。
+      # どれも `blog/scripts/build.mjs` が理由付きで止めるので、順序を崩しても
+      # 素の esbuild エラーにはならない。npm から入れる形に変えれば 1 と 3 は消える。
       - run: npm ci
         working-directory: lily
+      # `build` は 2 本立て (dist/admin + dist/lib)。ここでの目的は blog に渡す
+      # ものを作ることで、**emit が壊れていないか自体は `lily` ジョブも見ている**
+      # (並列なので、どちらが先に落ちるかは決まらない)。
       - run: npm run build
         working-directory: lily
       - run: npm ci

@@ -36,12 +36,24 @@ export const TEST_MIGRATIONS_BINDING = 'TEST_MIGRATIONS';
  * テストごとの書き込みはテストの終わりに巻き戻る。
  */
 export async function applyTestMigrations(): Promise<void> {
-  const migrations = (env as unknown as Record<string, D1Migration[]>)[TEST_MIGRATIONS_BINDING];
+  // **`Cloudflare.Env` を見ない。** あれは deployment ごとに違う生成物で、lily の
+  // ものを当てにしても利用側の検証にはならない（lily の `wrangler.jsonc` に DB が
+  // あることは、これを呼ぶ人のところに DB があることを 1 つも意味しない）。
+  // 要るのは 2 本だけなので、その場で取り出して無ければ理由を言う。
+  const bindings = env as unknown as Record<string, unknown>;
+
+  const migrations = bindings[TEST_MIGRATIONS_BINDING] as D1Migration[] | undefined;
   if (!migrations) {
     throw new Error(
       `${TEST_MIGRATIONS_BINDING} が無い。vitest.config.ts の miniflare.bindings に ` +
         'readD1Migrations() の結果をこの名前で渡すこと。',
     );
   }
-  await applyD1Migrations(env.DB, migrations);
+
+  const db = bindings['DB'] as D1Database | undefined;
+  if (!db) {
+    throw new Error('DB バインディングが無い。テスト用の wrangler 設定に D1 を 1 本置くこと。');
+  }
+
+  await applyD1Migrations(db, migrations);
 }

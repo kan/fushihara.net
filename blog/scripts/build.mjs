@@ -12,7 +12,7 @@
 import { cp, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dist = join(root, 'dist');
@@ -59,6 +59,23 @@ async function checkLily() {
     fail(`管理画面のビルド成果物が無い (${entry})`);
   }
 
+  // **CMS 本体のビルド成果物 (`dist/lib`) があること。**
+  //
+  // lily の `exports` は `dist/lib` を指すので、`src/` を直しただけでは
+  // 利用側に 1 バイトも届かない。無いまま進むと落ちるのは `wrangler` の
+  // bundle で、「`@kanf/lily` を解決できない」としか出ない。
+  //
+  // **パスを書かず `exports` を引く。** 置き場所を変えた日に、この検査だけ
+  // 古い場所を見続けるのを避ける。出口は 5 つあるが、どれも同じ `tsc` の
+  // 1 回で出るので、バレルが解決できれば残りも揃っている。
+  try {
+    require.resolve('@kanf/lily');
+  } catch {
+    fail('lily のビルド成果物が無い (@kanf/lily を解決できない)');
+  }
+
+  await checkFresh();
+
   // **lily の実行時依存が解決できること。**
   //
   // `file:` で参照しているあいだ、lily の依存 (hono / shiki / zod …) は
@@ -77,6 +94,36 @@ async function checkLily() {
   } catch {
     fail(`lily の依存が入っていない (${dependency} を解決できない)`);
   }
+}
+
+/**
+ * **`dist/lib` が lily の `src/` より古くないこと。**
+ *
+ * `exports` が `dist/lib` を指すので、lily の `.ts` を直してもビルドし直すまでは
+ * ここに 1 バイトも届かない ―― **古い成果物に対してテストが通り、変更が
+ * 検証されない。** `dist/admin` で同じことを踏んでいる（中断した vite build の
+ * 残骸がそのまま配られた）ので、あちらは上で `index.html` の有無を見ている。
+ *
+ * **判定そのものは lily に置いてある。**「`src/` の何が `dist/lib` のどこに出るか」は
+ * あちらのビルド設定が決めることで、こちらに写すと lily が運ぶものを増やした日に
+ * ここだけ古くなる。
+ *
+ * **`scripts/` はパッケージに入らない**ので、このモジュールがあるのは `file:` で
+ * 参照しているあいだだけ。npm から入れた木には比べる相手の `src/` も無いので、
+ * そもそも出番がない。
+ */
+async function checkFresh() {
+  const checker = join(lily, 'scripts', 'check-fresh.mjs');
+  try {
+    await stat(checker);
+  } catch {
+    return; // npm から入れた木。
+  }
+
+  // 理由は lily が組む。`fail()` が「lily をビルドし直せ」を後ろに足す。
+  const { staleReason } = await import(pathToFileURL(checker).href);
+  const reason = await staleReason();
+  if (reason !== null) fail(reason);
 }
 
 function fail(reason) {

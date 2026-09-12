@@ -70,29 +70,78 @@ export const lily = createLily<Env>({
 | `@kanf/lily/theme` | 標準テーマ（`defaultTheme`）。CSS を 1 本抱えるので分けてある |
 | `@kanf/lily/paths` | URL 生成と記事パスの規則。**Workers の型を使わない**ので Node から読める |
 | `@kanf/lily/zip` | portable な書庫の読み書き。同上（E2E のフィクスチャ投入に使う） |
+| `@kanf/lily/test-support` | 利用側の Vitest に migrations を流し込む。**`cloudflare:test` を読む**ので本番のコードからは触らない |
 
-**今は TypeScript のソースをそのまま配っている。** 利用側が 1 つ（`blog/`）しか無く、
-同じリポジトリの中にあるうちは、これでビルド手順が 1 つ減る。
-**別リポジトリへ出すときに `tsc` でビルドした `.js` + `.d.ts` に変える**（下記）。
+**配るのは `tsc` がビルドした `.js` + `.d.ts`**（`dist/lib`。`src/` は入らない）。
+ソースのまま配ると**利用側の tsconfig が lily のソースにも適用される**ので、
+lily より厳しい設定（`exactOptionalPropertyTypes` など）の人のところで
+コンパイルエラーになる（`skipLibCheck` は `.d.ts` にしか効かない）。
 
-## 別リポジトリへ出すときに決めてあること
+## 分離（別リポジトリ + publish）
 
 `blog/` は lily を**パッケージ解決だけで**参照している（`require.resolve` と
 `node_modules/@kanf/lily/...`）ので、`file:../lily` を `^0.1.0` に変える 1 行と、
-CI からビルド順序を消すだけで移せる。そのうえで、切り出しの段で以下をやる。
+CI からビルド順序を消すだけで移せる。
 
-- **配るのは `tsc` でビルドした `.js` + `.d.ts` にする。** ソースのまま配ると
-  **利用側の tsconfig が lily のソースにも適用される**ので、lily より厳しい設定
-  （`exactOptionalPropertyTypes` など）の人のところでコンパイルエラーになりうる。
-  `skipLibCheck` は `.d.ts` にしか効かないので効かない
+### 済んでいること
+
+- **配る形。** `tsconfig.build.json` が `dist/lib` へ emit し、`scripts/copy-lib-assets.mjs`
+  が `tsc` の運ばない `.css` を隣へ置く。`exports` は `dist/lib` を指す
+- **持っていくもの。** `.github/`（CI と dependabot）と `.gitignore` は
+  `lily/` の中に置いてある。**いまは 1 バイトも動かない**（GitHub が読むのは
+  リポジトリ直下の `.github/` だけ）ので、分離は `lily/` の移動 1 回で済む
+- ライセンスは **ISC**（[`LICENSE`](./LICENSE)）。MIT を短くした OSI 承認のもので、
+  npm 自身が使っている。**分離を待たずに置いた** ―― `package.json` に `"license"` を
+  書いただけの状態にしないため（npm は `files` に挙げなくても LICENSE を必ず同梱する）
+
+### `.ts` 拡張子の import について
+
+lily のソースは相対 import に `.ts` を付ける（250 箇所近い）。emit では
+**`rewriteRelativeImportExtensions: true`** が `.js` へ書き換えるが、これが効くのは
+`.js` だけで、**`.d.ts` には `.ts` のまま残る**（TS 6.0 で実測）。
+
+**これは直さなくてよい。** TypeScript は `.d.ts` の中の import を「解決済みの出力」
+として扱うので、`.ts` で終わっていても TS5097 を出さない。`skipLibCheck` を切り、
+`allowImportingTsExtensions` を持たない利用側で確かめた。**`.d.ts` を機械で
+書き換える後処理を足さないこと。**
+
+### emit の型は型検査の型と別（`build-types.d.ts`）
+
+型検査が読む `worker-configuration.d.ts` には
+`mainModule: typeof import("./test/worker")` が入っている。**これが
+`test/worker.ts` を emit の対象に引きずり込む** ―― program に入った `.ts` は
+`include` にも `exclude` にも関係なく全部出るので、`rootDir` の外にあるあれは
+`dist/` ではなく**ソースの隣に `test/worker.js` と `test/worker.d.ts` として湧く**
+（エラーも警告も出ない。`git status` で気付いた）。
+
+そこで emit だけ `wrangler types --include-env false` で出した**ランタイム型だけ**の
+ファイルを読む。lily は `Cloudflare.Env` を 1 箇所も使わない ―― route の `Env` は
+どれもファイル内の `type Env = { Bindings: LilyBindings }` で、`test-support.ts` が
+唯一 `env.DB` を触っていたのも、**deployment ごとに違う生成物を当てにしていた**
+だけなので `env` から名前で取り出す形に直した（lily の `wrangler.jsonc` に DB が
+あることは、これを呼ぶ人のところに DB があることを 1 つも意味しない）。
+
+### 決めてあること
+
 - **履歴は引き継がない。** `lily/` は `lily/` → `blog/`（改名）→ `lily/`（切り出し）と
   2 回動いているので、履歴ごと持つには `git filter-repo` でパスの読み替えが要る。
   そこまでの価値は無いと判断した。経緯は
   [issue #5](https://github.com/kan/fushihara.net/issues/5) /
   [#6](https://github.com/kan/fushihara.net/issues/6) と `../blog/SWITCHOVER.md` に残る
-- ライセンスは **ISC**（[`LICENSE`](./LICENSE)）。MIT を短くした OSI 承認のもので、
-  npm 自身が使っている。**分離を待たずに置いた** ―― `package.json` に `"license"` を
-  書いただけの状態にしないため（npm は `files` に挙げなくても LICENSE を必ず同梱する）
+- **開発中は `exports` を切り替えられない。** npm は `publishConfig` の `exports` を
+  書き換えない（あれは pnpm の機能）ので、「開発は `src`、配布は `dist`」はできない。
+  利用側で試しながら lily を直すときは `npm run build:lib:watch` を併走させる
+- **`file:` の利用側は古い `dist/lib` に当たりうる。** `scripts/check-fresh.mjs` が
+  `src/x.ts` ↔ `dist/lib/x.js` を 1 対 1 で突き合わせ、古ければ理由を返す
+  （`blog/scripts/build.mjs` がそれを呼んで止まる）。**判定を利用側に置かない**のは、
+  「`src/` の何が `dist/lib` のどこに出るか」が lily のビルド設定の持ち物だから
+
+### 分離後に fushihara.net 側へ残る作業
+
+- `blog/package.json` の `file:../lily` → `^0.1.0`
+- `.github/workflows/deploy-blog.yml` から lily ジョブとビルド順序、`paths` の `lily/**`
+- `.github/dependabot.yml` の `/lily` エントリ（`@kanf/lily` は `/blog` 側が拾うようになる）
+- ルートの `CLAUDE.md` と `blog/README.md` の「lily は同じリポジトリの中」という前提
 
 ## 今できていること
 
@@ -129,12 +178,26 @@ CI からビルド順序を消すだけで移せる。そのうえで、切り�
 npm install
 npm test          # Vitest。実 workerd + 実 D1 で動く
 npm run typecheck # wrangler types → tsc (src / 管理画面 の 2 プロジェクト)
-npm run build     # 管理画面（Vue）を dist/admin へ。**パッケージに同梱するもの**
+npm run build     # 配るものを 2 つとも作る（下記）
 npm run db:migrate:local  # テスト用のローカル D1 にマイグレーションを当てる
 ```
 
+**`npm run build` は 2 本立て。** どちらもパッケージに同梱するもの。
+
+| | 何を | 誰が |
+|---|---|---|
+| `build:admin` | 管理画面（Vue）を `dist/admin` へ | vite |
+| `build:lib` | CMS 本体を `dist/lib` へ（`.js` + `.d.ts` + 標準テーマの `.css`） | `tsc -p tsconfig.build.json` + `scripts/copy-lib-assets.mjs` |
+
+**`exports` が指すのは `dist/lib`** なので、`file:` で参照している利用側から見ると
+**`src/` を直しただけでは 1 バイトも届かない。** 往復するあいだは
+`npm run build:lib:watch` を併走させる（`tsc` の watch は `.css` を見ないので、
+`style.css` を直したときだけ `npm run build:lib` を回す）。
+
 **ビルドしていないと `vitest` が動かない**（テスト用の `wrangler.jsonc` の
 `assets.directory` が `dist/` を指すため。`npm test` は `pretest` で自動的に走る）。
+`pretest` が作るのは `dist/admin` とテスト用の静的アセットだけで、**`dist/lib` は
+作らない** ―― lily 自身のテストは `src/` を直接読むため。
 `pretest` は管理画面のビルドに加えて `scripts/test-assets.mjs` を回し、
 テスト用の静的アセット（favicon / ogp）を `dist/` に作る。**あれはパッケージに
 入らない** —— 何を配るかは利用側が `PageConfig.assets` で決めるので、lily は
@@ -173,8 +236,13 @@ src/
               timeZone を渡して使う
   theme/      標準テーマ。サイト固有の値を 1 つも持たない Theme 実装
   admin/      Vue の管理画面。別ビルド（vite）で dist/admin に出る
-scripts/      テスト用の静的アセットを作る（パッケージには入らない）
+scripts/      **どれもパッケージに入らない。** test-assets.mjs（テスト用の絵）、
+              clean-lib.mjs / copy-lib-assets.mjs（dist/lib の掃除と .css の運搬）、
+              check-fresh.mjs（dist/lib が src より古くないか。利用側が呼ぶ）
 test/         Vitest（利用側を 1 つも知らない状態で通ること）
+.github/      **分離したときに効くもの。いまは動かない**（CI と dependabot）
+tsconfig.json        型検査（src + test）。tsconfig.admin.json が管理画面
+tsconfig.build.json  配る形の emit（dist/lib）。extends で上を継ぐ
 ```
 
 ## 設計で外せない 3 点

@@ -1,0 +1,52 @@
+name: Publish
+
+# **タグを打ったときだけ npm へ出す。** main への push で自動 publish しないのは、
+# 版を上げる判断とコードを直す判断が別だから（`package.json` の `version` を
+# 上げたコミットに `v0.1.1` を打つ、という 2 手を踏ませる）。
+#
+# `lily/.github/` はいま動かない ―― 理由は `ci.yml` の頭に書いた。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # `--provenance` は OIDC で署名する。npm のパッケージページに
+  # 「どのリポジトリのどのワークフローが出したか」が出る。
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          # `NODE_AUTH_TOKEN` を .npmrc に流し込むために要る。
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+
+      # **タグと `package.json` の版が一致すること。**
+      # ずれたまま出すと、`v0.1.1` のタグで 0.1.0 が publish されて（あるいは
+      # 「同じ版は出せない」で落ちて）、どちらも原因がタグ名から読めない。
+      - name: タグと版の一致を見る
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="v$(node -p 'require("./package.json").version')"
+          if [ "$TAG" != "$version" ]; then
+            echo "タグ ($TAG) と package.json の版 ($version) が違う" >&2
+            exit 1
+          fi
+
+      # publish の前に一通り通す。**`prepack` が `npm run build` を呼ぶ**ので、
+      # 配るもの (dist/lib + dist/admin) はここで作られる。
+      - run: npm run typecheck
+      - run: npm test
+
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

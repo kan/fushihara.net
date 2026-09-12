@@ -33,6 +33,10 @@ updates:
   # CMS (lily/) は独自の package.json を持つ独立プロジェクトで、本体の
   # npm ci には入らない。**管理画面 (Vue) と CMS の依存はここにある。**
   # PR は deploy-blog.yml の pull_request トリガー (paths: lily/**) が拾う。
+  #
+  # **分離したらこのエントリごと消える。** 同じ内容が lily/.github/dependabot.yml
+  # に置いてあり (いまは GitHub が読まないので動かない)、lily が別リポジトリへ
+  # 出た時点でそちらが引き継ぐ。中身を変えたら両方直すこと。
   - package-ecosystem: npm
     directory: /lily
     schedule:

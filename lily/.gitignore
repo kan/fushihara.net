@@ -1,0 +1,14 @@
+# **別リポジトリへ出たときに要るもの。** いまはリポジトリ直下の .gitignore が
+# どの階層でも同じものを拾っているので、ここは重複しているだけで害はない
+# （理由は .github/workflows/ci.yml の頭に書いたのと同じ）。
+
+node_modules
+dist
+.wrangler
+
+# wrangler types の生成物（型検査用と emit 用）
+worker-configuration.d.ts
+build-types.d.ts
+
+# npm pack の出力
+*.tgz

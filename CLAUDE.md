@@ -67,7 +67,8 @@ npm run typecheck
 ```bash
 cd lily
 npm install
-npm run build            # 管理画面（Vue）を dist/admin へ。パッケージに同梱するもの
+npm run build            # 配るものを 2 つとも作る（tsc → dist/lib、vite → dist/admin）
+npm run build:lib:watch  # blog で試しながら lily を直すとき用（exports は dist/lib）
 npm test                 # Vitest。実 workerd + 実 D1 で動く（608 件）
 npm run typecheck        # wrangler types → tsc（src / 管理画面 の 2 プロジェクト）
 
@@ -568,9 +569,17 @@ blog/   fushihara.net としての設定・テーマ・静的アセット・E2E
 ```
 
 **依存は `file:../lily`。** `npm install` が `blog/node_modules/@kanf/lily` を
-`../lily` へのシンボリックリンクにするので、lily の `.ts` を直せばそのまま効く。
-npm workspace にしなかったのは、ルートを workspace root にすると本体サイトの
-依存と混ざるため（`blog/` を独立させてある意味が消える）。
+`../lily` へのシンボリックリンクにする。npm workspace にしなかったのは、ルートを
+workspace root にすると本体サイトの依存と混ざるため（`blog/` を独立させてある
+意味が消える）。
+
+**ただし lily の `exports` は `dist/lib`**（`tsc` が出した `.js` + `.d.ts`）を指す。
+ソースをそのまま配るのは、利用側の tsconfig が lily のソースにも適用されるので
+やめた。**`.ts` を直しただけでは blog に届かない** ―― `npm run build:lib:watch` を
+併走させること。`blog/scripts/build.mjs` が古い `dist/lib` を弾くので、忘れると
+理由付きで止まる（判定は `lily/scripts/check-fresh.mjs`。黙って通すと**古い成果物に
+対してテストが通る**）。
+npm は `publishConfig` の `exports` を書き換えないので、「開発は src」はできない。
 
 **管理画面と migrations だけは別扱い。** 前者は lily がビルド済みを同梱し、
 `blog/scripts/build.mjs` が `node_modules/@kanf/lily/dist/admin` をコピーする
