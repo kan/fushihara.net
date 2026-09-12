@@ -12,8 +12,10 @@ on:
 
 permissions:
   contents: read
-  # `--provenance` は OIDC で署名する。npm のパッケージページに
-  # 「どのリポジトリのどのワークフローが出したか」が出る。
+  # **Trusted Publishing (OIDC)。** token を secret に置かない代わりに、npm 側で
+  # 「このリポジトリのこのワークフローからの publish を許す」と登録しておく。
+  # provenance（どのリポジトリのどのワークフローが出したか）も自動で付く。
+  # 同じスコープの @kanf/wema がこの形。
   id-token: write
 
 jobs:
@@ -25,8 +27,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          # `NODE_AUTH_TOKEN` を .npmrc に流し込むために要る。
           registry-url: https://registry.npmjs.org
+      # Trusted Publishing は npm 11.5.1 以降にしか無い。
+      - run: npm install -g npm@latest
       - run: npm ci
 
       # **タグと `package.json` の版が一致すること。**
@@ -47,6 +50,4 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish --access public

@@ -12,8 +12,9 @@
 [issue #5](https://github.com/kan/fushihara.net/issues/5)（設計）と
 [issue #6](https://github.com/kan/fushihara.net/issues/6)（切り出し）、
 Astro からの乗り換えで踏んだ穴は
-[`../blog/SWITCHOVER.md`](../blog/SWITCHOVER.md)、**守るべき外向きの契約**は
-[`../blog/CONTRACT.md`](../blog/CONTRACT.md)。
+[`SWITCHOVER.md`](https://github.com/kan/fushihara.net/blob/main/blog/SWITCHOVER.md)、
+**守るべき外向きの契約**は
+[`CONTRACT.md`](https://github.com/kan/fushihara.net/blob/main/blog/CONTRACT.md)。
 
 ## 分離（別リポジトリ + publish）
 
@@ -65,7 +66,9 @@ lily のソースは相対 import に `.ts` を付ける（250 箇所近い）�
   2 回動いているので、履歴ごと持つには `git filter-repo` でパスの読み替えが要る。
   そこまでの価値は無いと判断した。経緯は
   [issue #5](https://github.com/kan/fushihara.net/issues/5) /
-  [#6](https://github.com/kan/fushihara.net/issues/6) と `../blog/SWITCHOVER.md` に残る
+  [#6](https://github.com/kan/fushihara.net/issues/6) と
+  [`blog/SWITCHOVER.md`](https://github.com/kan/fushihara.net/blob/main/blog/SWITCHOVER.md)
+  に残る
 - **開発中は `exports` を切り替えられない。** npm は `publishConfig` の `exports` を
   書き換えない（あれは pnpm の機能）ので、「開発は `src`、配布は `dist`」はできない。
   利用側で試しながら lily を直すときは `npm run build:lib:watch` を併走させる

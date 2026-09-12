@@ -6,8 +6,9 @@ D1 を正とする、Cloudflare Workers 向けの小さな CMS。npm パッケ�
 portable な export がこの 3 つで成立する（Cloudflare Images は「あれば画像配信が
 良くなる」追加の層で、無い前提を保っている）。
 
-`fushihara.net/blog`（このリポジトリの [`blog/`](../blog/)）が唯一の利用側で、
-**参照実装を兼ねている。** 設定の書き方・自前テーマ・E2E の回し方はあちらを見るのが早い。
+[`fushihara.net/blog`](https://github.com/kan/fushihara.net/tree/main/blog) が唯一の
+利用側で、**参照実装を兼ねている。** 設定の書き方・自前テーマ・E2E の回し方は
+あちらを見るのが早い。
 
 **「なぜそうなっているか」は [`DESIGN.md`](./DESIGN.md)。** 描画・リンクカード・
 管理 API・管理画面・告知・移行の経緯・本番の配線・テストの方針はあちらにある
@@ -107,7 +108,7 @@ lily より厳しい設定（`exactOptionalPropertyTypes` など）の人のと�
 
 **2026-08-29 に `fushihara.net/blog` を Astro から引き継ぎ、2026-09-08 に
 `@kanf/lily` として `blog/` から切り出した。** 経緯と踏んだ穴は
-[`../blog/SWITCHOVER.md`](../blog/SWITCHOVER.md)。
+[`SWITCHOVER.md`](https://github.com/kan/fushihara.net/blob/main/blog/SWITCHOVER.md)。
 
 ## コマンド
 
@@ -143,8 +144,8 @@ npm run db:migrate:local  # テスト用のローカル D1 にマイグレーシ
 `wrangler.jsonc` はテストのためだけのもので、**この Worker をデプロイすることはない。**
 lily は npm パッケージであって deployment ではない。
 
-E2E は利用側が持つ（[`../blog/e2e/`](../blog/e2e/)）。公開 URL とフィードが
-変わっていないことは、あちらのブラウザ越しの検証で判定する。
+E2E は利用側が持つ（[`blog/e2e/`](https://github.com/kan/fushihara.net/tree/main/blog/e2e)）。
+公開 URL とフィードが変わっていないことは、あちらのブラウザ越しの検証で判定する。
 
 ## 構成
 
