@@ -41,6 +41,47 @@ function image(name: string) {
   return { name, mimeType: 'image/png', buffer: PNG };
 }
 
+/**
+ * 読み込み直しをまたぐ assertion のタイムアウト。**既定の 5 秒では足りない。**
+ *
+ * 管理画面は保存が 403 で弾かれると、書きかけを退避して `location.reload()` する
+ * （`src/admin/session.ts`）。戻ってくるまでに入口 HTML・Vue のバンドル・記事の
+ * 取得が挟まるので、**並列で回していると 5 秒を超える。** 超えた回は
+ * 「`waiting for … navigation to finish`」のまま切れる。
+ *
+ * 時間で誤魔化しているのではなく、**待っている対象がページの読み込みを含む**
+ * という事実に合わせた値。読み込みを挟まない assertion には付けない
+ * （付けると、本当に出ないものを待つ時間が伸びるだけになる）。
+ *
+ * **テスト 1 本の持ち時間（既定の 30 秒）より十分小さくしておく。** これを
+ * 使うテストは下書きを開いて打ち込んでから待ちに入るので、ここを 30 秒に寄せると
+ * 本当に長引いた回に「読み込みが終わらない」ではなく素の
+ * `Test timeout of 30000ms exceeded` で落ち、原因が読めなくなる。
+ *
+ * 実行ごとに違うテストが 1 件前後落ちていた原因がこれ（#25）。
+ */
+const AFTER_RELOAD = { timeout: 15_000 };
+
+/**
+ * 溜まっている `requestAnimationFrame` を走らせ切る。
+ *
+ * 管理画面は本文を差し替えるたびに rAF でカーソルを置き直す。**予約が残ったまま
+ * `fill` すると、全選択と挿入の間に割り込まれて追記になる**（`reselect()` は
+ * `focus()` も呼ぶので、別の欄を打っているとそちらから奪う）。
+ *
+ * **1 つ目のフレームで足りる。** rAF は予約した順に呼ばれるので、先に溜まって
+ * いた分はこちらより先に走り終える。2 つ目は、そこからさらに予約されたときの
+ * 保険（いまの `reselect` は追加で予約しないので、実際には 1 段で足りている）。
+ */
+async function settleFrames(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+}
+
 /** 画面が作った記事の id。**URL がその記事を指すまで待つ。** */
 async function createdPostId(page: import('@playwright/test').Page): Promise<string> {
   await expect(page).toHaveURL(new RegExp(`${MOUNT}/admin/#/posts/[0-9a-f-]{36}$`));
@@ -424,6 +465,8 @@ test.describe('編集画面', () => {
     );
 
     async function paste(body: string, at: number): Promise<void> {
+      // 前の操作が残した予約を流してから入れ替える（理由は `settleFrames`）。
+      await settleFrames(page);
       await area.fill(body);
       await area.evaluate((element, index) => {
         const textarea = element as HTMLTextAreaElement;
@@ -463,6 +506,13 @@ test.describe('編集画面', () => {
     // 貼ったところを書き換えたら、もう当たらないので黙って消える。
     await paste('もう一度 ', 5);
     await expect(offer).toBeVisible();
+    // **題が入り切ってから消す。** ポップアップは URL のままの形でも出るので、
+    // 待たずに消すと、題の差し替えが飛んでいる最中に本文を入れ替えることになる。
+    // **本文が入っただけでは足りない** —— そのあとカーソルを動かす予約が残る
+    // （`settleFrames`）。40 回まわして 2 回踏んだ（#25）。
+    await expect(area).toHaveValue('もう一度 [相手の題](https://example.com/x)');
+    await settleFrames(page);
+
     await area.fill('全部消した');
     await expect(offer).toHaveCount(0);
   });
@@ -506,6 +556,10 @@ test.describe('編集画面', () => {
       await expect(page).toHaveURL(`${MOUNT}/admin/#/posts/new`);
       await expect(body).toHaveValue('');
 
+      // **失敗した取り込みも予約を残す。** `insertFiles` は 1 枚も入らなくても
+      // 最後に `reselect()` を呼ぶ。流さずに題を打つと、**フォーカスが本文へ移って
+      // 題のつもりの字が本文に入る**（理由は `settleFrames`）。
+      await settleFrames(page);
       await page.locator('input[type="text"]').first().fill('画像から始める下書き');
       await body.fill('書きかけの本文。');
       await picker.setInputFiles(image(name));
@@ -679,7 +733,7 @@ test.describe('編集画面', () => {
     await page.getByRole('button', { name: '保存' }).click();
 
     // 読み込み直したうえで、保存できていなかった本文が戻っている。
-    await expect(page.locator('.notice', { hasText: '復元した' })).toBeVisible();
+    await expect(page.locator('.notice', { hasText: '復元した' })).toBeVisible(AFTER_RELOAD);
     await expect(page.locator('.dropzone textarea')).toHaveValue('セッションが切れる直前の本文。');
 
     // 通ったなら数え直す。次に切れたときもまた 1 回目から読み込み直せる。
@@ -701,7 +755,7 @@ test.describe('編集画面', () => {
 
     await page.goto(`${MOUNT}/admin/#/posts/${ID.draft}`);
     // 読み込み直しが止まっていなければ、この文字は出る前に流れ続ける。
-    await expect(page.locator('.notice.error')).toContainText('forbidden');
+    await expect(page.locator('.notice.error')).toContainText('forbidden', AFTER_RELOAD);
 
     // **時間ではなく回数で覚えている。** 経過時間で見分けると、Access の
     // ログイン (MFA を含む) が長引いただけで判定が失効して数え直しになる。
@@ -722,7 +776,7 @@ test.describe('編集画面', () => {
     await page.getByRole('button', { name: '保存' }).click();
 
     // 読み込み直した先でも 403 なので記事は出ない。**それでも控えは残る。**
-    await expect(page.locator('.notice.error')).toContainText('forbidden');
+    await expect(page.locator('.notice.error')).toContainText('forbidden', AFTER_RELOAD);
     await expect(page.locator('.dropzone textarea')).toHaveValue('直らない側の本文。');
   });
 
