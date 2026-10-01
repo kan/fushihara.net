@@ -17,9 +17,8 @@ fushihara.net/blog*  → Worker: fushihara-blog  (Route)
 
 route は Custom Domain より優先されるので、`/blog` 配下がブログ Worker に届く。
 
-**2026-08-29 に Astro から lily（D1 を正とする自作 CMS）へ切り替え、8/30 に Astro を
-消した。** `blog/` の中身は lily で、旧 `fushihara-net-blog` Worker も
-`blog/content/posts/` の Markdown も無い（記事の原本は D1）。経緯と踏んだ穴は
+**`blog/` の中身は lily（D1 を正とする自作 CMS）。** 記事の原本は D1 で、
+`blog/content/posts/` の Markdown は無い。Astro からの切り替えの経緯と踏んだ穴は
 `blog/SWITCHOVER.md`、守るべき外向きの契約は `blog/CONTRACT.md`。
 
 **D1 と R2 の名前は `fushihara-net-lily` / `fushihara-net-lily-media` のまま。**
@@ -33,9 +32,8 @@ Worker 名だけ `fushihara-blog` に寄せた。名前を揃えるために記�
 
 代償として `/blogfoo` もブログ Worker に届き、**ブログの 404 ページが出る**
 （`404 | ふしはらねっとのぶろぐ`）。lily は SSR なので mount の外のパスも自分で受けて
-404 を返す。Astro のころは静的アセットの `404-page` 解決に任せていて、`/blogfoo` では
-本文の無い素の 404 になっていた。将来 `/blogroll` のようなパスが要るなら、より長い
-route を足せばそちらが優先される。
+404 を返す。将来 `/blogroll` のようなパスが要るなら、より長い route を足せば
+そちらが優先される。
 
 ブログは `blog/` に独自の `package.json` / `wrangler.jsonc` / `tsconfig.json` を持つ
 独立プロジェクトで、依存は本体と混ざっていない（本体の `tsc -b` にも入っていない）。
@@ -197,8 +195,9 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
   data URI の SVG に組み立てる `siIcon()` ヘルパー経由で埋め込む
   （wema 公式ロゴだけは `wemaIcon()` に手書き SVG を持つ）。
 - `src/main.ts` — ボードの生成と**レスポンシブ再配置**。`board-data.ts` の座標・サイズを
-  起動時に `basePositions` / `baseSizes` へ退避し、`getTargetLayout()` が
-  ビューポート幅から実際の配置を計算する:
+  起動時に `noteBases()` で退避し、`getTargetLayout()` がビューポート幅から実際の
+  配置を計算する（どちらも `src/layout.ts`。`MOBILE_BP` / `mobileOrder` / `REF_W` /
+  `REF_H` などの定数もそこにある）:
   - 768px 未満（`MOBILE_BP`）: `mobileOrder` の順で 1 カラム縦積み。
     加えて `collapsed: true` のエッジを全展開する（hover できないため）
   - 768px 以上: `REF_W` / `REF_H` に対する比率でスケール。
@@ -207,7 +206,7 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
     （CSS transition だとエッジが追従しないため）
 
 ノートの位置やサイズを変えるときは `board-data.ts` を編集する。ただし
-**新しいノートを追加したらモバイル用の `mobileOrder` にも id を足す**こと
+**新しいノートを追加したらモバイル用の `mobileOrder`（`src/layout.ts`）にも id を足す**こと
 （漏れると 768px 未満で表示されない）。
 
 なお `interests` ノートは `e-interests` エッジが `collapsed: true` なので、デスクトップ
@@ -333,10 +332,6 @@ API から補完するのは**説明だけ**で、star は出さない（顔ぶ�
 `count` はそのまま `posts.json` の `limit` に渡す（既定 5・上限 20 で同じ形）。
 **上流が `limit` を無視しても本体側で絞る。**
 
-Astro だった頃は RSS を正規表現で読んでいた。生成側が本文を CDATA ではなく実体参照で
-書くので item の切れ目を偽装できない、という前提に乗った実装で、**生成器を替えたら
-崩れる**ものだった。専用の口ができたのでその前提ごと消えている。
-
 取り出せた記事が 0 件なら 502 を返して**前回の控えで凌ぐ**（上の「上流が落ちたときの
 控え」参照）。
 
@@ -347,7 +342,7 @@ Worker から同一ゾーンの URL へのサブリクエストは、**その Wo
 origin へ向かう**。このゾーンに origin は無いので 522（接続タイムアウト）になる。
 本番で踏んだ。**ローカル dev は素の外向き fetch なので、これを一切再現しない。**
 
-そのため `wrangler.jsonc` の `services`（`BLOG` → `fushihara-net-lily`）でブログ
+そのため `wrangler.jsonc` の `services`（`BLOG` → `fushihara-blog`）でブログ
 Worker を直接呼ぶ。ローカルにはそのセッションが無く binding は 503 しか返さないので、
 `worker/api.ts` の `isLocal()` が `localhost` / `127.0.0.1` のときだけ公開 URL への
 素の fetch に切り替える（同一ゾーンの制限は本番のエッジの話なので、ローカルからは
@@ -554,9 +549,8 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 ## ブログ（blog/）と CMS（@kanf/lily）
 
 **`/blog` を配っているのは `blog/`。中身の CMS は
-[`@kanf/lily`](https://github.com/kan/lily)（別リポジトリ）。** 2026-09-08 に
-`blog/src/core` を npm パッケージとして切り出し、2026-09-12 に別リポジトリへ出して
-publish した（[issue #6](https://github.com/kan/fushihara.net/issues/6)）。
+[`@kanf/lily`](https://github.com/kan/lily)（別リポジトリ）。** 切り出しの経緯は
+[issue #6](https://github.com/kan/fushihara.net/issues/6)。
 
 ```
 @kanf/lily  CMS。fushihara.net を 1 つも知らない。npm から入る
