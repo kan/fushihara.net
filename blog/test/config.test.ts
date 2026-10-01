@@ -93,8 +93,12 @@ describe('lily に渡している設定', () => {
     const svg = await (await get(`${MOUNT}/favicon.svg`)).text();
     expect(svg).toContain('<svg');
     expect(svg).toContain('</svg>');
-    // `<!-- ... -- ... -->` は XML として不正
-    expect(svg.replace(/<!--[\s\S]*?-->/g, '')).not.toContain('<!--');
+    // `<!-- ... -- ... -->` は XML として不正。本文を取り出して直接見る
+    // (コメントごと消して残骸を探す形だと、正規表現が `--` ごと飲み込んで通る)。
+    const comments = [...svg.matchAll(/<!--([\s\S]*?)-->/g)];
+    for (const [, body] of comments) expect(body).not.toContain('--');
+    // 閉じていないコメントは上の正規表現に掛からないので、開きの数と突き合わせる
+    expect(comments).toHaveLength(svg.split('<!--').length - 1);
   });
 
   it('lily のアプリとして組めている（管理画面が保護の内側にある）', async () => {
