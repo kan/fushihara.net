@@ -22,12 +22,12 @@
   "//dependencies": "CMS の本体は lily (別リポジトリ github.com/kan/lily)。ここに残るのはテーマが使うもの (hono/html) だけ",
   "dependencies": {
     "@kanf/lily": "^0.4.0",
-    "hono": "^4.13.8"
+    "hono": "^4.13.12"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.3.4",
+    "@cloudflare/vitest-plugin": "^1.3.5",
     "@playwright/test": "^1.63.0",
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
     "wrangler": "^4.145.0"
