@@ -112,20 +112,15 @@ E2E で踏みやすい罠が 2 つある。
 
 **コード変更を含むコミットの前に、次を順に実行する。**
 
-1. `/code-review` — 実害のあるバグを洗う
-2. `/simplify` — 重複・冗長・設計の深さを見て直す
-3. `npm run typecheck && npm test && npm run test:e2e`
-4. ユーザーの承認を得てからコミットする
-
-順番に実行すること。`/simplify` は修正を適用するので、`/code-review` と
-並行させると衝突する。ドキュメントだけの変更ならスキップしてよい。
+1. 品質チェック — アカウント共通のルール（`rules/quality-check.md`）に従う。
+   変更の規模による要否、`/simplify` と `/code-review` の順序、effort の指定は
+   そちらが決める
+2. `npm run typecheck && npm test && npm run test:e2e`
+3. ユーザーの承認を得てからコミットする
 
 指摘に対応したら、**意図的に実装を壊して該当テストだけが落ちることを確認する**。
 このリポジトリでは、通ったはずのテストが実は何も検証していなかった例が
-複数回あった（詳細は「動的データ」節の E2E の罠を参照）。
-
-なお `/code-review` と `/simplify` のサブエージェントが結果を返さないことがある。
-その場合は待たずに、同じ観点を自分で見て直す。
+複数回あった（詳細は「Commands」節の「E2E で踏みやすい罠」を参照）。
 
 ## CI とデプロイ
 
@@ -442,8 +437,6 @@ core は 1 つも知らない）。
 `apple-touch-icon.png` だけ角を丸めないのは、iOS が自分でマスクをかけるため。
 こちらで丸めると二重に丸まるうえ、角に空いた透明部分を黒く塗られる。
 
-- 元絵は旧サイト（`kan/www.fushihara.net` の `dist/img/favicon.png`）の "f."。
-  145px の PNG からアウトラインを起こしてある。丸だけ赤からオレンジに変えた
 - **link タグは `.ico` を先に書く。** SVG に対応するブラウザはそちらを選ぶ
 - **3 つとも不透明の板を敷く。テーマ追従はしない。**
   最初は `favicon.svg` だけ背景透明にして、`@media (prefers-color-scheme)` で
@@ -458,7 +451,7 @@ core は 1 つも知らない）。
 - ラスタ 2 つは `favicon.svg` を headless Chrome で書き出し、`sharp` で 16 色
   パレットに落として作った（実質 2 色の絵なので、フルカラーのままだと 2.4KB、
   パレット化すると 0.9KB）。`.ico` は 32x32 の PNG を ICO コンテナに 1 枚だけ
-  入れたもの。作り直すときは旧サイトの PNG ではなく `favicon.svg` を流用する。
+  入れたもの。作り直すときは `favicon.svg` を流用する。
   **`apple-touch-icon.png` は `rx` を外して書き出すこと**（上表のとおり、
   ここだけベタの正方形）
 - **`favicon.svg` のコメントにハイフン 2 個を書かないこと。** SVG は XML なので
@@ -498,7 +491,7 @@ core は 1 つも知らない）。
 Bluesky のリンクカードにも同じ絵が出る）。詳細は `blog/README.md` の「OGP の絵」。
 
 作り直すときは `f.` マークと文字を並べた HTML を headless Chrome で 1200x630 に撮り、
-`sharp` の 64 色パレットに落とす（本体 18KB → 4.8KB、ブログ 34KB → 13KB）。
+`sharp` の 64 色パレットに落とす。
 ブログ側の見出しは配信しているのと同じ Noto Sans JP。
 
 ### SNS アカウントの宣言（`rel="me"`）
@@ -616,9 +609,11 @@ lily の `exports` が `dist/lib`（`tsc` が出した `.js` + `.d.ts`）を指�
   よそから記事を持ち込むときもこの経路を通す（`CONTRACT.md`）
 - **Worker 名は `fushihara-blog`、D1 と R2 は `fushihara-net-lily` 系のまま。**
   名前を揃えるために記事と添付を引っ越す理由がないため
-- **lily だけ TypeScript が 6 系で止まっている**（あちらのリポジトリの話）。
+- **lily は TypeScript が 6 系で止まっている**（あちらのリポジトリの話）。
   管理画面のために `vue-tsc` を通すが、TS 7.0 はネイティブ（Go）実装で
   `typescript/lib/tsc` を公開しないので、それを require する vue-tsc（Volar）が
   起動できず `ERR_PACKAGE_PATH_NOT_EXPORTED` で落ちる。ignore はあちらの
   `.github/dependabot.yml` にある。**本体にも blog にも vue-tsc は無いので、この
-  制約はこちらに効かない**（本体は 7 系で動いている）
+  制約はこちらに効かない**（本体は 7 系で動いている）。**blog の `typescript` も
+  `^6.0.3` だが、これは vue-tsc が blog にあったころの値が残っているだけ**で、
+  このリポジトリの `.github/dependabot.yml` に TypeScript の ignore は無い
