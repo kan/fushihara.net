@@ -194,7 +194,8 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
   配置を計算する（どちらも `src/layout.ts`。`MOBILE_BP` / `mobileOrder` / `REF_W` /
   `REF_H` などの定数もそこにある）:
   - 768px 未満（`MOBILE_BP`）: `mobileOrder` の順で 1 カラム縦積み。
-    加えて `collapsed: true` のエッジを全展開する（hover できないため）
+    加えて `collapsed: true` のエッジを全展開する（畳んだままだと、縦積みの中で
+    その先のノートが幅 0 になるため）
   - 768px 以上: `REF_W` / `REF_H` に対する比率でスケール。
     `poweredby` ノートだけは右下固定の例外
   - resize 時は `animateToLayout()` が JS の lerp でノートとエッジを一緒に動かす
@@ -241,9 +242,15 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
 ### 読み取り専用ロック
 
 初期化直後はまだ編集可能で、動的データのロードが終わってから
-`board.setViewOnly(true)` でロックする。`isLocked` フラグを見て
-`applyLayout()` が一時的にロックを外す仕組みなので、
-プログラムからノートを更新する処理はこの経路を通す必要がある。
+`board.setViewOnly(true)` でロックする。`main.ts` の `withEditableBoard()` が
+`isLocked` フラグを見て一時的にロックを外す。**ロック後にプログラムから
+ノートやエッジを更新する処理は `withEditableBoard()` の中で行う。**
+`applyLayout()` と `syncCollapsedEdges()` がそうしている。
+
+**ロックを外すと、wema はロックに入った時点の位置と折り畳みへ戻す**
+（`setViewOnly()` の仕様。ロック中の移動と開閉は一時的なものとして扱われる）。
+訪問者がロック中に動かした付箋と開いた Interests は、次の resize で元に戻る。
+パンとズームの状態は戻らない。
 
 ### 動的データ（外部 API）
 
@@ -521,7 +528,12 @@ wema はノートの `text` を **許可リストでサニタイズ**する
   テーマトグルが `#app` の外にいるのはこのため
 - `class` は全タグで通る。`style` は
   `color / background-color / font-size / font-weight / font-style / text-decoration /
-  text-align / margin / padding / display / list-style-type / white-space` だけ通る
+  text-decoration-line / text-align / margin / padding / display / list-style-type /
+  white-space` だけ通る
+- **`href` / `src` の URL はスキームの許可リストを通る。** 通るのは `http` / `https` /
+  `mailto` / `tel` と相対 URL。`data:` は `<img>` の `data:image/…` のように、タグと
+  種類が合うメディアだけ通る。それ以外（`file:` や独自スキーム）は属性ごと落ちる。
+  `board-data.ts` のアイコンが `<img>` の data URI で通っているのはこの例外による
 - したがって**ノート内の色はインライン `style` ではなく class で当てる**。
   二次テキストは `class="muted"`（`--text-muted` に追従）。インラインで色を書くと
   片方のテーマに固定されてしまう
@@ -536,8 +548,32 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 ### スタイルの上書きが効く理由
 
 `main.ts` は wema の CSS を読んだ**後**に `src/style.css` を読むので、同じ
-`.wema-board` セレクタでこちらが勝つ。wema が JS からインライン設定するのは
-`--wema-note-color`（ノート左端の帯）だけなので、他はすべて CSS で上書きできる。
+`.wema-board` セレクタでこちらが勝つ。wema が色について JS からインライン設定するのは
+`--wema-note-color`（ノート左端の帯）だけなので、色はすべて CSS で上書きできる。
+
+**ノートと接続線の SVG は `.wema-board` の直下ではなく、その中の `.wema-viewport` に
+入っている。** `.wema-board > .wema-note` のように直下を前提にしたセレクタは当たらない。
+パンとズームは `.wema-viewport` の `transform` として掛かる。
+
+### パンとズーム
+
+**wema のパンとズームは、機能のデモとして有効のままにしてある。** `WemaBoard` に
+`wheelPan` / `wheelZoom` を渡していないので、次の操作でボードが動く。
+
+| 操作 | 動き |
+|---|---|
+| ホイール | パン |
+| 空いている場所の左ドラッグ（ロック中） | パン |
+| Ctrl / Cmd + ホイール、ピンチ | ズーム |
+| 空いている場所のダブルクリック（ロック中） | その位置を中央へ |
+
+- ノートの座標（`getTargetLayout()` が決める値）は変わらない。動くのは表示位置だけ
+- **モバイル幅（768px 未満）では、指のスワイプはページのスクロール、マウスの
+  ホイールはボードのパンになる。** ページのスクロールと wema のパンが同居している。
+  **サイト側で `wheelPan: false` などを足して打ち消さないこと。** モバイル向けの拡張は
+  wema 本体へ統合していく方針で、打ち消しを足すと統合するときに二重になる
+  （[issue #40](https://github.com/kan/fushihara.net/issues/40)）
+- **これらの操作を見る E2E は無い。** wema を上げたときは手で確かめる
 
 ## ブログ（blog/）と CMS（@kanf/lily）
 
