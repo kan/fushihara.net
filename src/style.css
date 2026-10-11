@@ -216,29 +216,33 @@ html, body {
   scrollbar-width: none;
 }
 
-/* Mobile adjustments */
-@media (max-width: 767px) {
-  html, body {
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
+/* Mobile adjustments.
+ * Keyed to the class main.ts puts on <html>, not to a media query: the same
+ * decision turns on wema's pageScroll, and a second copy of the breakpoint
+ * here could disagree with it (a fractional width such as 767.5px matches
+ * neither `max-width: 767px` nor `>= 768`), leaving a page that cannot scroll. */
+html.is-mobile,
+.is-mobile body {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
 
-  #app, .wema-board {
-    height: auto !important;
-    min-height: 100%;
-    overflow: visible !important;
-  }
+/* The board grows out of its container to the height of its notes (wema's
+ * pageScroll, turned on in main.ts), so the container must not be fixed. */
+.is-mobile #app {
+  height: auto;
+  min-height: 100%;
+}
 
-  .wema-note {
-    font-size: 12px;
-  }
+.is-mobile .wema-note {
+  font-size: 12px;
+}
 
-  /* Mobile scrolls the whole document, so a fixed button would sit on top of
-   * whatever note passes under it and swallow taps meant for its links.
-   * Park it at the top of the document and let it scroll away instead. */
-  .theme-toggle {
-    position: absolute;
-  }
+/* Mobile scrolls the whole document, so a fixed button would sit on top of
+ * whatever note passes under it and swallow taps meant for its links.
+ * Park it at the top of the document and let it scroll away instead. */
+.is-mobile .theme-toggle {
+  position: absolute;
 }
 
 @media (prefers-reduced-motion: reduce) {

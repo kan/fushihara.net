@@ -190,20 +190,41 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
   data URI の SVG に組み立てる `siIcon()` ヘルパー経由で埋め込む
   （wema 公式ロゴだけは `wemaIcon()` に手書き SVG を持つ）。
 - `src/main.ts` — ボードの生成と**レスポンシブ再配置**。`board-data.ts` の座標・サイズを
-  起動時に `noteBases()` で退避し、`getTargetLayout()` がビューポート幅から実際の
-  配置を計算する（どちらも `src/layout.ts`。`MOBILE_BP` / `mobileOrder` / `REF_W` /
-  `REF_H` などの定数もそこにある）:
-  - 768px 未満（`MOBILE_BP`）: `mobileOrder` の順で 1 カラム縦積み。
-    加えて `collapsed: true` のエッジを全展開する（畳んだままだと、縦積みの中で
-    その先のノートが幅 0 になるため）
-  - 768px 以上: `REF_W` / `REF_H` に対する比率でスケール。
-    `poweredby` ノートだけは右下固定の例外
-  - resize 時は `animateToLayout()` が JS の lerp でノートとエッジを一緒に動かす
-    （CSS transition だとエッジが追従しないため）
+  起動時に `noteBases()` で退避し、`applyLayout()` がビューポート幅から実際の
+  配置を決める（`MOBILE_BP` / `mobileOrder` / `REF_W` / `REF_H` などの定数と
+  `isMobile()` / `getDesktopLayout()` は `src/layout.ts`）:
+  - 768px 未満（`isMobile()`）: wema の `stackNotes()` が `mobileOrder` の順で
+    1 カラムに縦積みする。**計算はサイト側に無い。** 渡すのは開始位置
+    （`MARGIN` / `MOBILE_TOP`）、幅、間隔（`MOBILE_GAP`）、並び順だけ
+  - 768px 以上: `getDesktopLayout()` が `REF_W` / `REF_H` に対する比率でスケールし、
+    wema の `moveNotes()` に渡す。`poweredby` ノートだけは右下固定の例外
+  - `applyLayout()` は**次の順で** 3 つを行う。
+    1. 768px をまたいだときだけ: `<html>` の class `is-mobile` の付け外しと
+       `setPageScroll()`。768px 未満ではボードのパンをやめ、ページをスクロールさせる
+    2. エッジの開閉。768px 未満では**毎回、全部のエッジを開く**。768px 以上へ
+       戻ったときだけ、`board-data.ts` の `collapsed` へ戻す
+    3. `stackNotes()` または `moveNotes()`
+
+    **2 を 3 より後にしないこと。768px 未満の 2 を「またいだときだけ」に減らさないこと。**
+    `stackNotes()` は隠れている付箋を動かさない。訪問者はどのエッジも畳めるので、
+    開かずに積むとその先の付箋が取り残され、あとで開いたときに下の付箋へ重なる
+  - **ブレークポイントの判定は `isMobile()` の 1 箇所。** `src/style.css` のモバイル向けの
+    指定は、メディアクエリではなく class `is-mobile` に付けてある。
+    **`@media (max-width: 767px)` に戻さないこと。** 767.5px のような小数の幅では、
+    JS は縦積みにして `pageScroll` を入れるのに、CSS は `overflow: hidden` のままになり、
+    ページがスクロールできなくなる
+  - resize 時は `duration: 300` を渡し、wema がノートとエッジを一緒に動かす
+    （CSS transition だとエッジが追従しない）
 
 ノートの位置やサイズを変えるときは `board-data.ts` を編集する。ただし
 **新しいノートを追加したらモバイル用の `mobileOrder`（`src/layout.ts`）にも id を足す**こと
-（漏れると 768px 未満で表示されない）。
+（漏れても wema が後ろへ積むので消えはしないが、位置の順で並び、選んだ順序から外れる。
+`test/board-data.test.ts` が漏れを検知する）。
+
+**縦積み、アニメーション、ページのスクロールは wema が持つ。サイト側に同じものを
+書かないこと。** 二重に持つと、wema を上げたときに挙動が食い違う。足りない挙動は
+wema（kan/wema）の issue にする（経緯は
+[issue #40](https://github.com/kan/fushihara.net/issues/40)）。
 
 なお `interests` ノートは `e-interests` エッジが `collapsed: true` なので、デスクトップ
 では幅 0 で畳まれた状態が正しい（中央ノートの下に出る件数バッジを**クリック**すると
@@ -242,15 +263,27 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
 ### 読み取り専用ロック
 
 初期化直後はまだ編集可能で、動的データのロードが終わってから
-`board.setViewOnly(true)` でロックする。`main.ts` の `withEditableBoard()` が
-`isLocked` フラグを見て一時的にロックを外す。**ロック後にプログラムから
-ノートやエッジを更新する処理は `withEditableBoard()` の中で行う。**
-`applyLayout()` と `syncCollapsedEdges()` がそうしている。
+`board.setViewOnly(true)` でロックする。**以後はロックを外さない。**
 
-**ロックを外すと、wema はロックに入った時点の位置と折り畳みへ戻す**
-（`setViewOnly()` の仕様。ロック中の移動と開閉は一時的なものとして扱われる）。
-訪問者がロック中に動かした付箋と開いた Interests は、次の resize で元に戻る。
-パンとズームの状態は戻らない。
+ロック中でも、`applyLayout()` が使う更新は wema が通す。
+
+| 呼び出し | ロック中（viewOnly） |
+|---|---|
+| `updateNote()` / `moveNotes()` / `stackNotes()` | 通る |
+| `updateEdge()` | `collapsed` だけ通る。ほかのキーは無視される |
+| `setPageScroll()` | 通る |
+| `addNote()` / `deleteNote()` / `addEdge()` / `autoLayout()` | 何もしない |
+
+**`setViewOnly(false)` で一時的にロックを外さないこと。** 外すと、wema はロックに
+入った時点の位置と折り畳みへ戻す（ロック中の移動と開閉は一時的なものとして扱われる）。
+レイアウトのたびに外すと、訪問者が動かした付箋と開いた Interests が resize のたびに
+元へ戻る。
+
+ロックを外さないので、訪問者の操作は次のように残る。
+
+- 768px 以上では、訪問者が開閉したエッジは、768px をまたがない resize ではそのまま残る
+- 768px 未満では、訪問者が畳んだエッジは、次の resize で開き直される
+- 訪問者が動かした付箋は、次の resize で `applyLayout()` の配置に上書きされる
 
 ### 動的データ（外部 API）
 
@@ -557,8 +590,8 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 
 ### パンとズーム
 
-**wema のパンとズームは、機能のデモとして有効のままにしてある。** `WemaBoard` に
-`wheelPan` / `wheelZoom` を渡していないので、次の操作でボードが動く。
+**wema のパンとズームは、768px 以上で機能のデモとして有効のままにしてある。**
+`WemaBoard` に `wheelPan` / `wheelZoom` を渡していないので、次の操作でボードが動く。
 
 | 操作 | 動き |
 |---|---|
@@ -567,13 +600,23 @@ wema が `--wema-anchor-color` から塗る折りたたみバッジは、アン�
 | Ctrl / Cmd + ホイール、ピンチ | ズーム |
 | 空いている場所のダブルクリック（ロック中） | その位置を中央へ |
 
-- ノートの座標（`getTargetLayout()` が決める値）は変わらない。動くのは表示位置だけ
-- **モバイル幅（768px 未満）では、指のスワイプはページのスクロール、マウスの
-  ホイールはボードのパンになる。** ページのスクロールと wema のパンが同居している。
-  **サイト側で `wheelPan: false` などを足して打ち消さないこと。** モバイル向けの拡張は
-  wema 本体へ統合していく方針で、打ち消しを足すと統合するときに二重になる
-  （[issue #40](https://github.com/kan/fushihara.net/issues/40)）
-- **これらの操作を見る E2E は無い。** wema を上げたときは手で確かめる
+- ノートの座標（`getDesktopLayout()` が決める値）は変わらない。動くのは表示位置だけ
+- **モバイル幅（768px 未満）では、パンもズームも止まる。** wema の `pageScroll`
+  （`main.ts` の `setPageScroll()`）が、ボードを付箋の高さまで伸ばしてページの一部にする。
+  指のスワイプもマウスのホイールも、ページのスクロールになる。
+  **`wheelPan: false` や `.wema-board` への `!important` の上書きで代用しないこと。**
+  `wheelPan` は生成時にしか読まれず、768px をまたぐ resize に追従できない
+- **スクロールするのは `body`。** `html` と `body` の両方が `overflow-y: auto` なので、
+  `window.scrollY` は 0 のまま動かない。スクロール量を見るときは `document.body.scrollTop`
+- **`#app` の高さは 768px 未満で固定しない**（`src/style.css` の `height: auto`）。
+  ボードはコンテナからはみ出して伸びるので、固定すると最後の付箋まで届かない
+- E2E（`e2e/render.spec.ts`）が見るのは次の 2 つだけ。
+  - モバイル幅でホイールがページをスクロールすること
+    （「ホイールでページが最後の付箋までスクロールする」）
+  - 狭めてから 768px 以上へ戻したあと、ホイールでボードがパンすること
+    （「狭めてから戻すと、元の配置と折り畳みに戻る」）
+
+  **ドラッグ、ズーム、ダブルクリックを見る E2E は無い。** wema を上げたときは手で確かめる
 
 ## ブログ（blog/）と CMS（@kanf/lily）
 

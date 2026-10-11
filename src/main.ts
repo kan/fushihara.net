@@ -6,7 +6,10 @@ import { initTheme } from './theme-toggle';
 import { fetchBlogPosts, fetchGitHubRepos, fetchGitHubLanguages } from './api';
 import { escapeHtml, moreLink } from './note-html';
 import { isoDate } from '../shared/date';
-import { MOBILE_BP, getTargetLayout, noteBases, type NoteLayout } from './layout';
+import {
+  MARGIN, MOBILE_GAP, MOBILE_TOP,
+  getDesktopLayout, isMobile, mobileOrder, noteBases,
+} from './layout';
 
 const appEl = document.getElementById('app')!;
 
@@ -24,87 +27,57 @@ const board = new WemaBoard({
 // Layout maths lives in ./layout.ts so it can be tested without a DOM.
 const bases = noteBases(boardData);
 
-let isLocked = false;
+let mobile: boolean | undefined;
 
-// The board is locked to view-only once the dynamic data lands, so any
-// programmatic mutation has to lift the lock around itself.
-function withEditableBoard(mutate: () => void) {
-  if (isLocked) board.setViewOnly(false);
-  mutate();
-  if (isLocked) board.setViewOnly(true);
-}
+// The board is view-only once the dynamic data lands. Everything here still
+// goes through: wema takes moves and collapses from the API in that mode.
+function applyLayout(duration = 0) {
+  const vw = window.innerWidth;
+  const nowMobile = isMobile(vw);
+  const crossed = nowMobile !== mobile;
 
-function applyLayout(layout: Map<string, NoteLayout>) {
-  withEditableBoard(() => {
-    for (const [id, l] of layout) {
-      board.updateNote(id, { x: l.x, y: l.y, width: l.width });
-    }
-  });
-}
-
-// Animate notes + edges together via JS lerp
-let animId = 0;
-function animateToLayout(targets: Map<string, NoteLayout>, duration = 300) {
-  animId++;
-  const myId = animId;
-
-  // Capture current state
-  const currents = new Map<string, NoteLayout>();
-  for (const [id] of targets) {
-    const note = board.getNote(id);
-    if (note) currents.set(id, { x: note.x, y: note.y, width: note.width });
+  if (crossed) {
+    mobile = nowMobile;
+    // Mobile scrolls the page instead of panning the board. The CSS that lets
+    // the page scroll follows the same decision through this class.
+    document.documentElement.classList.toggle('is-mobile', nowMobile);
+    board.setPageScroll(nowMobile);
   }
 
-  const start = performance.now();
-  function step(now: number) {
-    if (myId !== animId) return;
-    const t = Math.min((now - start) / duration, 1);
-    const ease = 1 - Math.pow(1 - t, 3);
-
-    const frame = new Map<string, NoteLayout>();
-    for (const [id, target] of targets) {
-      const cur = currents.get(id);
-      if (!cur) continue;
-      frame.set(id, {
-        x: Math.round(cur.x + (target.x - cur.x) * ease),
-        y: Math.round(cur.y + (target.y - cur.y) * ease),
-        width: Math.round(cur.width + (target.width - cur.width) * ease),
-      });
+  if (nowMobile) {
+    // stackNotes() leaves a hidden note where it is, and it would come back on
+    // top of the column: open every edge first, each time, since the visitor
+    // can collapse any of them in between.
+    for (const edge of boardData.edges) {
+      board.updateEdge(edge.id, { collapsed: false });
     }
-    applyLayout(frame);
-
-    if (t < 1) requestAnimationFrame(step);
+    board.stackNotes({
+      x: MARGIN,
+      y: MOBILE_TOP,
+      width: vw - MARGIN * 2,
+      gap: MOBILE_GAP,
+      order: mobileOrder,
+      duration,
+    });
+    return;
   }
-  requestAnimationFrame(step);
-}
 
-// Collapsed edges are opened by hovering, which mobile cannot do, so expand them
-// below the breakpoint. Resizing across the breakpoint has to revisit this too,
-// otherwise a narrowed desktop window leaves the collapsed note stuck at zero width.
-const collapsibleEdges = boardData.edges.filter((e) => e.collapsed);
-let edgesExpanded = false;
-
-function syncCollapsedEdges(vw: number) {
-  const expand = vw < MOBILE_BP;
-  if (expand === edgesExpanded) return;
-
-  withEditableBoard(() => {
-    for (const edge of collapsibleEdges) {
-      board.updateEdge(edge.id, { collapsed: !expand });
+  // Back on desktop: fold the edges the way board-data.ts has them
+  if (crossed) {
+    for (const edge of boardData.edges) {
+      board.updateEdge(edge.id, { collapsed: !!edge.collapsed });
     }
-  });
-  edgesExpanded = expand;
+  }
+
+  const targets = getDesktopLayout(vw, window.innerHeight, bases);
+  board.moveNotes([...targets].map(([id, l]) => ({ id, ...l })), { duration });
 }
 
 // Initial layout (instant)
-syncCollapsedEdges(window.innerWidth);
-applyLayout(getTargetLayout(window.innerWidth, window.innerHeight, bases));
+applyLayout();
 
-// Resize: animate smoothly to new layout
-window.addEventListener('resize', () => {
-  syncCollapsedEdges(window.innerWidth);
-  animateToLayout(getTargetLayout(window.innerWidth, window.innerHeight, bases), 300);
-});
+// Resize: wema animates the notes and their edges to the new layout
+window.addEventListener('resize', () => applyLayout(300));
 
 // --- Dynamic data loading ---
 
@@ -160,5 +133,4 @@ async function loadDynamicData() {
 
 loadDynamicData().finally(() => {
   board.setViewOnly(true);
-  isLocked = true;
 });

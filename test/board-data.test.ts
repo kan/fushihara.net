@@ -97,8 +97,8 @@ describe('EXTRA_SKILLS', () => {
 });
 
 describe('mobileOrder', () => {
-  // 768px 未満のレイアウトは mobileOrder だけを見て組む。ここから漏れたノートは
-  // モバイルで画面外に取り残されるため、追加漏れを検知する。
+  // 768px 未満の並び順は mobileOrder が決める。ここから漏れたノートも wema が
+  // 後ろへ積むので消えはしないが、位置の順で並ぶため、選んだ順序から外れる。
   it('全ノートが含まれている', () => {
     expect([...mobileOrder].sort()).toEqual([...noteIds].sort());
   });

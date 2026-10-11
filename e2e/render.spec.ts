@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
-import { MARGIN, mobileOrder } from '../src/layout';
+import { MARGIN, MOBILE_GAP, MOBILE_TOP, mobileOrder } from '../src/layout';
 
 // 外部 API はモックする。CI を api.github.com の生存とレートリミット、ブログ Worker の
 // 応答に依存させないため。Worker 側のプロキシ挙動は test/worker.test.ts が担当する。
@@ -45,7 +45,7 @@ async function noteBoxes(page: Page) {
         const r = el.getBoundingClientRect();
         return [
           el.getAttribute('data-note-id') ?? '',
-          { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) },
+          { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
         ];
       }),
     ),
@@ -269,6 +269,29 @@ test.describe('デスクトップ', () => {
         ),
       );
   });
+
+  test('狭めてから戻すと、元の配置と折り畳みに戻る', async ({ page }) => {
+    await gotoAndSettle(page);
+    const before = await noteBoxes(page);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect
+      .poll(async () => (await noteBoxes(page)).interests.w, { timeout: 5_000 })
+      .toBe(390 - MARGIN * 2);
+
+    // 戻りは「ページのスクロールをやめる → エッジを畳む → 元の座標へ動かす」。
+    // 後ろの 2 つが欠けると、デスクトップの配置に戻らない。
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect.poll(() => noteBoxes(page), { timeout: 5_000 }).toEqual(before);
+
+    // 1 つ目が欠けても配置は戻るので、別に見る。pageScroll が残っていると、
+    // ホイールでボードがパンしない。
+    await page.mouse.move(700, 800);
+    await page.mouse.wheel(0, 100);
+    await expect
+      .poll(async () => (await noteBoxes(page)).center.y)
+      .toBeLessThan(before.center.y);
+  });
 });
 
 test.describe('モバイル', () => {
@@ -293,10 +316,66 @@ test.describe('モバイル', () => {
     expect(ys).toEqual([...ys].sort((a, b) => a - b));
   });
 
+  test('MOBILE_TOP から始まり、MOBILE_GAP ずつ空けて積まれる', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    // 積むのは wema（stackNotes()）で、渡した開始位置と間隔が効いていることを見る
+    const boxes = await noteBoxes(page);
+    expect(boxes[mobileOrder[0]].y).toBe(MOBILE_TOP);
+    for (let i = 1; i < mobileOrder.length; i++) {
+      const prev = boxes[mobileOrder[i - 1]];
+      expect(boxes[mobileOrder[i]].y, mobileOrder[i]).toBe(prev.y + prev.h + MOBILE_GAP);
+    }
+  });
+
+  test('ホイールでページが最後の付箋までスクロールする', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    // 縦積みの間は wema の pageScroll で、ボードのパンではなくページが動く。
+    // 切り忘れると、ホイールはボードを動かしてページは 0 のまま残る。
+    const last = page.locator(`${NOTE}[data-note-id="${mobileOrder.at(-1)}"]`);
+    await expect(last).not.toBeInViewport();
+
+    await page.mouse.move(100, 300);
+    await page.mouse.wheel(0, 5000);
+
+    await expect(last).toBeInViewport();
+    // スクロールするのは body（html と body の両方が overflow-y: auto なので、
+    // window.scrollY は 0 のまま動かない）
+    const { scrolled, top } = await page.evaluate((id) => ({
+      scrolled: document.body.scrollTop,
+      top: document.querySelector(`[data-note-id="${id}"]`)!.getBoundingClientRect().y,
+    }), mobileOrder[0]);
+    expect(scrolled).toBeGreaterThan(0);
+    // 動いたのはページで、ボードの中身は積んだ位置のまま。スクロール量は
+    // 端末の画素に丸められて小数になるので、丸めずに足して近さで見る
+    expect(top + scrolled).toBeCloseTo(MOBILE_TOP, 0);
+  });
+
+  test('訪問者が畳んだ付箋も、resize で開いて積み直される', async ({ page }) => {
+    await gotoAndSettle(page);
+    const before = await noteBoxes(page);
+
+    // 畳んだままだと stackNotes() がその付箋を除いて積み、あとで開いたときに
+    // 元の位置へ出て下の付箋に重なる。どの辺のボタンでも同じなので 1 つ目を押す
+    await page.locator('.wema-note-collapse-btn').first().click();
+    await expect
+      .poll(async () => Object.values(await noteBoxes(page)).filter((b) => b.w === 0).length)
+      .toBeGreaterThan(0);
+
+    await page.setViewportSize({ width: 400, height: 844 });
+    await expect
+      .poll(async () => {
+        const now = await noteBoxes(page);
+        return mobileOrder.map((id) => now[id].y);
+      }, { timeout: 5_000 })
+      .toEqual(mobileOrder.map((id) => before[id].y));
+  });
+
   test('畳まれたエッジが展開され、interests ノートも読める', async ({ page }) => {
     await gotoAndSettle(page);
 
-    // デスクトップでは collapsed:true で幅 0。モバイルでは hover できないので開く
+    // デスクトップでは collapsed:true で幅 0。モバイルでは縦積みに入れるために開く
     expect((await noteBoxes(page)).interests.w).toBeGreaterThan(0);
   });
 

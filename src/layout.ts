@@ -14,17 +14,25 @@ export const MOBILE_GAP = 16;
  */
 export const MOBILE_TOP = 56;
 
-/** Display order for mobile vertical layout. Every note id must appear here. */
+/**
+ * Display order for mobile vertical layout. wema stacks a note that is missing
+ * here after these, by its position, so list every id to keep the order chosen.
+ */
 export const mobileOrder = [
   'center', 'email', 'social', 'skills',
   'blog', 'oss', 'links',
   'interests', 'poweredby',
 ];
 
+/** Below this width the notes are stacked in one column and the page scrolls. */
+export function isMobile(vw: number): boolean {
+  return vw < MOBILE_BP;
+}
+
 export interface NoteLayout { x: number; y: number; width: number }
 export interface NoteBase extends NoteLayout { height: number }
 
-/** Snapshot the authored positions and sizes, which getTargetLayout scales from. */
+/** Snapshot the authored positions and sizes, which getDesktopLayout scales from. */
 export function noteBases(data: WemaBoardData): Map<string, NoteBase> {
   const bases = new Map<string, NoteBase>();
   for (const note of data.notes) {
@@ -34,45 +42,34 @@ export function noteBases(data: WemaBoardData): Map<string, NoteBase> {
 }
 
 /**
- * Resolve where every note goes for the given viewport.
+ * Resolve where every note goes on a desktop viewport: the authored positions
+ * scaled to the viewport, at the authored widths. The mobile column is not
+ * computed here; wema stacks it (`stackNotes()` in main.ts).
  * Pure: the caller supplies the viewport so this stays testable.
  */
-export function getTargetLayout(
+export function getDesktopLayout(
   vw: number,
   vh: number,
   bases: Map<string, NoteBase>,
 ): Map<string, NoteLayout> {
   const targets = new Map<string, NoteLayout>();
+  const sx = vw / REF_W;
+  const sy = vh / REF_H;
 
-  if (vw < MOBILE_BP) {
-    // Mobile: single column, nearly full-width
-    const noteWidth = vw - MARGIN * 2;
-    let y = MOBILE_TOP;
-    for (const id of mobileOrder) {
-      const base = bases.get(id);
-      if (!base) continue;
-      targets.set(id, { x: MARGIN, y, width: noteWidth });
-      y += base.height + MOBILE_GAP;
-    }
-  } else {
-    // Desktop: proportional scaling, original widths
-    const sx = vw / REF_W;
-    const sy = vh / REF_H;
-    for (const [id, base] of bases) {
-      if (id === 'poweredby') {
-        targets.set(id, {
-          x: vw - base.width - MARGIN,
-          y: vh - base.height - MARGIN,
-          width: base.width,
-        });
-        continue;
-      }
+  for (const [id, base] of bases) {
+    if (id === 'poweredby') {
       targets.set(id, {
-        x: Math.round(base.x * sx),
-        y: Math.round(base.y * sy),
+        x: vw - base.width - MARGIN,
+        y: vh - base.height - MARGIN,
         width: base.width,
       });
+      continue;
     }
+    targets.set(id, {
+      x: Math.round(base.x * sx),
+      y: Math.round(base.y * sy),
+      width: base.width,
+    });
   }
   return targets;
 }
