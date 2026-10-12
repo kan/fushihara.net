@@ -352,54 +352,19 @@ test.describe('モバイル', () => {
     expect(top + scrolled).toBeCloseTo(MOBILE_TOP, 0);
   });
 
-  test('訪問者が畳むと詰めて積み直され、resize しても畳んだまま残る', async ({ page }) => {
+  test('接続線も折り畳みボタンも出ず、広げると接続線が戻る', async ({ page }) => {
     await gotoAndSettle(page);
-    const before = await noteBoxes(page);
 
-    // 見えている付箋の枚数、幅、上の付箋（1 枚目は MOBILE_TOP）との間隔。
-    // 列が詰まっていれば、間隔は MOBILE_GAP の 1 種類だけになる
-    const column = async () => {
-      const now = await noteBoxes(page);
-      const shown = mobileOrder.filter((id) => now[id].w > 0);
-      const gaps = shown.map((id, i) => {
-        const prev = now[shown[i - 1]];
-        return now[id].y - (prev ? prev.y + prev.h : MOBILE_TOP - MOBILE_GAP);
-      });
-      return {
-        shown: shown.length,
-        widths: [...new Set(shown.map((id) => now[id].w))],
-        gaps: [...new Set(gaps)],
-      };
-    };
-    const tight = (shown: number, vw: number) =>
-      ({ shown, widths: [vw - MARGIN * 2], gaps: [MOBILE_GAP] });
+    // wema は、表示だけの縦積み（setStacked()）の間、接続線と畳むボタンを出さない。
+    // データごと積む stackNotes() に戻すと、線が付箋の裏を通って隙間に切れ端が見え、
+    // 画面の端で切れたボタンが付箋の四辺に出る
+    const edges = page.locator('.wema-viewport svg path:visible');
+    await expect(edges).toHaveCount(0);
+    await expect(page.locator('.wema-note-collapse-btn:visible')).toHaveCount(0);
 
-    // 積み直すのは wema（setStacked()）。サイト側が開き直したり積み直したりは
-    // しない。どの辺のボタンでも同じなので 1 つ目を押す。隠れる枚数は辺によって
-    // 違うので、決め打ちせずに数える
-    await page.locator('.wema-note-collapse-btn').first().click();
-    await expect
-      .poll(async () => (await column()).shown, { timeout: 5_000 })
-      .toBeLessThan(mobileOrder.length);
-    const { shown } = await column();
-    const size = page.viewportSize()!;
-    await expect.poll(column, { timeout: 5_000 }).toEqual(tight(shown, size.width));
-
-    // 768px をまたがない resize では開き直さない。幅まで見るのは、resize の
-    // 処理が走る前の列で通ってしまわないようにするため
-    await page.setViewportSize({ width: size.width + 10, height: size.height });
-    await expect.poll(column, { timeout: 5_000 }).toEqual(tight(shown, size.width + 10));
-
-    // 元の幅へ戻して開くと、畳む前と同じ位置に全部が並ぶ
-    await page.setViewportSize(size);
-    await expect.poll(column, { timeout: 5_000 }).toEqual(tight(shown, size.width));
-    await page.locator('.wema-note-collapse-badge').click();
-    await expect
-      .poll(async () => {
-        const now = await noteBoxes(page);
-        return mobileOrder.map((id) => now[id].y);
-      }, { timeout: 5_000 })
-      .toEqual(mobileOrder.map((id) => before[id].y));
+    // 線を消しているのは積んでいる間だけで、列を抜けると元どおり描かれる
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect.poll(() => edges.count(), { timeout: 5_000 }).toBeGreaterThan(0);
   });
 
   test('畳まれたエッジが展開され、interests ノートも読める', async ({ page }) => {

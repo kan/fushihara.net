@@ -50,8 +50,8 @@ function applyLayout(duration = 0) {
   }
 
   if (nowMobile) {
-    // Display only: the notes keep their desktop positions and widths, and
-    // wema restacks the column when the visitor folds or opens an edge.
+    // Display only: the notes keep their desktop positions and widths. wema
+    // hides the edges and their collapse buttons while the column is up.
     board.setStacked({
       x: MARGIN,
       y: MOBILE_TOP,
