@@ -193,21 +193,30 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
   起動時に `noteBases()` で退避し、`applyLayout()` がビューポート幅から実際の
   配置を決める（`MOBILE_BP` / `mobileOrder` / `REF_W` / `REF_H` などの定数と
   `isMobile()` / `getDesktopLayout()` は `src/layout.ts`）:
-  - 768px 未満（`isMobile()`）: wema の `stackNotes()` が `mobileOrder` の順で
-    1 カラムに縦積みする。**計算はサイト側に無い。** 渡すのは開始位置
+  - 768px 未満（`isMobile()`）: wema の `setStacked()` が `mobileOrder` の順で
+    1 カラムに縦積みして**表示する**。**計算はサイト側に無い。** 渡すのは開始位置
     （`MARGIN` / `MOBILE_TOP`）、幅、間隔（`MOBILE_GAP`）、並び順だけ
   - 768px 以上: `getDesktopLayout()` が `REF_W` / `REF_H` に対する比率でスケールし、
     wema の `moveNotes()` に渡す。`poweredby` ノートだけは右下固定の例外
-  - `applyLayout()` は**次の順で** 3 つを行う。
+  - `applyLayout()` は次の 3 つを行う。
     1. 768px をまたいだときだけ: `<html>` の class `is-mobile` の付け外しと
        `setPageScroll()`。768px 未満ではボードのパンをやめ、ページをスクロールさせる
-    2. エッジの開閉。768px 未満では**毎回、全部のエッジを開く**。768px 以上へ
-       戻ったときだけ、`board-data.ts` の `collapsed` へ戻す
-    3. `stackNotes()` または `moveNotes()`
+    2. 768px をまたいだときだけ: エッジの開閉。768px 未満へ入るときは全部のエッジを開き、
+       768px 以上へ戻るときは `board-data.ts` の `collapsed` へ戻す
+    3. 768px 未満では `setStacked()`。768px 以上では `moveNotes()` のあとに
+       `setStacked(null)`（積んでいなければ何もしない。戻りではここで列を抜ける）
 
-    **2 を 3 より後にしないこと。768px 未満の 2 を「またいだときだけ」に減らさないこと。**
-    `stackNotes()` は隠れている付箋を動かさない。訪問者はどのエッジも畳めるので、
-    開かずに積むとその先の付箋が取り残され、あとで開いたときに下の付箋へ重なる
+  - **`setStacked()` は付箋のデータを変えない。変えるのは描く位置と幅だけ。**
+    積んでいる間も、データの位置と幅はデスクトップの配置のまま
+    （`getNote()` は列の中の位置を返さない）。`moveNotes()` はデータを変えるので、
+    積んでいる間に呼んでも画面は動かず、結果は `setStacked(null)` のあとに見える。
+    3 が戻りで `moveNotes()` を先に呼ぶのはこのためで、付箋は列から新しい位置へ動く
+  - **768px 未満で、サイト側は積み直さない。エッジを開き直すこともしない。**
+    訪問者がエッジを開閉すると、wema が列を積み直す（畳めば下の付箋が詰まり、
+    開けば元の順に戻る）。**`stackNotes()` に戻さないこと。** `stackNotes()` は
+    呼んだ時点の列しか作らず、隠れている付箋を動かさないので、訪問者が畳んだ場所に
+    穴が空く。それを避けるには resize のたびに全部のエッジを開いてから積む必要があり、
+    訪問者が畳んだ状態を保てない
   - **ブレークポイントの判定は `isMobile()` の 1 箇所。** `src/style.css` のモバイル向けの
     指定は、メディアクエリではなく class `is-mobile` に付けてある。
     **`@media (max-width: 767px)` に戻さないこと。** 767.5px のような小数の幅では、
@@ -269,7 +278,7 @@ wema（kan/wema）の issue にする（経緯は
 
 | 呼び出し | ロック中（viewOnly） |
 |---|---|
-| `updateNote()` / `moveNotes()` / `stackNotes()` | 通る |
+| `updateNote()` / `moveNotes()` / `setStacked()` | 通る |
 | `updateEdge()` | `collapsed` だけ通る。ほかのキーは無視される |
 | `setPageScroll()` | 通る |
 | `addNote()` / `deleteNote()` / `addEdge()` / `autoLayout()` | 何もしない |
@@ -281,9 +290,13 @@ wema（kan/wema）の issue にする（経緯は
 
 ロックを外さないので、訪問者の操作は次のように残る。
 
-- 768px 以上では、訪問者が開閉したエッジは、768px をまたがない resize ではそのまま残る
-- 768px 未満では、訪問者が畳んだエッジは、次の resize で開き直される
-- 訪問者が動かした付箋は、次の resize で `applyLayout()` の配置に上書きされる
+- 訪問者が開閉したエッジは、768px をまたがない resize ではそのまま残る
+  （768px 未満でも同じ。`e2e/render.spec.ts` の「訪問者が畳むと詰めて積み直され、
+  resize しても畳んだまま残る」が見ている）
+- 768px をまたぐと、エッジの開閉は `applyLayout()` が決めた状態に上書きされる
+- 768px 以上で訪問者が動かした付箋は、次の resize で `applyLayout()` の配置に上書きされる
+- **768px 未満では、付箋をドラッグできない**（マウスでも同じ）。`setStacked()` で
+  積んでいる間は、wema がドラッグを止める
 
 ### 動的データ（外部 API）
 

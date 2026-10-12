@@ -42,35 +42,31 @@ function applyLayout(duration = 0) {
     // the page scroll follows the same decision through this class.
     document.documentElement.classList.toggle('is-mobile', nowMobile);
     board.setPageScroll(nowMobile);
+    // Mobile reads every note in the column; desktop folds the edges the way
+    // board-data.ts has them.
+    for (const edge of boardData.edges) {
+      board.updateEdge(edge.id, { collapsed: nowMobile ? false : !!edge.collapsed });
+    }
   }
 
   if (nowMobile) {
-    // stackNotes() leaves a hidden note where it is, and it would come back on
-    // top of the column: open every edge first, each time, since the visitor
-    // can collapse any of them in between.
-    for (const edge of boardData.edges) {
-      board.updateEdge(edge.id, { collapsed: false });
-    }
-    board.stackNotes({
+    // Display only: the notes keep their desktop positions and widths, and
+    // wema restacks the column when the visitor folds or opens an edge.
+    board.setStacked({
       x: MARGIN,
       y: MOBILE_TOP,
       width: vw - MARGIN * 2,
       gap: MOBILE_GAP,
       order: mobileOrder,
-      duration,
-    });
+    }, { duration });
     return;
   }
 
-  // Back on desktop: fold the edges the way board-data.ts has them
-  if (crossed) {
-    for (const edge of boardData.edges) {
-      board.updateEdge(edge.id, { collapsed: !!edge.collapsed });
-    }
-  }
-
+  // The new positions go in first: a move is unseen while stacked, so on the
+  // way back the notes travel from the column straight to them.
   const targets = getDesktopLayout(vw, window.innerHeight, bases);
   board.moveNotes([...targets].map(([id, l]) => ({ id, ...l })), { duration });
+  board.setStacked(null, { duration });
 }
 
 // Initial layout (instant)

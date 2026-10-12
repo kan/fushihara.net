@@ -44,7 +44,7 @@ export function noteBases(data: WemaBoardData): Map<string, NoteBase> {
 /**
  * Resolve where every note goes on a desktop viewport: the authored positions
  * scaled to the viewport, at the authored widths. The mobile column is not
- * computed here; wema stacks it (`stackNotes()` in main.ts).
+ * computed here; wema stacks it (`setStacked()` in main.ts).
  * Pure: the caller supplies the viewport so this stays testable.
  */
 export function getDesktopLayout(
