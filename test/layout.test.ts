@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { boardData } from '../src/board-data';
 import {
+  ACCESSORY_ROOM,
   MARGIN,
   MOBILE_BP,
   REF_H,
   REF_W,
+  gapBelow,
   getDesktopLayout,
   isMobile,
   noteBases,
@@ -130,6 +132,35 @@ describe('デスクトップレイアウト', () => {
     }
   });
 
+});
+
+// 付箋の下のボタン（main.ts の renderNoteAccessory）を出せるかの判定に使う。
+describe('gapBelow', () => {
+  const gap = (vh: number) => gapBelow('blog', 'oss', getDesktopLayout(REF_W, vh, bases), bases);
+
+  it('リファレンスの高さでは board-data の間隔そのまま', () => {
+    const blog = bases.get('blog')!;
+    const oss = bases.get('oss')!;
+    expect(gap(REF_H)).toBe(oss.y - (blog.y + blog.height));
+  });
+
+  it('Blog の下には、リファレンスの高さで RSS のリンクが入る', () => {
+    // 入らなくなると、リンクがどの画面でも出なくなる。Blog か OSS の付箋を
+    // 動かしたり伸ばしたりしたときに落ちる
+    expect(gap(REF_H)).toBeGreaterThanOrEqual(ACCESSORY_ROOM);
+  });
+
+  it('低い画面では縮む（座標は縮むが、付箋の高さは縮まない）', () => {
+    expect(gap(740)).toBeLessThan(ACCESSORY_ROOM);
+    // 付箋どうしが重なる高さでは負になる
+    expect(gap(600)).toBeLessThan(0);
+  });
+
+  it('RSS のリンクが出るのは高さ 780px から', () => {
+    // CLAUDE.md に書いてある境目。Blog か OSS の付箋を動かすと変わる
+    expect(gap(779)).toBeLessThan(ACCESSORY_ROOM);
+    expect(gap(780)).toBeGreaterThanOrEqual(ACCESSORY_ROOM);
+  });
 });
 
 // 縦積みの計算そのものは wema（`setStacked()`）が持つ。こちらに残るのは、

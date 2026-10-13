@@ -7,18 +7,22 @@ import { fetchBlogPosts, fetchGitHubRepos, fetchGitHubLanguages } from './api';
 import { escapeHtml, moreLink } from './note-html';
 import { isoDate } from '../shared/date';
 import {
-  MARGIN, MOBILE_GAP, MOBILE_TOP,
-  getDesktopLayout, isMobile, mobileOrder, noteBases,
+  ACCESSORY_ROOM, MARGIN, MOBILE_GAP, MOBILE_TOP,
+  gapBelow, getDesktopLayout, isMobile, mobileOrder, noteBases,
 } from './layout';
 
 const appEl = document.getElementById('app')!;
 const INTERESTS_EDGE = 'e-interests';
+// The blog's feed (lily serves it; blog/CONTRACT.md lists it as a public URL).
+const BLOG_RSS = '/blog/rss.xml';
 // How long the copy button says "Copied".
 const COPIED_MS = 2000;
 
 // Set by applyLayout(). Declared ahead of the board because the board's
 // renderNoteAccessory reads it.
 let mobile: boolean | undefined;
+// Whether the RSS link under the Blog note has room. Also set by applyLayout().
+let showRss = false;
 
 // Says "Copied" to a screen reader. Outside the board: what is under a note is
 // rebuilt on every redraw, and a live region has to stay put to be read.
@@ -54,6 +58,10 @@ const board = new WemaBoard({
       el.append(copyEmailButton());
       return true;
     }
+    if (note.id === 'blog' && showRss) {
+      el.append(noteLink('rss', 'RSS', BLOG_RSS, ICON_RSS));
+      return true;
+    }
     return false;
   },
 });
@@ -63,6 +71,9 @@ const ICON_COPY =
   '<rect x="9" y="9" width="13" height="13" rx="2"/>' +
   '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
 const ICON_CHECK = '<path d="M20 6 9 17l-5-5"/>';
+const ICON_RSS =
+  '<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/>' +
+  '<circle cx="5" cy="19" r="1"/>';
 
 /**
  * A button for under a note. wema rebuilds what is there on every redraw, so
@@ -71,19 +82,33 @@ const ICON_CHECK = '<path d="M20 6 9 17l-5-5"/>';
 function noteAction(focusKey: string, label: string, iconPaths?: string): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'note-action';
+  return dressAction(button, focusKey, label, iconPaths);
+}
+
+/** The same pill as noteAction(), for somewhere to go rather than something to do. */
+function noteLink(focusKey: string, label: string, href: string, iconPaths?: string): HTMLAnchorElement {
+  const link = document.createElement('a');
+  link.href = href;
+  // Like the links inside the notes: the board stays where it is.
+  link.target = '_blank';
+  link.rel = 'noopener';
+  return dressAction(link, focusKey, label, iconPaths);
+}
+
+function dressAction<T extends HTMLElement>(el: T, focusKey: string, label: string, iconPaths?: string): T {
+  el.className = 'note-action';
   // wema puts the focus back on the element with the same key after a redraw.
-  button.dataset.wemaFocusKey = focusKey;
+  el.dataset.wemaFocusKey = focusKey;
   if (iconPaths) {
     // Decoration only: the label beside it carries the name. The markup is
     // made of the literals above.
-    button.innerHTML =
+    el.innerHTML =
       '<svg class="note-action-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" ' +
       'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
       `aria-hidden="true">${iconPaths}</svg>`;
   }
-  button.append(label);
-  return button;
+  el.append(label);
+  return el;
 }
 
 // The count badge under the centre note says how many notes are folded away,
@@ -164,6 +189,8 @@ function applyLayout(duration = 0) {
   }
 
   if (nowMobile) {
+    // The column makes room for what is under a note.
+    setShowRss(true, 0);
     // Display only: the notes keep their desktop positions and widths. wema
     // hides the edges and their collapse buttons while the column is up.
     board.setStacked({
@@ -181,6 +208,18 @@ function applyLayout(duration = 0) {
   const targets = getDesktopLayout(vw, window.innerHeight, bases);
   board.moveNotes([...targets].map(([id, l]) => ({ id, ...l })), { duration });
   board.setStacked(null, { duration });
+  // The OSS note sits right under the Blog note, and on a short window the
+  // link would land on it.
+  setShowRss(gapBelow('blog', 'oss', targets, bases) >= ACCESSORY_ROOM, duration);
+}
+
+function setShowRss(fits: boolean, moving: number) {
+  if (fits === showRss) return;
+  showRss = fits;
+  // Showing waits for the notes to finish moving apart: until then they are
+  // still as close as they were. Hiding does not wait.
+  if (fits && moving) window.setTimeout(() => board.refreshNoteAccessory('blog'), moving);
+  else board.refreshNoteAccessory('blog');
 }
 
 // Initial layout (instant)

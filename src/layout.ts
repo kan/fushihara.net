@@ -42,6 +42,28 @@ export function noteBases(data: WemaBoardData): Map<string, NoteBase> {
 }
 
 /**
+ * Height a button under a note takes (`renderNoteAccessory` in main.ts),
+ * with a little air below it. wema leaves no room for it on desktop, so a
+ * note with another one right below shows its button only when this fits.
+ */
+export const ACCESSORY_ROOM = 40;
+
+/**
+ * Vertical space between two notes in a layout from getDesktopLayout(), the
+ * upper one's bottom edge to the lower one's top. Positions scale with the
+ * viewport and heights do not, so this shrinks on a short window and can go
+ * negative.
+ */
+export function gapBelow(
+  upperId: string,
+  lowerId: string,
+  layout: Map<string, NoteLayout>,
+  bases: Map<string, NoteBase>,
+): number {
+  return layout.get(lowerId)!.y - (layout.get(upperId)!.y + bases.get(upperId)!.height);
+}
+
+/**
  * Resolve where every note goes on a desktop viewport: the authored positions
  * scaled to the viewport, at the authored widths. The mobile column is not
  * computed here; wema stacks it (`setStacked()` in main.ts).

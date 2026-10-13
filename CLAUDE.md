@@ -347,7 +347,30 @@ wema（kan/wema）の issue にする（経緯は
   「無期限に待つ」なので、付けても同じ（壊して確認して見つけた）。
   `expect(await locator.textContent()).toBe('Copy')` で 1 回だけ見る
 
-**付箋の下のボタンに共通すること**（`Interests` と `Copy`。ほかの案は
+**Blog の付箋の下には、`RSS` のリンクが出る。** 行き先は `/blog/rss.xml`
+（`blog/CONTRACT.md` にある公開 URL）。ボタンではなく `<a>` で、付箋の中のリンクと
+同じく新しいタブで開く（`main.ts` の `noteLink()`）。
+
+- **768px 未満では常に出す。768px 以上では、下の OSS の付箋との間隔が
+  `ACCESSORY_ROOM`（40px）以上あるときだけ出す。** 間隔は `src/layout.ts` の
+  `gapBelow()` が、`getDesktopLayout()` の結果から出す。`getDesktopLayout()` は座標を
+  ウィンドウの高さに比例して縮めるが付箋の高さは縮めないので、低い画面では間隔が
+  詰まり、リンクが OSS の付箋に乗る。1400x900 で間隔は 80px。
+  **ウィンドウの高さ（`innerHeight`）が 780px を下回ると隠れる**
+  （`test/layout.test.ts` の「RSS のリンクが出るのは高さ 780px から」）
+- 出すかどうかは `applyLayout()` が resize のたびに決め、変わったときだけ
+  `refreshNoteAccessory('blog')` を呼ぶ（`main.ts` の `setShowRss()`）。
+  **出すほうは、付箋の移動（300ms）が終わってから描く。** すぐ描くと、OSS の付箋が
+  まだ近い位置にいる間、リンクが上に乗る。隠すほうは待たない
+- `ACCESSORY_ROOM` は、リンクの実際の高さ（`.wema-note-accessory`。今は 34px）以上で
+  ないといけない。`.note-action` の高さや余白を増やしたら一緒に見る（E2E が検知する）
+- **Blog か OSS の付箋の `y` / `height` を変えると、隠れる境目が動く。** リファレンスの
+  高さで入らなくなると、どの画面でも出なくなる（`test/layout.test.ts` の
+  「Blog の下には、リファレンスの高さで RSS のリンクが入る」が検知する）
+- `e2e/render.spec.ts` の「Blog の付箋の下に RSS へのリンクが出る」と
+  「低い画面では RSS のリンクを出さず、OSS の付箋に重ねない」が見ている
+
+**付箋の下のボタンに共通すること**（`Interests` / `Copy` / `RSS`。ほかの案は
 [issue #43](https://github.com/kan/fushihara.net/issues/43)）:
 
 - 見た目はクラス `note-action`（`src/style.css`）。色は `shared/tokens.css` のトークン
@@ -359,7 +382,10 @@ wema（kan/wema）の issue にする（経緯は
   「接続線も折り畳みボタンも出ず、広げると接続線が戻る」）
 - **768px 未満では、列がこの領域の高さを空ける。** 列の間隔は、付箋の下の領域
   （`.wema-note-under`。この領域と `noteLinks` のボタンが入る）の下から数える
-- **768px 以上では、wema はこの領域の場所を空けない。** 下に付箋がある場所へ置くと重なる
+- **768px 以上では、wema はこの領域の場所を空けない。** 下に付箋がある場所へ置くと重なる。
+  すぐ下に付箋があるなら、`RSS` のリンクと同じく `gapBelow()` で間隔を見てから出す。
+  `Interests` と `Copy` は見ていない（下が空いているため。高さ 450px ほどを下回る
+  ウィンドウでは重なりうる）
 
 **畳む辺は 1 本のエッジが独占していないといけない。** wema の折り畳みボタンは
 ノートの辺ごとに出て、**その辺のエッジが全部畳まれているときだけ件数バッジ**になる

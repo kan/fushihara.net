@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { boardData, EMAIL, EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
-import { MARGIN, MOBILE_GAP, MOBILE_TOP, mobileOrder } from '../src/layout';
+import { ACCESSORY_ROOM, MARGIN, MOBILE_GAP, MOBILE_TOP, mobileOrder } from '../src/layout';
 
 // 外部 API はモックする。CI を api.github.com の生存とレートリミット、ブログ Worker の
 // 応答に依存させないため。Worker 側のプロキシ挙動は test/worker.test.ts が担当する。
@@ -186,6 +186,16 @@ test('コピーのあとに拒まれたら、前の「Copied」を残さない',
   expect(await page.getByRole('status').textContent()).toBe('');
 });
 
+test('Blog の付箋の下に RSS へのリンクが出る', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  // デスクトップでも縦積みでも出す。行き先は blog/CONTRACT.md にある公開 URL
+  const rss = page.locator(`${NOTE}[data-note-id="blog"] a.note-action`);
+  await expect(rss).toHaveText('RSS');
+  await expect(rss).toHaveAttribute('href', '/blog/rss.xml');
+  await expect(rss).toHaveAttribute('target', '_blank');
+});
+
 test('付箋の中身がはみ出さない（縦スクロールが出ない）', async ({ page }) => {
   await gotoAndSettle(page);
 
@@ -356,6 +366,30 @@ test.describe('デスクトップ', () => {
     // 戻ると board-data.ts の折り畳みへ戻るので、ボタンも畳んだ表示で戻る。
     await page.setViewportSize({ width: 1400, height: 900 });
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('低い画面では RSS のリンクを出さず、OSS の付箋に重ねない', async ({ page }) => {
+    await gotoAndSettle(page);
+    const rss = page.locator(`${NOTE}[data-note-id="blog"] a.note-action`);
+
+    // 1400x900 では Blog と OSS の間に入る
+    const boxes = await noteBoxes(page);
+    const box = (await rss.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(boxes.blog.y + boxes.blog.h);
+    expect(box.y + box.height).toBeLessThanOrEqual(boxes.oss.y);
+    // 出すかどうかは「間隔が ACCESSORY_ROOM 以上か」で決める。リンクの実際の高さが
+    // それを超えると、出す判定のまま OSS の付箋に乗る
+    const room = await page.locator(`${NOTE}[data-note-id="blog"] .wema-note-accessory`)
+      .evaluate((el) => el.getBoundingClientRect().height);
+    expect(room).toBeLessThanOrEqual(ACCESSORY_ROOM);
+
+    // 768px 以上では wema が付箋の下の場所を空けない。座標は高さに比例して縮むが
+    // 付箋の高さは縮まないので、低い画面では OSS の付箋の上に乗る
+    await page.setViewportSize({ width: 1400, height: 740 });
+    await expect(rss).toHaveCount(0);
+
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect(rss).toHaveCount(1);
   });
 
   test('幅を狭めると 1 カラムに再配置され、畳まれたエッジも開く', async ({ page }) => {
