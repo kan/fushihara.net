@@ -355,14 +355,16 @@ describe('/api/blog', () => {
     expect(new URL(blogService.mock.calls[0][0] as string).searchParams.get('limit')).toBe('3');
   });
 
-  it('ローカル (dev / preview) では公開 URL を直接読む', async () => {
+  // 2 つ目は roji run が付けるホスト名（npm run dev:roji）。*.localhost も dev。
+  it.each([
+    'http://localhost:5173/api/blog',
+    'https://fushihara.kan.localhost/api/blog',
+  ])('ローカル (dev / preview) では公開 URL を直接読む: %s', async (local) => {
     // dev には別 Worker のセッションが無く、binding は 503 しか返さない
     upstream.mockResolvedValueOnce(new Response(postsJson([post]), { status: 200 }));
 
     const ctx = createExecutionContext();
-    const request = new Request(
-      'http://localhost:5173/api/blog',
-    ) as unknown as Parameters<typeof worker.fetch>[0];
+    const request = new Request(local) as unknown as Parameters<typeof worker.fetch>[0];
     const res = await worker.fetch(request, env, ctx);
     await waitOnExecutionContext(ctx);
 

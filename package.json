@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "dev:roji": "roji run fushihara -- vite dev --port {port} --strictPort",
     "build": "wrangler types && tsc -b && vite build",
     "preview": "npm run build && vite preview",
     "deploy": "npm run build && wrangler deploy",

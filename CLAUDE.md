@@ -48,6 +48,7 @@ Worker 名だけ `fushihara-blog` に寄せた。名前を揃えるために記�
 npm install
 npm run dev      # vite dev。localhost:5173。@cloudflare/vite-plugin が workerd 上で
                  # /api/* を実行するので、API も含めてローカルで動く
+npm run dev:roji # 同じ dev サーバーを roji run 経由で起動する。https://fushihara.kan.localhost/
 npm run build    # wrangler types → tsc -b（型チェックのみ）→ vite build
 npm run preview  # ビルドしたものを workerd で配信（localhost:4173）
 npm run deploy   # build して wrangler deploy
@@ -56,6 +57,26 @@ npm test         # Vitest。worker/ は実 workerd 上で動く
 npm run test:e2e # Playwright。本番ビルドを preview で配信して desktop / mobile を検証
 npm run typecheck
 ```
+
+**本体のローカルサーバーを起動するときは `npm run dev:roji` を使う。**
+[roji](https://github.com/kan/roji)（ローカル開発用のリバースプロキシ）が空きポートを
+選び、`https://fushihara.kan.localhost/` をそこへ向ける。ポートが毎回変わるので、
+ほかの dev サーバーと 5173 を取り合わない。
+
+- **ユーザーに伝える URL は `https://fushihara.kan.localhost/`。** ホスト名の
+  `kan.localhost` はユーザーの roji の設定（`domain`）で決まる。実際の URL とポートは、
+  起動ログの 1 行目（`roji: https://… -> localhost:<port>`）に出る
+- **Playwright MCP のブラウザは roji の証明書を信頼しない**
+  （`ERR_CERT_AUTHORITY_INVALID`）。自分でブラウザから確かめるときは、起動ログの
+  `http://localhost:<port>/` を開く。同じサーバーなので中身は同じ
+- roji が入っていない環境（`roji` コマンドが無い、`roji health` が正常を返さない）では
+  `npm run dev` を使う
+- **スクリプトの `--strictPort` を外さないこと。** 外すと、ポートがふさがっていたときに
+  Vite が別のポートで起動し、roji のホスト名が何も無いポートを指す
+- E2E は関係しない（`npm run test:e2e` は自分で `preview` を起動する）
+- **`/api/blog` は `*.localhost` をローカルとして扱う**（`worker/api.ts` の `isLocal()`）。
+  外すと、roji のホスト名で開いたときだけ Blog の付箋が静的テキストのままになる
+  （「取りに行き方（同一ゾーンの罠）」参照）
 
 ブログは独立したプロジェクト。**CMS 本体の lily はこのリポジトリに無い**
 （`@kanf/lily`。実体は [kan/lily](https://github.com/kan/lily)）ので、
@@ -447,7 +468,8 @@ origin へ向かう**。このゾーンに origin は無いので 522（接続�
 
 そのため `wrangler.jsonc` の `services`（`BLOG` → `fushihara-blog`）でブログ
 Worker を直接呼ぶ。ローカルにはそのセッションが無く binding は 503 しか返さないので、
-`worker/api.ts` の `isLocal()` が `localhost` / `127.0.0.1` のときだけ公開 URL への
+`worker/api.ts` の `isLocal()` が `localhost` / `127.0.0.1` / `*.localhost`
+（roji run が付けるホスト名）のときだけ公開 URL への
 素の fetch に切り替える（同一ゾーンの制限は本番のエッジの話なので、ローカルからは
 普通に読める）。両方の経路は `test/worker.test.ts` で固定してある。
 

@@ -174,8 +174,14 @@ function toPosts(body: unknown, limit: number): BlogPost[] {
   return posts;
 }
 
-/** dev / preview には別 Worker のセッションが無く、binding は 503 を返すだけになる */
-const isLocal = (url: URL) => url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+/**
+ * dev / preview には別 Worker のセッションが無く、binding は 503 を返すだけになる。
+ * `*.localhost` は roji run が dev サーバーへ付けるホスト名（npm run dev:roji）
+ */
+const isLocal = (url: URL) =>
+  url.hostname === 'localhost' ||
+  url.hostname === '127.0.0.1' ||
+  url.hostname.endsWith('.localhost');
 
 export const blog = async (url: URL, env: Env): Promise<Response> => {
   const count = positiveInt(url, 'count', 5, 20);
