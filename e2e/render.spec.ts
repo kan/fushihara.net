@@ -334,7 +334,8 @@ test.describe('モバイル', () => {
     const footers = await page.$$eval(NOTE, (els) =>
       Object.fromEntries(els.map((el) => [
         el.getAttribute('data-note-id') ?? '',
-        Math.round(el.querySelector(':scope > .wema-note-footer')?.getBoundingClientRect().height ?? 0),
+        // 直下の子として探さないこと。wema 0.16 から .wema-note-under の中に入った
+        Math.round(el.querySelector('.wema-note-footer')?.getBoundingClientRect().height ?? 0),
       ])),
     );
     expect(boxes[mobileOrder[0]].y).toBe(MOBILE_TOP);

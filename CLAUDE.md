@@ -108,6 +108,24 @@ E2E で踏みやすい罠が 2 つある。
   OS 設定の変化を 2 段階で試すときは、1 段ずつ発火を確認してから次へ進める
   （`e2e/theme.spec.ts` の「保存だけ失敗する環境でも〜」参照）
 
+## wema と lily は最新版を取り込む
+
+**`@kanf/wema`（本体）と `@kanf/lily`（`blog/`）は、新しい版が出たら取り込んで
+テストする。** dependabot の週次の PR を待たない。
+
+1. 上げる。wema はリポジトリ直下で `npm install @kanf/wema@latest`、lily は `blog/` で
+   `npm install @kanf/lily@latest`
+2. 変更点を読む。リリースノートが空のときは、タグの間のコミットと README を読む
+   （`gh api repos/kan/wema/compare/v<旧>...v<新>`）。**このサイトで使える機能が
+   足されていたら、取り込みを検討する**
+3. テストを通す。wema は `npm run typecheck && npm test && npm run test:e2e`、
+   lily は `blog/` で `npm run typecheck && npm test && npm run test:e2e`
+4. 落ちたテストは、原因がこのサイトの側（テストの前提、CSS の上書き）か、wema / lily の
+   側かを切り分ける。**wema / lily の側の問題と、利用側として不便だった点は、それぞれの
+   リポジトリ（kan/wema、kan/lily）の issue にする。**
+
+コミットと push は「コミット前の手順」に従う（ユーザーの承認を得てから）。
+
 ## コミット前の手順
 
 **コード変更を含むコミットの前に、次を順に実行する。**
