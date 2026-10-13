@@ -18,6 +18,9 @@ const C = {
   poweredby: '#555',   // Subtle gray
 } as const;
 
+/** Email 付箋のアドレス。付箋の下の「Copy」ボタン（main.ts）も同じものを入れる */
+export const EMAIL = 'kan.fushihara@gmail.com';
+
 /**
  * Powered by 付箋のアイコン 1 つ。**SVG を data URI にしてリンクで包むだけ。**
  *
@@ -131,7 +134,7 @@ export const boardData: WemaBoardData = {
       id: 'email',
       x: 530, y: 20,
       width: 200, height: 80,
-      text: '<b>Email</b><br><a href="mailto:kan.fushihara@gmail.com">kan.fushihara@gmail.com</a>',
+      text: `<b>Email</b><br><a href="mailto:${EMAIL}">${EMAIL}</a>`,
       color: C.email,
       zIndex: 1,
     },

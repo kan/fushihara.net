@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { boardData, EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
+import { boardData, EMAIL, EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
 import { MARGIN, MOBILE_GAP, MOBILE_TOP, mobileOrder } from '../src/layout';
 
 // 外部 API はモックする。CI を api.github.com の生存とレートリミット、ブログ Worker の
@@ -130,6 +130,60 @@ test('連絡先はデスクトップでも畳まれていない', async ({ page 
   const link = page.getByRole('link', { name: 'kan.fushihara@gmail.com' });
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute('href', 'mailto:kan.fushihara@gmail.com');
+});
+
+test('Email の付箋の下のボタンで、アドレスをコピーできる', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await gotoAndSettle(page);
+
+  // mailto のリンクは、メーラーを設定していない訪問者には何も起こさない。
+  // デスクトップでも縦積みでも出す（main.ts の renderNoteAccessory）。
+  const copy = page.locator(`${NOTE}[data-note-id="email"] .note-action`);
+  await expect(copy).toHaveText('Copy');
+
+  await copy.click();
+
+  await expect(copy).toHaveText('Copied');
+  // 付箋のリンクと同じアドレスであること（board-data.ts の EMAIL が両方の元）
+  const href = await noteContent(page, 'email').locator('a').getAttribute('href');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(EMAIL);
+  expect(href).toBe(`mailto:${EMAIL}`);
+});
+
+test('コピーを拒まれたら、ボタンは「Copied」と言わない', async ({ page }) => {
+  await page.addInitScript(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new Error('denied'));
+  });
+  await gotoAndSettle(page);
+
+  const copy = page.locator(`${NOTE}[data-note-id="email"] .note-action`);
+  await copy.click();
+  // 拒否は非同期に届くので、届くまで待ってから見る
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 100)));
+
+  // 再試行する toHaveText() で見ないこと。「Copied」は 2 秒で「Copy」に戻るので、
+  // 待つと通ってしまう（timeout: 0 は「待たない」ではなく「無期限に待つ」）
+  expect(await copy.textContent()).toBe('Copy');
+});
+
+test('コピーのあとに拒まれたら、前の「Copied」を残さない', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await gotoAndSettle(page);
+
+  const copy = page.locator(`${NOTE}[data-note-id="email"] .note-action`);
+  await copy.click();
+  await expect(copy).toHaveText('Copied');
+  // 読み上げにも伝える（ボタンの名前が変わるだけでは読まれない）
+  await expect(page.getByRole('status')).toHaveText('Copied');
+
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new Error('denied'));
+  });
+  await copy.click();
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 100)));
+
+  expect(await copy.textContent()).toBe('Copy');
+  expect(await page.getByRole('status').textContent()).toBe('');
 });
 
 test('付箋の中身がはみ出さない（縦スクロールが出ない）', async ({ page }) => {
@@ -374,14 +428,14 @@ test.describe('モバイル', () => {
     await gotoAndSettle(page);
 
     // 積むのは wema（setStacked()）で、渡した開始位置と間隔が効いていることを見る。
-    // 間隔は、付箋の下に並ぶボタン（noteLinks）の下から数える。ボタンは付箋の枠の
-    // 外に出るので、付箋の矩形には入らない
+    // 間隔は、付箋の下の領域（.wema-note-under）の下から数える。ここに入るのは
+    // noteLinks のボタンと、Email の付箋の「Copy」ボタン（renderNoteAccessory）。
+    // 付箋の枠の外に出るので、付箋の矩形には入らない
     const boxes = await noteBoxes(page);
     const footers = await page.$$eval(NOTE, (els) =>
       Object.fromEntries(els.map((el) => [
         el.getAttribute('data-note-id') ?? '',
-        // 直下の子として探さないこと。wema 0.16 から .wema-note-under の中に入った
-        Math.round(el.querySelector('.wema-note-footer')?.getBoundingClientRect().height ?? 0),
+        Math.round(el.querySelector('.wema-note-under')?.getBoundingClientRect().height ?? 0),
       ])),
     );
     expect(boxes[mobileOrder[0]].y).toBe(MOBILE_TOP);
@@ -465,7 +519,8 @@ test.describe('モバイル', () => {
     // wema は、表示だけの縦積み（setStacked()）の間、接続線と畳むボタンを出さない。
     // データごと積む stackNotes() に戻すと、線が付箋の裏を通って隙間に切れ端が見え、
     // 画面の端で切れたボタンが付箋の四辺に出る
-    const edges = page.locator('.wema-viewport svg path:visible');
+    // 接続線の層（.wema-edges）に限る。付箋の下のボタンにも SVG のアイコンがある
+    const edges = page.locator('.wema-viewport .wema-edges path:visible');
     await expect(edges).toHaveCount(0);
     await expect(page.locator('.wema-note-collapse-btn:visible')).toHaveCount(0);
 

@@ -319,8 +319,47 @@ wema（kan/wema）の issue にする（経緯は
   `refreshNoteAccessory('center')` を呼ぶ
 - **ボタンは左へ寄せてある。** バッジは下辺の中央に出るので、中央へ置くと重なる
 - 件数バッジは残してある（wema の機能のデモ）。入口が 2 つあるのは意図どおり
-- この領域を使うほかの案は [issue #43](https://github.com/kan/fushihara.net/issues/43)
 - `e2e/render.spec.ts` の「中央の付箋の下のボタンで Interests を開閉でき、バッジにも追従する」が見ている
+
+**Email の付箋の下には、アドレスをコピーする `Copy` ボタンが出る。** 同じ
+`renderNoteAccessory` で描く。`mailto:` のリンクは、メーラーを設定していない訪問者には
+何も起こさないため。
+
+- **768px 未満でも出す**（`Interests` のボタンと違う）。縦積みでは、`Copy` の下に
+  `noteLinks` のボタンが並ぶ
+- **アドレスは `board-data.ts` の `EMAIL` が正。** 付箋のリンクとボタンが同じ値を使う
+- コピーできたら 2 秒間 `Copied` と出す。**拒まれたときは `Copied` と出さない**
+  （直前のコピーで出ていた `Copied` も消す）
+- **`Copied` かどうかは `main.ts` の `emailCopied` に持ち、ボタンはそこから描く**
+  （`setEmailCopied()` が `refreshNoteAccessory('email')` を呼ぶ）。`Interests` の
+  ボタンがエッジの状態から描くのと同じ。**クリックのハンドラの中でボタンの文字を
+  書き換えないこと。** wema が領域を描き直すと、書き換えた表示が消える
+- **読み上げには、`<body>` の直下に置いた `role="status"` の要素で伝える。**
+  フォーカス中のボタンの名前が変わっても読まれないため。付箋の下の領域には置けない
+  （描き直しで作り直されると、読まれない）
+- **`navigator.clipboard` が無い環境ではボタンを出さない**（HTTPS でも localhost でも
+  ないページ）。付箋のリンクは残る
+- `e2e/render.spec.ts` の「Email の付箋の下のボタンで、アドレスをコピーできる」
+  「コピーを拒まれたら、ボタンは「Copied」と言わない」「コピーのあとに拒まれたら、
+  前の「Copied」を残さない」が見ている
+- **「`Copied` と出ていない」を `toHaveText('Copy')` で見ないこと。** 再試行するので、
+  2 秒後に `Copy` へ戻ったところで通る。`{ timeout: 0 }` は「待たない」ではなく
+  「無期限に待つ」なので、付けても同じ（壊して確認して見つけた）。
+  `expect(await locator.textContent()).toBe('Copy')` で 1 回だけ見る
+
+**付箋の下のボタンに共通すること**（`Interests` と `Copy`。ほかの案は
+[issue #43](https://github.com/kan/fushihara.net/issues/43)）:
+
+- 見た目はクラス `note-action`（`src/style.css`）。色は `shared/tokens.css` のトークン
+- **ボタンには `data-wema-focus-key` を付ける。** wema は領域を描き直すたびに中身を
+  作り直すので、付けないとキーボードのフォーカスが外れる
+- **アイコンは inline の SVG で入れられる**（この領域はサニタイザを通らない）。
+  そのため、**ボードの中の SVG を `svg path` のような広いセレクタで指さないこと。**
+  接続線だけを指すときは `.wema-edges path`（`src/style.css` の明滅と、E2E の
+  「接続線も折り畳みボタンも出ず、広げると接続線が戻る」）
+- **768px 未満では、列がこの領域の高さを空ける。** 列の間隔は、付箋の下の領域
+  （`.wema-note-under`。この領域と `noteLinks` のボタンが入る）の下から数える
+- **768px 以上では、wema はこの領域の場所を空けない。** 下に付箋がある場所へ置くと重なる
 
 **畳む辺は 1 本のエッジが独占していないといけない。** wema の折り畳みボタンは
 ノートの辺ごとに出て、**その辺のエッジが全部畳まれているときだけ件数バッジ**になる
