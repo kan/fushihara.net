@@ -21,6 +21,9 @@ const board = new WemaBoard({
   data: boardData,
   theme: 'card',
   createOnDblClick: false,
+  // Only shows while the column is up (below 768px), where wema hides the
+  // edges: each note lists the notes it connects to, and a tap goes there.
+  noteLinks: true,
 });
 
 // --- Responsive repositioning ---

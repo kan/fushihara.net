@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
+import { boardData, EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
 import { MARGIN, MOBILE_GAP, MOBILE_TOP, mobileOrder } from '../src/layout';
 
 // 外部 API はモックする。CI を api.github.com の生存とレートリミット、ブログ Worker の
@@ -52,6 +52,14 @@ async function noteBoxes(page: Page) {
   );
 }
 
+/**
+ * 付箋の本文。見出しの文字（hasText）で付箋を探さないこと。モバイルでは中央の付箋の
+ * 下に、つながっている付箋の見出しがボタンで並ぶので（noteLinks）、2 枚に一致する
+ */
+function noteContent(page: Page, id: string) {
+  return page.locator(`${NOTE}[data-note-id="${id}"] .wema-note-content`);
+}
+
 /** 動的データの反映まで待つ */
 async function gotoAndSettle(page: Page) {
   await page.goto('/');
@@ -72,14 +80,14 @@ test('ボードが描画され、全ノートが表示される', async ({ page 
 test('取得したデータが対応するノートに反映される', async ({ page }) => {
   await gotoAndSettle(page);
 
-  const blogNote = page.locator(NOTE).filter({ hasText: 'Blog' });
+  const blogNote = noteContent(page, 'blog');
   await expect(blogNote).toContainText('モック記事タイトル');
   // pubDate は JST で出す (UTC 15:00 は翌日)
   await expect(blogNote).toContainText('2026-08-25');
-  const ossNote = page.locator(NOTE).filter({ hasText: 'OSS Projects' });
+  const ossNote = noteContent(page, 'oss');
   for (const name of OSS_REPOS) await expect(ossNote).toContainText(name);
   await expect(ossNote).toContainText('モックの説明');
-  const skillsNote = page.locator(NOTE).filter({ hasText: 'Skills' });
+  const skillsNote = noteContent(page, 'skills');
   await expect(skillsNote).toContainText('MockLang');
   // 集計した言語のあとに手書きの道具が続く。重複は落とす
   for (const skill of EXTRA_SKILLS) await expect(skillsNote).toContainText(skill);
@@ -196,10 +204,10 @@ test('API が全滅しても静的な内容は残る', async ({ page }) => {
   await expect(page.locator(NOTE).first()).toBeVisible();
 
   // board-data.ts の静的テキストがそのまま出ている
-  const ossNote = page.locator(NOTE).filter({ hasText: 'OSS Projects' });
+  const ossNote = noteContent(page, 'oss');
   for (const name of OSS_REPOS) await expect(ossNote).toContainText(name);
 
-  const blogNote = page.locator(NOTE).filter({ hasText: 'Blog' });
+  const blogNote = noteContent(page, 'blog');
   await expect(blogNote).toContainText('Loading...');
   // API を 1 つも要らない唯一の行き先なので、全滅時こそ導線を残す
   await expect(blogNote.getByRole('link', { name: 'more...' })).toHaveAttribute('href', '/blog/');
@@ -319,13 +327,55 @@ test.describe('モバイル', () => {
   test('MOBILE_TOP から始まり、MOBILE_GAP ずつ空けて積まれる', async ({ page }) => {
     await gotoAndSettle(page);
 
-    // 積むのは wema（setStacked()）で、渡した開始位置と間隔が効いていることを見る
+    // 積むのは wema（setStacked()）で、渡した開始位置と間隔が効いていることを見る。
+    // 間隔は、付箋の下に並ぶボタン（noteLinks）の下から数える。ボタンは付箋の枠の
+    // 外に出るので、付箋の矩形には入らない
     const boxes = await noteBoxes(page);
+    const footers = await page.$$eval(NOTE, (els) =>
+      Object.fromEntries(els.map((el) => [
+        el.getAttribute('data-note-id') ?? '',
+        Math.round(el.querySelector(':scope > .wema-note-footer')?.getBoundingClientRect().height ?? 0),
+      ])),
+    );
     expect(boxes[mobileOrder[0]].y).toBe(MOBILE_TOP);
     for (let i = 1; i < mobileOrder.length; i++) {
-      const prev = boxes[mobileOrder[i - 1]];
-      expect(boxes[mobileOrder[i]].y, mobileOrder[i]).toBe(prev.y + prev.h + MOBILE_GAP);
+      const prevId = mobileOrder[i - 1];
+      const prev = boxes[prevId];
+      expect(boxes[mobileOrder[i]].y, mobileOrder[i])
+        .toBe(prev.y + prev.h + footers[prevId] + MOBILE_GAP);
     }
+  });
+
+  test('接続線の代わりに、つながっている付箋へのボタンが付箋の下に出る', async ({ page }) => {
+    await gotoAndSettle(page);
+
+    // 縦 1 列では接続線が出ないので、wema（noteLinks）が相手の付箋をボタンで並べる。
+    // 中央の付箋は全部の付箋につながっているので、ここが目次になる
+    const links = (id: string) => page.locator(`${NOTE}[data-note-id="${id}"] .wema-note-link`);
+    await expect(links('center')).toHaveCount(boardData.edges.length);
+    await expect(links('interests')).toHaveText(/KAN Fushihara/);
+    // 接続線の無い付箋には出ない
+    await expect(links('poweredby')).toHaveCount(0);
+
+    // 文字が背景に沈んでいないこと。wema の既定は白い板に濃い文字で、テーマに
+    // 追従しない。矢印は --wema-anchor-color（このサイトでは透明）で塗られる
+    const colors = await links('center').first().evaluate((el) => ({
+      text: getComputedStyle(el).color,
+      arrow: getComputedStyle(el.querySelector('.wema-note-link-arrow')!).color,
+      note: getComputedStyle(el.closest('.wema-note')!).color,
+    }));
+    expect(colors.text).toBe(colors.note);
+    expect(colors.arrow).not.toMatch(/rgba\(.*, 0\)|transparent/);
+
+    // 押すと、相手の付箋までページがスクロールする。最後の Interests は最初は画面の外
+    const interests = page.locator(`${NOTE}[data-note-id="interests"]`);
+    await expect(interests).not.toBeInViewport();
+    await links('center').filter({ hasText: 'Interests' }).click();
+    await expect(interests).toBeInViewport({ ratio: 1 });
+
+    // 出るのは積んでいる間だけ。広げると接続線に戻る
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect(page.locator('.wema-note-link:visible')).toHaveCount(0);
   });
 
   test('ホイールでページが最後の付箋までスクロールする', async ({ page }) => {
