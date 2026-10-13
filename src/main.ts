@@ -6,8 +6,9 @@ import { initTheme } from './theme-toggle';
 import { fetchBlogPosts, fetchGitHubRepos, fetchGitHubLanguages } from './api';
 import { escapeHtml, moreLink } from './note-html';
 import { isoDate } from '../shared/date';
+import { siGithub } from 'simple-icons';
 import {
-  ACCESSORY_ROOM, MARGIN, MOBILE_GAP, MOBILE_TOP,
+  BELOW, MARGIN, MOBILE_GAP, MOBILE_TOP,
   gapBelow, getDesktopLayout, isMobile, mobileOrder, noteBases,
 } from './layout';
 
@@ -21,8 +22,17 @@ const COPIED_MS = 2000;
 // Set by applyLayout(). Declared ahead of the board because the board's
 // renderNoteAccessory reads it.
 let mobile: boolean | undefined;
-// Whether the RSS link under the Blog note has room. Also set by applyLayout().
-let showRss = false;
+
+// The notes in BELOW (layout.ts) that have room under them right now, and the
+// timers of the ones about to. Also set by applyLayout().
+const roomy = new Set<string>();
+const roomySoon = new Map<string, number>();
+
+// Where a note's content came from, once it has come: the API, or the copy
+// the Worker keeps for when the API is down. Unset while the note still shows
+// the text from board-data.ts.
+type Source = 'live' | 'backup';
+const sources = new Map<string, Source>();
 
 // Says "Copied" to a screen reader. Outside the board: what is under a note is
 // rebuilt on every redraw, and a live region has to stay put to be read.
@@ -58,8 +68,15 @@ const board = new WemaBoard({
       el.append(copyEmailButton());
       return true;
     }
-    if (note.id === 'blog' && showRss) {
+    // The rest have a note right below them (BELOW) and show only with room.
+    if (!roomy.has(note.id)) return false;
+    if (note.id === 'blog') {
       el.append(noteLink('rss', 'RSS', BLOG_RSS, ICON_RSS));
+      return true;
+    }
+    const source = sources.get(note.id);
+    if (source) {
+      el.append(sourceLabel(source));
       return true;
     }
     return false;
@@ -109,6 +126,19 @@ function dressAction<T extends HTMLElement>(el: T, focusKey: string, label: stri
   }
   el.append(label);
   return el;
+}
+
+// Says where the note above got its content. Not a control: nothing to press.
+function sourceLabel(source: Source): HTMLSpanElement {
+  const label = document.createElement('span');
+  label.className = 'note-source';
+  // A brand mark is a filled shape, unlike the stroked icons above. The path
+  // is simple-icons' own.
+  label.innerHTML =
+    '<svg class="note-action-icon" viewBox="0 0 24 24" width="12" height="12" ' +
+    `fill="currentColor" aria-hidden="true"><path d="${siGithub.path}"/></svg>`;
+  label.append(source === 'backup' ? 'via GitHub API (saved copy)' : 'via GitHub API');
+  return label;
 }
 
 // The count badge under the centre note says how many notes are folded away,
@@ -190,7 +220,7 @@ function applyLayout(duration = 0) {
 
   if (nowMobile) {
     // The column makes room for what is under a note.
-    setShowRss(true, 0);
+    for (const id of Object.keys(BELOW)) setRoomy(id, true, 0);
     // Display only: the notes keep their desktop positions and widths. wema
     // hides the edges and their collapse buttons while the column is up.
     board.setStacked({
@@ -208,18 +238,25 @@ function applyLayout(duration = 0) {
   const targets = getDesktopLayout(vw, window.innerHeight, bases);
   board.moveNotes([...targets].map(([id, l]) => ({ id, ...l })), { duration });
   board.setStacked(null, { duration });
-  // The OSS note sits right under the Blog note, and on a short window the
-  // link would land on it.
-  setShowRss(gapBelow('blog', 'oss', targets, bases) >= ACCESSORY_ROOM, duration);
+  for (const [id, { note, room }] of Object.entries(BELOW)) {
+    setRoomy(id, gapBelow(id, note, targets, bases) >= room, duration);
+  }
 }
 
-function setShowRss(fits: boolean, moving: number) {
-  if (fits === showRss) return;
-  showRss = fits;
+function setRoomy(id: string, fits: boolean, moving: number) {
+  window.clearTimeout(roomySoon.get(id));
+  roomySoon.delete(id);
+  if (fits === roomy.has(id)) return;
+  const apply = () => {
+    if (fits) roomy.add(id);
+    else roomy.delete(id);
+    board.refreshNoteAccessory(id);
+  };
   // Showing waits for the notes to finish moving apart: until then they are
-  // still as close as they were. Hiding does not wait.
-  if (fits && moving) window.setTimeout(() => board.refreshNoteAccessory('blog'), moving);
-  else board.refreshNoteAccessory('blog');
+  // still as close as they were. The set changes only then too, so a redraw
+  // in the meantime (data arriving) does not show it early. Hiding does not wait.
+  if (fits && moving) roomySoon.set(id, window.setTimeout(apply, moving));
+  else apply();
 }
 
 // Initial layout (instant)
@@ -257,8 +294,8 @@ async function loadDynamicData() {
   }
 
   // GitHub → OSS Projects（並びは board-data.ts の OSS_REPOS が決める）
-  if (repos.status === 'fulfilled' && repos.value.length > 0) {
-    const byName = new Map(repos.value.map((r) => [r.name, r]));
+  if (repos.status === 'fulfilled' && repos.value.items.length > 0) {
+    const byName = new Map(repos.value.items.map((r) => [r.name, r]));
     const items = OSS_REPOS.map((name) => {
       // star は出さない。顔ぶれは手で選んでいるので、数字は並びの根拠にならない。
       const desc = byName.get(name)?.description;
@@ -268,16 +305,24 @@ async function loadDynamicData() {
       text: `<b>OSS Projects</b><br><br>${items}` +
         moreLink(`https://github.com/${GITHUB_USER}?tab=repositories`),
     });
+    setSource('oss', repos.value.backup);
   }
-
   // GitHub Languages → Skills（集計した言語のあとに、手書きの道具を足す）
-  if (languages.status === 'fulfilled' && languages.value.length > 0) {
-    const names = languages.value.map((l) => l.name);
+  if (languages.status === 'fulfilled' && languages.value.items.length > 0) {
+    const names = languages.value.items.map((l) => l.name);
     const items = [...names, ...EXTRA_SKILLS.filter((s) => !names.includes(s))]
       .map(escapeHtml)
       .join(' / ');
     board.updateNote('skills', { text: `<b>Skills</b><br><br>${items}` });
+    setSource('skills', languages.value.backup);
   }
+}
+
+// Only the notes renderNoteAccessory draws a source for. Both are in BELOW:
+// one that is not would never be roomy, and its label would never show.
+function setSource(id: 'oss' | 'skills', backup: boolean) {
+  sources.set(id, backup ? 'backup' : 'live');
+  board.refreshNoteAccessory(id);
 }
 
 loadDynamicData().finally(() => {

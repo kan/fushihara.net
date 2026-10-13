@@ -359,7 +359,7 @@ wema（kan/wema）の issue にする（経緯は
   **ウィンドウの高さ（`innerHeight`）が 780px を下回ると隠れる**
   （`test/layout.test.ts` の「RSS のリンクが出るのは高さ 780px から」）
 - 出すかどうかは `applyLayout()` が resize のたびに決め、変わったときだけ
-  `refreshNoteAccessory('blog')` を呼ぶ（`main.ts` の `setShowRss()`）。
+  `refreshNoteAccessory()` を呼ぶ（`src/layout.ts` の `BELOW` と、`main.ts` の `setRoomy()`）。
   **出すほうは、付箋の移動（300ms）が終わってから描く。** すぐ描くと、OSS の付箋が
   まだ近い位置にいる間、リンクが上に乗る。隠すほうは待たない
 - `ACCESSORY_ROOM` は、リンクの実際の高さ（`.wema-note-accessory`。今は 34px）以上で
@@ -370,11 +370,35 @@ wema（kan/wema）の issue にする（経緯は
 - `e2e/render.spec.ts` の「Blog の付箋の下に RSS へのリンクが出る」と
   「低い画面では RSS のリンクを出さず、OSS の付箋に重ねない」が見ている
 
-**付箋の下のボタンに共通すること**（`Interests` / `Copy` / `RSS`。ほかの案は
+**Skills と OSS の付箋の下には、データの出どころ（`via GitHub API`）が出る。**
+ボタンではなく、押せない注記（`main.ts` の `sourceLabel()`、クラス `note-source`）。
+
+- **出すのは、API から取れて付箋を書き換えたときだけ。** `loadDynamicData()` が
+  `setSource()` を呼ぶ。API が落ちて `board-data.ts` の静的テキストのままの付箋には
+  出さない（取れていないのに「GitHub から」とは言わない）
+- **控えが返ったときは `via GitHub API (saved copy)`。** Worker が上流の失敗を
+  前回の控えで凌いだ場合で、`src/api.ts` のフェッチャが `X-Backup: hit` を `backup`
+  として返す（`Fetched<T>`）。付箋ごとに別の API なので、控えだったほうだけに出る
+- **Blog には出さない。** 自分のサイトの中身で、出どころは自明なため（ユーザーの判断）。
+  `fetchBlogPosts()` の戻り値は一覧のままで、`backup` を返さない
+- **文言を「GitHub のデータそのもの」と読める言い方に変えないこと。** OSS は顔ぶれを
+  手で選んでいて API から来るのは説明だけ、Skills は `EXTRA_SKILLS` を手で足している
+- **低い画面で隠す判定は RSS のリンクと同じ仕組み**（`src/layout.ts` の `BELOW`）。
+  Skills の下は Links、OSS の下は Powered by の付箋。文字 1 行なので、要る間隔は
+  `SOURCE_ROOM`（28px。実際の高さは今 21.4px）。隠れるのは、ウィンドウの高さが
+  Skills で 747px、OSS で 748px を下回ったとき（`test/layout.test.ts` が境目を固定）
+- **付箋の下に何かを足すとき、すぐ下に付箋があるなら `BELOW` に 1 行足す。**
+  足さないと `renderNoteAccessory` は何も描かない（`roomy` に入らないため）
+- `e2e/render.spec.ts` の「GitHub から取った付箋の下に、出どころが出る」
+  「上流が落ちて控えが返ったら、出どころにそう出る」「API が全滅しても静的な内容は残る」
+  が見ている
+
+**付箋の下に置くものに共通すること**（`Interests` / `Copy` / `RSS` / 出どころ。経緯は
 [issue #43](https://github.com/kan/fushihara.net/issues/43)）:
 
-- 見た目はクラス `note-action`（`src/style.css`）。色は `shared/tokens.css` のトークン
-- **ボタンには `data-wema-focus-key` を付ける。** wema は領域を描き直すたびに中身を
+- **押せるもの（ボタンとリンク）の見た目はクラス `note-action`、押せない注記は
+  `note-source`**（`src/style.css`）。色は `shared/tokens.css` のトークン
+- **押せるものには `data-wema-focus-key` を付ける。** wema は領域を描き直すたびに中身を
   作り直すので、付けないとキーボードのフォーカスが外れる
 - **アイコンは inline の SVG で入れられる**（この領域はサニタイザを通らない）。
   そのため、**ボードの中の SVG を `svg path` のような広いセレクタで指さないこと。**
@@ -383,9 +407,11 @@ wema（kan/wema）の issue にする（経緯は
 - **768px 未満では、列がこの領域の高さを空ける。** 列の間隔は、付箋の下の領域
   （`.wema-note-under`。この領域と `noteLinks` のボタンが入る）の下から数える
 - **768px 以上では、wema はこの領域の場所を空けない。** 下に付箋がある場所へ置くと重なる。
-  すぐ下に付箋があるなら、`RSS` のリンクと同じく `gapBelow()` で間隔を見てから出す。
-  `Interests` と `Copy` は見ていない（下が空いているため。高さ 450px ほどを下回る
-  ウィンドウでは重なりうる）
+  すぐ下に付箋があるなら、`src/layout.ts` の `BELOW` に 1 行足す（下の付箋と、要る高さ）。
+  `main.ts` の `renderNoteAccessory` は、`BELOW` にある付箋を間隔が足りるときだけ描く。
+  **`gapBelow()` を呼ぶ分岐を `main.ts` に直接足さないこと**
+- `Interests` と `Copy` は `BELOW` に入れていない（下が空いているため。高さ 450px ほどを
+  下回るウィンドウでは重なりうる）
 
 **畳む辺は 1 本のエッジが独占していないといけない。** wema の折り畳みボタンは
 ノートの辺ごとに出て、**その辺のエッジが全部畳まれているときだけ件数バッジ**になる

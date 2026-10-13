@@ -48,6 +48,21 @@ export function noteBases(data: WemaBoardData): Map<string, NoteBase> {
  */
 export const ACCESSORY_ROOM = 40;
 
+/** The same, for a line of small text there (where a note's data came from). */
+export const SOURCE_ROOM = 28;
+
+/**
+ * Notes with another one right below them on desktop, and the height of what
+ * main.ts puts under them. Positions scale with the window and heights do
+ * not, so on a short window it would land on the note below: it shows only
+ * while gapBelow() is at least `room`.
+ */
+export const BELOW: Record<string, { note: string; room: number }> = {
+  blog: { note: 'oss', room: ACCESSORY_ROOM },
+  skills: { note: 'links', room: SOURCE_ROOM },
+  oss: { note: 'poweredby', room: SOURCE_ROOM },
+};
+
 /**
  * Vertical space between two notes in a layout from getDesktopLayout(), the
  * upper one's bottom edge to the lower one's top. Positions scale with the

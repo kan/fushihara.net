@@ -177,6 +177,18 @@ html, body {
   cursor: pointer;
 }
 
+/* Where the note above got its content (sourceLabel in main.ts). Text, not a
+ * control, so it gets no pill. */
+.note-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .note-action-icon {
   color: var(--text-muted);
 }

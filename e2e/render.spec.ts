@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { boardData, EMAIL, EXTRA_SKILLS, OSS_REPOS } from '../src/board-data';
-import { ACCESSORY_ROOM, MARGIN, MOBILE_GAP, MOBILE_TOP, mobileOrder } from '../src/layout';
+import {
+  ACCESSORY_ROOM, MARGIN, MOBILE_GAP, MOBILE_TOP, SOURCE_ROOM, mobileOrder,
+} from '../src/layout';
 
 // 外部 API はモックする。CI を api.github.com の生存とレートリミット、ブログ Worker の
 // 応答に依存させないため。Worker 側のプロキシ挙動は test/worker.test.ts が担当する。
@@ -276,6 +278,33 @@ test('API が全滅しても静的な内容は残る', async ({ page }) => {
   // API を 1 つも要らない唯一の行き先なので、全滅時こそ導線を残す
   await expect(blogNote.getByRole('link', { name: 'more...' })).toHaveAttribute('href', '/blog/');
   expect(Object.keys(await noteBoxes(page))).toHaveLength(9);
+
+  // 取れていないので、「GitHub から来た」とは言わない。応答が全部返ってから見る
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.note-source')).toHaveCount(0);
+});
+
+test('GitHub から取った付箋の下に、出どころが出る', async ({ page }) => {
+  await gotoAndSettle(page);
+
+  // Skills と OSS だけ。Blog は自分のサイトの中身なので出さない（RSS のリンクが出る）
+  const source = (id: string) => page.locator(`${NOTE}[data-note-id="${id}"] .note-source`);
+  await expect(source('skills')).toHaveText('via GitHub API');
+  await expect(source('oss')).toHaveText('via GitHub API');
+  await expect(page.locator('.note-source')).toHaveCount(2);
+});
+
+test('上流が落ちて控えが返ったら、出どころにそう出る', async ({ page }) => {
+  // Worker は上流の失敗を前回の控えで凌ぎ、X-Backup: hit を付ける（worker/index.ts）。
+  // beforeEach の route より後に張ったほうが勝つ
+  await page.route('**/api/github-languages*', (r) =>
+    r.fulfill({ json: LANGUAGES, headers: { 'X-Backup': 'hit' } }));
+  await gotoAndSettle(page);
+
+  const source = (id: string) => page.locator(`${NOTE}[data-note-id="${id}"] .note-source`);
+  await expect(source('skills')).toHaveText('via GitHub API (saved copy)');
+  // 付箋ごとに別の API なので、控えだったほうだけに出る
+  await expect(source('oss')).toHaveText('via GitHub API');
 });
 
 test.describe('デスクトップ', () => {
@@ -382,14 +411,27 @@ test.describe('デスクトップ', () => {
     const room = await page.locator(`${NOTE}[data-note-id="blog"] .wema-note-accessory`)
       .evaluate((el) => el.getBoundingClientRect().height);
     expect(room).toBeLessThanOrEqual(ACCESSORY_ROOM);
+    // Skills と OSS の下の出どころも同じ判定で、こちらは SOURCE_ROOM
+    for (const id of ['skills', 'oss']) {
+      const h = await page.locator(`${NOTE}[data-note-id="${id}"] .wema-note-accessory`)
+        .evaluate((el) => el.getBoundingClientRect().height);
+      expect(h, id).toBeLessThanOrEqual(SOURCE_ROOM);
+    }
 
     // 768px 以上では wema が付箋の下の場所を空けない。座標は高さに比例して縮むが
     // 付箋の高さは縮まないので、低い画面では OSS の付箋の上に乗る
-    await page.setViewportSize({ width: 1400, height: 740 });
+    await page.setViewportSize({ width: 1400, height: 760 });
     await expect(rss).toHaveCount(0);
+    // 出どころは 1 行の文字で低いので、この高さではまだ入る
+    await expect(page.locator('.note-source')).toHaveCount(2);
+
+    // Skills の下には Links、OSS の下には Powered by の付箋がある
+    await page.setViewportSize({ width: 1400, height: 700 });
+    await expect(page.locator('.note-source')).toHaveCount(0);
 
     await page.setViewportSize({ width: 1400, height: 900 });
     await expect(rss).toHaveCount(1);
+    await expect(page.locator('.note-source')).toHaveCount(2);
   });
 
   test('幅を狭めると 1 カラムに再配置され、畳まれたエッジも開く', async ({ page }) => {

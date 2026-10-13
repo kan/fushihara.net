@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { boardData } from '../src/board-data';
 import {
   ACCESSORY_ROOM,
+  BELOW,
   MARGIN,
   MOBILE_BP,
   REF_H,
@@ -160,6 +161,17 @@ describe('gapBelow', () => {
     // CLAUDE.md に書いてある境目。Blog か OSS の付箋を動かすと変わる
     expect(gap(779)).toBeLessThan(ACCESSORY_ROOM);
     expect(gap(780)).toBeGreaterThanOrEqual(ACCESSORY_ROOM);
+  });
+
+  // 組と要る高さは BELOW から引く。手で写すと、BELOW を変えた日にここだけ古い組を見る。
+  // 境目の高さは CLAUDE.md に書いてある値で、付箋を動かすと変わる
+  const from: Record<string, number> = { blog: 780, skills: 747, oss: 748 };
+  it.each(Object.entries(BELOW))('%s の下に置くものが出る高さ', (upper, { note, room }) => {
+    const at = (vh: number) => gapBelow(upper, note, getDesktopLayout(REF_W, vh, bases), bases);
+    // リファレンスの高さで入らないと、どの画面でも出ない
+    expect(at(REF_H)).toBeGreaterThanOrEqual(room);
+    expect(at(from[upper] - 1)).toBeLessThan(room);
+    expect(at(from[upper])).toBeGreaterThanOrEqual(room);
   });
 });
 
