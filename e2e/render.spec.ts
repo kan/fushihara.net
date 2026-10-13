@@ -358,7 +358,7 @@ test.describe('モバイル', () => {
     await expect(links('poweredby')).toHaveCount(0);
 
     // 文字が背景に沈んでいないこと。wema の既定は白い板に濃い文字で、テーマに
-    // 追従しない。矢印は --wema-anchor-color（このサイトでは透明）で塗られる
+    // 追従しない（色は style.css の --wema-note-link-* で渡す）
     const colors = await links('center').first().evaluate((el) => ({
       text: getComputedStyle(el).color,
       arrow: getComputedStyle(el.querySelector('.wema-note-link-arrow')!).color,
@@ -372,6 +372,14 @@ test.describe('モバイル', () => {
     await expect(interests).not.toBeInViewport();
     await links('center').filter({ hasText: 'Interests' }).click();
     await expect(interests).toBeInViewport({ ratio: 1 });
+
+    // 戻った先の付箋が、左上に固定した見出しの下に潜らないこと。wema の既定の
+    // 余白（24px）だと、付箋の上端が見出しに重なる
+    await links('interests').click();
+    const center = page.locator(`${NOTE}[data-note-id="center"]`);
+    await expect(center).toBeInViewport({ ratio: 1 });
+    const brand = (await page.locator('.site-brand').boundingBox())!;
+    expect((await center.boundingBox())!.y).toBeGreaterThanOrEqual(brand.y + brand.height);
 
     // 出るのは積んでいる間だけ。広げると接続線に戻る
     await page.setViewportSize({ width: 1400, height: 900 });

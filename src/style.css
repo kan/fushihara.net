@@ -131,18 +131,16 @@ html, body {
 }
 
 /* Links to the connected notes, shown under a note while the column is up
- * (noteLinks in main.ts). wema's defaults are a white pill with dark text and
- * an arrow in --wema-anchor-color: the pill ignores the theme, and the arrow
- * is transparent here for the same reason as the collapse controls above. */
-.wema-note-link {
-  background: var(--note-bg);
-  border-color: var(--note-border);
-  color: var(--text);
-}
-
-.wema-note-link-arrow,
-.wema-note-link-label {
-  color: var(--text-muted);
+ * (noteLinks in main.ts). wema's defaults are a white pill with dark text,
+ * which ignores the theme. The accent paints the arrow and the outline that
+ * flashes on the note a link leads to: they stand in for the edge, so they
+ * take its colour. */
+.wema-board {
+  --wema-note-link-background: var(--note-bg);
+  --wema-note-link-color: var(--text);
+  --wema-note-link-border-color: var(--note-border);
+  --wema-note-link-label-color: var(--text-muted);
+  --wema-note-link-accent-color: var(--edge);
 }
 
 .wema-note-link:focus-visible {

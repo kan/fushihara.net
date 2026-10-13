@@ -23,7 +23,9 @@ const board = new WemaBoard({
   createOnDblClick: false,
   // Only shows while the column is up (below 768px), where wema hides the
   // edges: each note lists the notes it connects to, and a tap goes there.
-  noteLinks: true,
+  // The padding keeps the note it scrolls to clear of the fixed site title,
+  // the same way the column starts below it.
+  noteLinks: { padding: MOBILE_TOP },
 });
 
 // --- Responsive repositioning ---
