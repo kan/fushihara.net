@@ -143,6 +143,40 @@ html, body {
   --wema-note-link-accent-color: var(--edge);
 }
 
+/* Names the notes folded away under the centre note (renderNoteAccessory in
+ * main.ts). Kept to the left: the count badge sits in the middle of the edge. */
+.wema-note-accessory {
+  padding-top: 6px;
+}
+
+.interests-toggle {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--note-border);
+  border-radius: 14px;
+  background: var(--note-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+/* The sign is decoration: aria-expanded already says the state, so the second
+ * value gives it an empty text alternative. The first is for browsers that
+ * drop the declaration with the alternative. */
+.interests-toggle::after {
+  content: ' +';
+  content: ' +' / '';
+  color: var(--text-muted);
+}
+
+.interests-toggle[aria-expanded='true']::after {
+  content: ' −';
+  content: ' −' / '';
+}
+
+.interests-toggle:focus-visible,
 .wema-note-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

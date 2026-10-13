@@ -283,6 +283,24 @@ wema（kan/wema）の issue にする（経緯は
 畳んでいたが、**連絡先がクリックしないと出ないのは本末転倒**だったのでやめた
 （バッジには件数しか出ず、そこに何があるか分からない）。
 
+**中央の付箋の下には、`Interests` と書いたボタンも出る。** バッジに名前が無いのを
+補うもので、押すと `e-interests` を開閉する。wema の `renderNoteAccessory`
+（`main.ts` の `WemaBoard` のオプション）で描く。付箋の枠のすぐ下に利用側の DOM を
+置ける口で、**サニタイザを通らないので `button` を置ける**。
+
+- **ボタンの表示（`aria-expanded` と `+` / `−`）は、エッジの状態から描く。**
+  クリックでは `updateEdge()` を呼ぶだけで、表示は `edge:update` を受けて
+  `refreshNoteAccessory('center')` で描き直す。バッジで開閉しても追従させるため。
+  **クリックのハンドラの中で表示を書き換えないこと**
+- **768px 未満では出さない**（`renderNoteAccessory` が `false` を返す）。全部のエッジが
+  開いていて、`noteLinks` のボタンが相手を並べるため。`renderNoteAccessory` が読む
+  `mobile` は `applyLayout()` が決めるので、768px をまたいだときは `applyLayout()` が
+  `refreshNoteAccessory('center')` を呼ぶ
+- **ボタンは左へ寄せてある。** バッジは下辺の中央に出るので、中央へ置くと重なる
+- 件数バッジは残してある（wema の機能のデモ）。入口が 2 つあるのは意図どおり
+- この領域を使うほかの案は [issue #43](https://github.com/kan/fushihara.net/issues/43)
+- `e2e/render.spec.ts` の「中央の付箋の下のボタンで Interests を開閉でき、バッジにも追従する」が見ている
+
 **畳む辺は 1 本のエッジが独占していないといけない。** wema の折り畳みボタンは
 ノートの辺ごとに出て、**その辺のエッジが全部畳まれているときだけ件数バッジ**になる
 （`s.every(e => e.collapsed)`）。他のエッジと同居していると、バッジが出ないうえに
@@ -608,7 +626,8 @@ wema はノートの `text` を **許可リストでサニタイズ**する
 （`node_modules/@kanf/wema/dist/wema.js` の `src/utils/sanitize.ts` 領域）。
 
 - **`svg` と `button` は除去される** → 対話的な UI をノート内に置くことはできない。
-  テーマトグルが `#app` の外にいるのはこのため
+  テーマトグルが `#app` の外にいるのはこのため。**付箋の枠の下なら置ける**
+  （`renderNoteAccessory`。「データとレイアウトの分離」の `Interests` のボタン）
 - `class` は全タグで通る。`style` は
   `color / background-color / font-size / font-weight / font-style / text-decoration /
   text-decoration-line / text-align / margin / padding / display / list-style-type /

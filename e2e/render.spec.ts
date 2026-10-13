@@ -258,6 +258,52 @@ test.describe('デスクトップ', () => {
       .toBeGreaterThan(0);
   });
 
+  test('中央の付箋の下のボタンで Interests を開閉でき、バッジにも追従する', async ({ page }) => {
+    await gotoAndSettle(page);
+    const interestsWidth = async () => (await noteBoxes(page)).interests.w;
+
+    // バッジは件数しか出さない。何が畳まれているかを名前で出すのがこのボタン
+    // （main.ts の renderNoteAccessory）。
+    const toggle = page.locator(`${NOTE}[data-note-id="center"] .interests-toggle`);
+    await expect(page.locator('.interests-toggle')).toHaveCount(1);
+    await expect(toggle).toHaveText('Interests');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    // バッジは下辺の中央に出る。重なると、どちらかが押せなくなる。
+    const badge = page.locator('.wema-note-collapse-badge');
+    const [t, b] = [(await toggle.boundingBox())!, (await badge.boundingBox())!];
+    expect(t.x + t.width).toBeLessThanOrEqual(b.x);
+
+    await toggle.click();
+    await expect.poll(interestsWidth, { timeout: 5_000 }).toBeGreaterThan(0);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    await toggle.click();
+    await expect.poll(interestsWidth, { timeout: 5_000 }).toBe(0);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    // ボタンは自分のクリックではなくエッジの状態に従う。バッジで開いても変わる。
+    await badge.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    // 開閉のたびにボタンは描き直される。フォーカスが残らないと、キーボードでは
+    // 続けて開閉できない（main.ts の data-wema-focus-key）。
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    // 縦積みでは全部のエッジが開き、noteLinks が相手を並べるので、出さない。
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('.interests-toggle')).toHaveCount(0);
+
+    // 戻ると board-data.ts の折り畳みへ戻るので、ボタンも畳んだ表示で戻る。
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
   test('幅を狭めると 1 カラムに再配置され、畳まれたエッジも開く', async ({ page }) => {
     await gotoAndSettle(page);
 
@@ -357,6 +403,8 @@ test.describe('モバイル', () => {
     await expect(links('interests')).toHaveText(/KAN Fushihara/);
     // 接続線の無い付箋には出ない
     await expect(links('poweredby')).toHaveCount(0);
+    // Interests を開閉するボタンは 768px 以上のもの。ここでは全部のエッジが開いている
+    await expect(page.locator('.interests-toggle')).toHaveCount(0);
 
     // 文字が背景に沈んでいないこと。wema の既定は白い板に濃い文字で、テーマに
     // 追従しない（色は style.css の --wema-note-link-* で渡す）

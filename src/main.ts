@@ -12,6 +12,11 @@ import {
 } from './layout';
 
 const appEl = document.getElementById('app')!;
+const INTERESTS_EDGE = 'e-interests';
+
+// Set by applyLayout(). Declared ahead of the board because the board's
+// renderNoteAccessory reads it.
+let mobile: boolean | undefined;
 
 initTheme();
 
@@ -26,13 +31,35 @@ const board = new WemaBoard({
   // The padding keeps the note it scrolls to clear of the fixed site title,
   // the same way the column starts below it.
   noteLinks: { padding: MOBILE_TOP },
+  // The count badge under the centre note says how many notes are folded
+  // away, not what they are. This names them, and opens and folds them too.
+  // Not in the column: every edge is open there and noteLinks lists them.
+  renderNoteAccessory: (note, el) => {
+    if (note.id !== 'center' || mobile) return false;
+    const open = !board.getEdges().find((e) => e.id === INTERESTS_EDGE)?.collapsed;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'interests-toggle';
+    button.dataset.wemaFocusKey = 'interests';
+    button.setAttribute('aria-expanded', String(open));
+    button.textContent = 'Interests';
+    button.addEventListener('click', () => {
+      board.updateEdge(INTERESTS_EDGE, { collapsed: open });
+    });
+    el.append(button);
+    return true;
+  },
+});
+
+// The badge folds and opens the same edge, so the button follows the edge
+// rather than its own clicks.
+board.on('edge:update', ({ edge }) => {
+  if (edge.id === INTERESTS_EDGE) board.refreshNoteAccessory('center');
 });
 
 // --- Responsive repositioning ---
 // Layout maths lives in ./layout.ts so it can be tested without a DOM.
 const bases = noteBases(boardData);
-
-let mobile: boolean | undefined;
 
 // The board is view-only once the dynamic data lands. Everything here still
 // goes through: wema takes moves and collapses from the API in that mode.
@@ -52,6 +79,9 @@ function applyLayout(duration = 0) {
     for (const edge of boardData.edges) {
       board.updateEdge(edge.id, { collapsed: nowMobile ? false : !!edge.collapsed });
     }
+    // The button depends on `mobile` as well as on the edge, so this does not
+    // lean on the edge:update the loop above happens to emit.
+    board.refreshNoteAccessory('center');
   }
 
   if (nowMobile) {
