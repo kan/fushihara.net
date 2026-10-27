@@ -25,7 +25,7 @@
     "wrangler": "^4.152.0"
   },
   "dependencies": {
-    "@kanf/wema": "^0.16.0",
+    "@kanf/wema": "^0.16.1",
     "simple-icons": "^16.35.0"
   }
 }
