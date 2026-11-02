@@ -15,17 +15,17 @@
     "typecheck": "wrangler types && tsc -b"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.65.0",
-    "@cloudflare/vitest-plugin": "^1.4.8",
+    "@cloudflare/vite-plugin": "^1.66.0",
+    "@cloudflare/vitest-plugin": "^1.4.11",
     "@playwright/test": "^1.64.1",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^4.1.12",
     "wrangler": "^4.153.0"
   },
   "dependencies": {
-    "@kanf/wema": "^0.16.1",
-    "simple-icons": "^16.35.0"
+    "@kanf/wema": "^0.17.0",
+    "simple-icons": "^16.36.0"
   }
 }
