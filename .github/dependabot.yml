@@ -57,7 +57,11 @@ updates:
       prefix: deps(blog)
 
   # Actions のバージョン。actions/*@v4 が Node 20 前提で deprecated 警告を
-  # 出しているが、ここからの PR で解消する。
+  # 出しているが、ここからの PR で解消する。PR は .github/workflows/actions.lock の
+  # 該当エントリも作り直す。
+  #
+  # cooldown: 公開から 3 日経った版だけを取り込む。問題のある版や、乗っ取られて公開された版は、
+  # たいてい数日のうちに取り下げられるため。セキュリティ更新は対象外なので遅れない。
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -65,6 +69,8 @@ updates:
       day: monday
       time: '09:00'
       timezone: Asia/Tokyo
+    cooldown:
+      default-days: 3
     groups:
       github-actions:
         patterns:
