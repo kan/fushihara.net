@@ -163,8 +163,9 @@ E2E で踏みやすい罠が 2 つある。
 
 ## CI とデプロイ
 
-ワークフローは 2 本ある。本体が `.github/workflows/deploy.yml`、ブログが
+デプロイのワークフローは 2 本ある。本体が `.github/workflows/deploy.yml`、ブログが
 `.github/workflows/deploy-blog.yml`。デプロイ先の Worker が別なので分けてある。
+ほかに lockfile の検査（`verify-lockfile.yml`。後述の「action の固定」）がある。
 
 ### 本体（deploy.yml）
 
@@ -217,6 +218,18 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
 **CI のトークンは「Account API Token」。** `db:migrate` が `code: 7403`（D1 への
 アクセス権限なし）で落ちたとき、User API Token の一覧を見ても目当てのものが無い。
 編集するのは Manage Account → API Tokens の方で、要るのは Account / D1 / Edit。
+
+### action の固定
+
+**`uses:` は完全な版のタグ（`@v7.0.1`）で書き、実際に動く commit は
+`.github/workflows/actions.lock` が固定する。** SHA を `uses:` に書かない（固定は lockfile が
+受け持つので、SHA は読みにくくするだけになる）。
+
+- lockfile は手で編集しない。`uses:` を変えたら repo のルートで `gh actions-lock` を実行し、
+  書き換わった workflow と lockfile を一緒にコミットする
+- `verify-lockfile.yml` が PR と main への push で `gh actions-lock --verify` を走らせる
+- Dependabot の github-actions の PR は lockfile の該当エントリも作り直す
+- 運用の正本は kan/dotfiles の `docs/github-actions.md`
 
 ## Architecture
 
