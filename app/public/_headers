@@ -1,0 +1,8 @@
+# Workers Static Assets のヘッダ指定。スクリプトは 1 本も配らないので script-src は 'none'。
+# 画像も CSS も自分のホストからだけ読む（ほかのサービスのアイコンは Access の内側なので
+# 直接は読めない。services.ts のコメント参照）。
+/*
+  Content-Security-Policy: default-src 'none'; img-src 'self'; style-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Robots-Tag: noindex, nofollow
+  Referrer-Policy: same-origin
+  X-Content-Type-Options: nosniff

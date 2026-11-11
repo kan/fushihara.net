@@ -40,7 +40,18 @@ Worker 名だけ `fushihara-blog` に寄せた。名前を揃えるために記�
 詳細は「ブログ（blog/）」節と `blog/README.md`。
 
 リポジトリ直下の `shared/` だけが両方から読まれる（色トークン / テーマの保存キー /
-日付の JST 整形 / `shared/public/` の favicon 一式）。
+日付の JST 整形 / `shared/public/` の favicon 一式）。下の `app/` も、そのうち
+`tokens.css` と `public/favicon.svg` を読む。
+
+**`app/` は自分用サービスのランチャー（`app.fushihara.net`）で、これも別 Worker
+（`fushihara-app`）。** Cloudflare Access で守る非公開の画面なので、本体の Worker に
+同居させない（ホスト名で配り分け損ねると、公開側から見える）。静的アセットだけで、
+Worker のスクリプトは無い。デプロイは `.github/workflows/deploy-app.yml`。
+
+- **サービスの一覧は `app/services.ts` の 1 か所。** `index.html` はビルドが作る
+- **アプリ側に認証は無い。** 入口は Custom Domain だけ（`workers_dev` と
+  `preview_urls` は閉じてある）。Access の設定とホーム画面への追加は `app/README.md`
+- `shared/tokens.css`（色）と `shared/public/favicon.svg`（Blog のアイコン）を読む
 
 ## Commands
 
@@ -163,15 +174,17 @@ E2E で踏みやすい罠が 2 つある。
 
 ## CI とデプロイ
 
-デプロイのワークフローは 2 本ある。本体が `.github/workflows/deploy.yml`、ブログが
-`.github/workflows/deploy-blog.yml`。デプロイ先の Worker が別なので分けてある。
+デプロイのワークフローは 3 本ある。本体が `.github/workflows/deploy.yml`、ブログが
+`.github/workflows/deploy-blog.yml`、ランチャーが `.github/workflows/deploy-app.yml`。
+デプロイ先の Worker が別なので分けてある。
 ほかに lockfile の検査（`verify-lockfile.yml`。後述の「action の固定」）がある。
 
 ### 本体（deploy.yml）
 
 main への push で動く。
 
-- `test` は**変更の内容によらず必ず走る**（push / pull_request の両方）
+- `test` は**変更の内容によらず必ず走る**（push / pull_request の両方。
+  `blog/**` か `app/**` だけの変更は、下の `paths-ignore` でワークフローごと走らない）
 - `deploy` は `changes` ジョブの判定で、**配信物に影響する変更があるときだけ**走る。
   対象は `src/` `shared/` `worker/` `index.html` `package.json`
   `package-lock.json` `vite.config.ts` `wrangler.jsonc`。ドキュメント・テスト・
@@ -181,7 +194,8 @@ main への push で動く。
   次の無関係な push で「変更なし」と判定されて**恒久的に取り残される**ため。
   タグが無いときは安全側に倒してデプロイする
 - スキップされた後に手で出したいときは `workflow_dispatch`（Actions 画面の Run workflow）
-- `blog/**` のみの変更は `paths-ignore` でワークフローごとスキップ（ブログ側が拾う）
+- `blog/**` か `app/**` のみの変更は `paths-ignore` でワークフローごとスキップ
+  （ブログ側、ランチャー側がそれぞれ拾う）
 
 注意点:
 
@@ -214,6 +228,9 @@ push で丸ごと出し直される。本体にあの仕組みが要るのは「
 あるからで、ここに同じものを置くと `deployed` タグの衝突と複雑さだけが残る。
 
 `shared/` を変えると本体とブログの両方のワークフローが走る（どちらの配信物にも入るため）。
+`shared/tokens.css` と `shared/public/favicon.svg` は、ランチャー（`deploy-app.yml`）も走らせる。
+**ランチャーは `tokens.css` を Lightning CSS を通さずに連結する**ので、`light-dark()` は
+書き下されずにそのまま配られる。
 
 **CI のトークンは「Account API Token」。** `db:migrate` が `code: 7403`（D1 への
 アクセス権限なし）で落ちたとき、User API Token の一覧を見ても目当てのものが無い。

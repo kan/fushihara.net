@@ -1,0 +1,27 @@
+{
+  // ビルドスクリプトも E2E も Node の上で動く（E2E の page.evaluate() の中だけがブラウザ）。
+  // Workers のスクリプトは無いので、ランチャーは 1 プロジェクトで見る。
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    // scripts/build.ts は Node の型の除去で直接動くので、消せない構文（enum など）を書けない
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["services.ts", "scripts", "e2e", "playwright.config.ts"]
+}

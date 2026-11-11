@@ -1,0 +1,24 @@
+{
+  "name": "fushihara-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "//build": "services.ts から dist/ を組み立てる。wrangler.jsonc の assets.directory が dist/ を指すので、dev もデプロイもこれが要る",
+    "build": "node scripts/build.ts",
+    "//wrangler": "リポジトリ直下に本体の .wrangler/deploy/config.json があると wrangler が両方を見つけて落ちるので、-c で明示する",
+    "serve": "npm run build && wrangler dev -c ./wrangler.jsonc",
+    "//dev": "ポートはブログの dev（8787）と E2E（8789。playwright.config.ts も serve を使う）と分ける",
+    "dev": "npm run serve -- --port 8790",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "deploy": "npm run build && wrangler deploy -c ./wrangler.jsonc"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
+    "sharp": "^0.35.5",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.160.0"
+  }
+}

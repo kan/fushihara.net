@@ -1,0 +1,125 @@
+/* ランチャーの見た目。色は shared/tokens.css（ビルドで先頭に連結される）のトークンだけを使う。
+ * テーマの切り替えボタンは置かない。OS の設定に従う（tokens.css の media query）。 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  /* ホーム画面から開いた画面（standalone）は、ノッチやホームバーの下まで描く */
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 960px;
+  margin: 8px auto 20px;
+}
+
+/* icon.svg の正本は角の無い正方形なので、ここで丸める */
+.brand img {
+  border-radius: 6px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.services {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 960px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.service {
+  display: flex;
+  flex-direction: column;
+  background: var(--note-bg);
+  border: 1px solid var(--note-border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px var(--note-shadow);
+}
+
+.service:hover {
+  border-color: var(--note-border-hover);
+  box-shadow: 0 4px 12px var(--note-shadow-hover);
+}
+
+.service-link {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  column-gap: 12px;
+  align-items: center;
+  padding: 14px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 8px;
+}
+
+.service-link:focus-visible,
+.sub-link:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.service-icon {
+  grid-row: 1 / 4;
+}
+
+.service-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.service-desc {
+  font-size: 0.85rem;
+}
+
+.service-host {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.sub-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 14px 12px 74px;
+  font-size: 0.85rem;
+}
+
+.sub-link {
+  color: var(--link);
+}
+
+.sub-link:hover {
+  color: var(--link-hover);
+}
+
+/* 縦長の画面では 1 列にして、指で押す面を広く取る */
+@media (max-width: 479px) {
+  .services {
+    grid-template-columns: 1fr;
+  }
+}

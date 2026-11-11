@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // 自分用サービスのランチャー（issue #56）。本体の fushihara-net とは**別の Worker**。
+  // 同居させると、公開サイトと Access で守る画面を 1 つの Worker がホスト名で
+  // 配り分けることになり、分け損ねると非公開の画面が公開側から見えるため。
+  "name": "fushihara-app",
+  "compatibility_date": "2026-08-23",
+
+  // **入口は Access で守る Custom Domain だけ。** アプリ側に認証は無い。
+  // workers.dev とプレビュー URL を開けると、Access を通らずに見えてしまう。
+  //
+  // **初回のデプロイは、Access のアプリを作ってからにする。** Destinations は
+  // `app.fushihara.net` の 1 つだけ（2 つ並べると、ログイン後に先頭のホスト名へ
+  // 戻される。ratatoskr で踏んだ）。
+  "routes": [{ "pattern": "app.fushihara.net", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // スクリプトは無く、静的アセットだけを配る（`npm run build` が作る）。
+  // ヘッダは public/_headers が付ける。
+  "assets": {
+    "directory": "./dist"
+  }
+}

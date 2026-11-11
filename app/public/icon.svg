@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- 正本は角の無い正方形。角丸は scripts/build.ts が PNG に付ける（apple-touch-icon と maskable は付けない） -->
+  <!-- 板は favicon.svg（shared/public）と同じ紺。中身は f. の代わりに 2x2 のタイル -->
+  <rect width="64" height="64" fill="#1A1A2E"/>
+  <rect x="14" y="14" width="16" height="16" rx="3" fill="#FFFFFF"/>
+  <rect x="34" y="14" width="16" height="16" rx="3" fill="#FFFFFF"/>
+  <rect x="14" y="34" width="16" height="16" rx="3" fill="#FFFFFF"/>
+  <rect x="34" y="34" width="16" height="16" rx="3" fill="#FF6B00"/>
+</svg>

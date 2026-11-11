@@ -37,3 +37,8 @@ worker-configuration.d.ts
 blog/test-results/
 blog/playwright-report/
 blog/blob-report/
+
+# app (ランチャー。独立プロジェクト)
+app/test-results/
+app/playwright-report/
+app/blob-report/

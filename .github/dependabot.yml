@@ -56,6 +56,23 @@ updates:
     commit-message:
       prefix: deps(blog)
 
+  # ランチャー (app/)。依存はビルド (sharp) とテストとデプロイの道具だけ。
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: deps(app)
+
   # Actions のバージョン。actions/*@v4 が Node 20 前提で deprecated 警告を
   # 出しているが、ここからの PR で解消する。PR は .github/workflows/actions.lock の
   # 該当エントリも作り直す。
