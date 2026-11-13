@@ -40,7 +40,7 @@ Worker 名だけ `fushihara-blog` に寄せた。名前を揃えるために記�
 詳細は「ブログ（blog/）」節と `blog/README.md`。
 
 リポジトリ直下の `shared/` だけが両方から読まれる（色トークン / テーマの保存キー /
-日付の JST 整形 / `shared/public/` の favicon 一式）。下の `app/` も、そのうち
+日付の JST 整形 / 持ち主のプロフィール（SNS の URL）/ `shared/public/` の favicon 一式）。下の `app/` も、そのうち
 `tokens.css` と `public/favicon.svg` を読む。
 
 **`app/` は自分用サービスのランチャー（`app.fushihara.net`）で、これも別 Worker
@@ -600,10 +600,76 @@ service binding はテストのプールにも存在しないので、`vitest.co
 
 ### ルーティング設定
 
-`wrangler.jsonc` の `assets.run_worker_first: ["/api/*"]` で API パスだけ Worker に流す
-（Pages の `_routes.json` 相当）。それ以外は静的アセットが直接返る。
-`not_found_handling: "404-page"` なので、クライアントルータのないこのサイトでは
-存在しないパスは素の 404 になる（`dist` に `404.html` を置けばそれが返る）。
+`wrangler.jsonc` の `assets.run_worker_first: ["/api/*", "/"]` で、API パスと
+トップページだけ Worker に流す（Pages の `_routes.json` 相当）。それ以外は
+静的アセットが直接返る。
+
+**`not_found_handling` は指定していない（既定の `"none"`）。** どのアセットにも
+一致しないリクエストは Worker に届き、`worker/pages.ts` が受ける。robots.txt と
+sitemap.xml もこの経路で返している（静的ファイルではない）。HTML の 404 は
+今までどおり、アセット側の本文の無い 404 をそのまま返す。
+
+- 以前の `"404-page"` でも、`404.html` が無い今はローカルの workerd で Worker に
+  届いた（実測）。それでも `"none"` にしてあるのは、`404.html` を置いた日に
+  アセット側が答えて Worker に届かなくなり、robots.txt、sitemap.xml、Markdown の
+  404 が黙って消えるため
+- **`404.html` を置くなら、robots.txt と sitemap.xml を `run_worker_first` に足すこと**
+  （E2E の「robots.txt が sitemap.xml を指し、sitemap.xml が配られる」が検知する）
+- 存在しないパスへのリクエスト（ボットの `/wp-login.php` など）も Worker を呼ぶ
+
+### AI エージェント向け（Markdown・JSON-LD・robots.txt）
+
+経緯は [issue #58](https://github.com/kan/fushihara.net/issues/58)。中身は
+`src/agent.ts`（DOM に触れない純粋モジュール）が組み、`worker/pages.ts` が
+ヘッダーを付けて返す。
+
+| URL | 返すもの |
+|---|---|
+| `/`（`Accept: text/markdown`） | 付箋の中身の Markdown。HTML と同じ URL |
+| `/`（それ以外） | 静的な `index.html`。`env.ASSETS.fetch(request)` にそのまま渡す |
+| `/robots.txt` | AI のクローラを含めて全部許可。ブログの管理画面と API（`/blog/admin/` と `/blog/api/`）だけ `Disallow` |
+| `/sitemap.xml` | `/` の 1 件だけ。ブログの記事はブログのサイトマップが持つ |
+| どれにも一致しないもの | `Accept: text/markdown` なら Markdown の 404。それ以外は素の 404 |
+
+- **Markdown は付箋のデータ（`board-data.ts`）から組む。** `index.html` には
+  `#app` しかないので、HTML を変換する方式では中身が空になる。付箋の `text` の
+  HTML を、`src/agent.ts` の `parseNote()` が見出しと行に分ける（自分で書いた
+  付箋だけが相手なので、汎用の HTML パーサは持たない）。並びは `mobileOrder`
+- **アイコンのリンクの文字は `img` の `alt`。** `board-data.ts` の `iconLink()` が
+  付ける。省くと Markdown が `[](https://…)` になる（`test/agent.test.ts` が検知する）
+- **API から取る中身（Blog の記事、Skills、OSS の説明）は Markdown に入らない。**
+  ブラウザで付箋を書き換えるだけで、Worker は知らない。`Loading...` は出さず、
+  中身がそれだけの Skills は節ごと落とす。Blog は `/blog/` へのリンクが残る
+  （ブログ側も Markdown を返す）
+- **出し分けの条件はブログ（lily）と同じ。** `text/markdown` が `text/html` より
+  上に来るときだけ Markdown。同点は HTML（`worker/pages.ts` の `prefersMarkdown()`）
+- **Markdown は `Cache-Control: private`。** Cloudflare のエッジは
+  `Accept-Encoding` 以外の `Vary` を見ない。今は Worker が先に動くのでエッジの
+  キャッシュを通らないが、Cache Rules を足した日に HTML の読者へ Markdown が返らない
+  ように
+- **HTML の ETag と 304 はアセット側が扱う。** Worker は `If-None-Match` ごと
+  `env.ASSETS.fetch(request)` に渡し、返ってきたものに `Vary: Accept` と `Link` を
+  足すだけ（`Vary` は上書きせずに足す）
+- **`Link` は `rel="alternate"`**（同じ URL のもう片方の形と、ブログの RSS）と
+  `rel="sitemap"`。isitagentready は `alternate` で合格にする
+- **robots.txt の方針（全部許可、`ai-train=yes` を含む）はユーザーの判断。**
+  AI のクローラは名指しのグループにも同じ規則を書いてある。自分の名前のグループが
+  あるクローラは `*` のグループを読まないので（RFC 9309）、`Disallow` も
+  両方に要る。Cloudflare の managed robots.txt を有効にしていると、Cloudflare が
+  この前に自分の行を足す
+- トップページの JSON-LD（`WebSite` と `Person`）は `vite.config.ts` がビルド時に
+  `<head>` へ焼く（下の「SNS アカウントの宣言」と同じ理由）
+- **`index.html` の `<title>` と `og:title` / `og:description` / `og:url` / `og:image` は
+  `{{SITE_TITLE}}` / `{{SITE_DESCRIPTION}}` / `{{SITE_ORIGIN}}` と書き、`vite.config.ts` の
+  `siteMeta()` が置き換える。** 正は `src/agent.ts` と `shared/profile.ts`。Markdown 版の
+  frontmatter と JSON-LD も同じ値を使う。`index.html` に文字列を直書きに戻さないこと
+  - **`%SITE_TITLE%` の形にしないこと。** Vite 自身が `%名前%` を環境変数で置き換え、
+    こちらより先に動く（同じ名前の環境変数があると、こちらの値が黙って負ける）
+  - 知らない名前を書くと、`siteMeta()` がビルドを止める
+- **付箋の仮の文字は `board-data.ts` の `LOADING`。** Markdown はこの文字の行を出さない。
+  付箋に直書きすると Markdown に漏れる
+- `test/worker.test.ts` と `test/agent.test.ts`、`e2e/render.spec.ts` の
+  「AI エージェント向け」が見ている
 
 ### tsconfig を分けている理由
 
@@ -673,8 +739,9 @@ core は 1 つも知らない）。
 **片方のサイトだけの静的ファイルが要るようになったら、置き場所を分けること。**
 `shared/public/` に置いたものは両サイトに配られる。ブログ側はコピーなので
 `build.mjs` で選べるが、本体は `publicDir` を丸ごと向けているので選べない。
-`robots.txt` のように「本体だけ」に効かせたいものが出たら、本体に `public/` を戻して
-共有物をビルド前にコピーする形へ寄せる。
+「本体だけ」に効かせたい静的ファイルが出たら、本体に `public/` を戻して
+共有物をビルド前にコピーする形へ寄せる（`robots.txt` と `sitemap.xml` は静的
+ファイルにせず、本体の Worker が組んでいる。「AI エージェント向け」参照）。
 
 3 つとも同じマークと配色（紺 `#1A1A2E` の板に白い `f` とオレンジ `#FF6B00` の丸）。
 **違うのは角だけ。**
@@ -748,12 +815,16 @@ Bluesky のリンクカードにも同じ絵が出る）。詳細は `blog/READM
 ### SNS アカウントの宣言（`rel="me"`）
 
 `<head>` に `<link rel="me">` を並べて「このリンク先は自分だ」と宣言している。
-URL は **`src/board-data.ts` の `SOCIAL_LINKS` が正**で、Social 付箋のアイコンと
-`<head>` の両方がそこから出る。
+URL は **`shared/profile.ts` の `SOCIAL` が正**。Social 付箋（`src/board-data.ts` の
+`SOCIAL_LINKS` がアイコンを当てる）、`<head>` の `rel="me"`、トップページの
+JSON-LD の `sameAs` がそこから出る。ブログ（lily）の
+JSON-LD の著者の `sameAs` も同じ `shared/profile.ts` を読む
+（`blog/src/site/meta.ts`）。
 
 - **差し込みは `vite.config.ts` のプラグイン（ビルド時）。** 出す値はリクエストに
-  依らないので Worker を通す理由が無い。通すと `run_worker_first` に `/` を足す
-  ことになり、トップページが毎回 Worker を経由して ETag と 304 を自前で扱う羽目になる
+  依らないので Worker で組まない。トップページは `Accept` の出し分けのために
+  Worker を通るが、HTML はビルドした `index.html` をそのまま返す
+  （「AI エージェント向け」）
 - **読むのは Mastodon**（相互リンクを見て検証マークを付ける）。**X も Bluesky も
   読まない。** 宣言としては正しいが、消費者は限られる
 - Bluesky には `twitter:site` に当たる meta が無い。リンクカードは `og:*` だけを見る。

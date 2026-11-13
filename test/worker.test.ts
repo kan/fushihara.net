@@ -1,6 +1,7 @@
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import worker, { cacheKeys } from '../worker/index';
+import { prefersMarkdown } from '../worker/pages';
 
 /**
  * ハンドラは global fetch を直接呼ぶので、テストでは差し替えて上流を止める。
@@ -80,7 +81,7 @@ function lastUpstreamUrl(): URL {
 }
 
 describe('ルーティング', () => {
-  it('未定義のパスは静的アセットに委譲する', async () => {
+  it('未定義の API は静的アセットに委譲する', async () => {
     const res = await call('/api/does-not-exist');
 
     expect(assets).toHaveBeenCalledOnce();
@@ -95,6 +96,149 @@ describe('ルーティング', () => {
     }
     expect(upstream).not.toHaveBeenCalled();
     expect(assets).not.toHaveBeenCalled();
+  });
+});
+
+describe('Accept の出し分け', () => {
+  it.each([
+    ['text/markdown', true],
+    ['text/markdown, text/html;q=0.9', true],
+    ['text/html, text/markdown;q=0.9', false],
+    // 同点は HTML
+    ['text/html, text/markdown', false],
+    // ブラウザの Accept
+    ['text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', false],
+    // 一番具体的な範囲の q を使う
+    ['text/markdown, */*;q=0.1', true],
+    ['text/*;q=0.5, text/markdown;q=0', false],
+    ['*/*', false],
+    ['', false],
+    // ここから lily（ブログ）の pageFormat() とそろえた細部
+    // q は 0〜1 に丸める
+    ['text/markdown;q=5, text/html', false],
+    // 読めない q は 0
+    ['text/markdown;q=abc', false],
+    // type/subtype として読めない範囲は捨てる
+    ['markdown, text/markdown;q=0.5', true],
+    ['text/markdown;q=0', false],
+  ])('%j → Markdown: %s', (accept, expected) => {
+    expect(prefersMarkdown(accept)).toBe(expected);
+  });
+
+  it('Accept が無ければ HTML', () => {
+    expect(prefersMarkdown(null)).toBe(false);
+  });
+});
+
+describe('トップページ', () => {
+  const md = { headers: { Accept: 'text/markdown' } };
+
+  it('HTML はアセットに渡し、Vary と Link を足す', async () => {
+    assets.mockResolvedValueOnce(
+      new Response('<html></html>', {
+        headers: { 'Content-Type': 'text/html', ETag: '"x"', Vary: 'Accept-Encoding' },
+      }),
+    );
+
+    const res = await call('/');
+
+    expect(assets).toHaveBeenCalledOnce();
+    expect(res.headers.get('Content-Type')).toBe('text/html');
+    expect(res.headers.get('ETag')).toBe('"x"');
+    // 既にある Vary を消さない
+    expect(res.headers.get('Vary')).toBe('Accept-Encoding, Accept');
+    expect(res.headers.get('Link')).toContain('</>; rel="alternate"; type="text/markdown"');
+  });
+
+  it('条件付きリクエストはアセットの 304 をそのまま返す', async () => {
+    assets.mockResolvedValueOnce(new Response(null, { status: 304, headers: { ETag: '"x"' } }));
+
+    const res = await call('/', { headers: { 'If-None-Match': '"x"' } });
+
+    const forwarded = assets.mock.calls[0]![0] as Request;
+    expect(forwarded.headers.get('If-None-Match')).toBe('"x"');
+    expect(res.status).toBe(304);
+    expect(res.headers.get('Vary')).toBe('Accept');
+  });
+
+  it('Accept: text/markdown には付箋の中身を Markdown で返す', async () => {
+    const res = await call('/', md);
+    const body = await res.text();
+
+    expect(assets).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');
+    expect(res.headers.get('Vary')).toBe('Accept');
+    // 共有キャッシュに載せない（エッジは Vary: Accept を見ない）
+    expect(res.headers.get('Cache-Control')).toContain('private');
+    expect(res.headers.get('Link')).toContain('</>; rel="alternate"; type="text/html"');
+    expect(body).toContain('# KAN Fushihara');
+    expect(body).toContain('[GitHub](https://github.com/kan)');
+    // ブログへのリンクは絶対 URL
+    expect(body).toContain('(https://fushihara.net/blog/)');
+  });
+
+  it('HEAD の Markdown は本文を返さない', async () => {
+    const res = await call('/', { method: 'HEAD', ...md });
+
+    expect(res.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');
+    expect(await res.text()).toBe('');
+  });
+});
+
+describe('robots.txt と sitemap.xml', () => {
+  it('robots.txt は両方のサイトマップを指す', async () => {
+    const res = await call('/robots.txt');
+    const body = await res.text();
+
+    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(body).toMatch(/^User-agent: \*$/m);
+    expect(body).toContain('Sitemap: https://fushihara.net/sitemap.xml');
+    expect(body).toContain('Sitemap: https://fushihara.net/blog/sitemap-index.xml');
+  });
+
+  it('AI のクローラの名指しのグループにも管理画面の Disallow がある', async () => {
+    // 名指しのグループがあるクローラは `*` のグループを読まない（RFC 9309）
+    const body = await (await call('/robots.txt')).text();
+    const groups = body.trim().split(/\n\n/).filter((g) => g.startsWith('User-agent'));
+
+    expect(groups.length).toBeGreaterThanOrEqual(2);
+    for (const group of groups) {
+      expect(group).toContain('Disallow: /blog/admin/');
+      expect(group).toContain('Content-Signal: ');
+    }
+  });
+
+  it('sitemap.xml はトップページを載せる', async () => {
+    const res = await call('/sitemap.xml');
+
+    expect(res.headers.get('Content-Type')).toBe('application/xml; charset=utf-8');
+    expect(await res.text()).toContain('<loc>https://fushihara.net/</loc>');
+  });
+});
+
+describe('404', () => {
+  it('HTML はアセットの 404 をそのまま返す', async () => {
+    const res = await call('/nope');
+
+    expect(assets).toHaveBeenCalledOnce();
+    expect(res.status).toBe(404);
+    expect(res.headers.get('Vary')).toBe('Accept');
+  });
+
+  it('Accept: text/markdown には 404 のまま Markdown を返す', async () => {
+    const res = await call('/nope', { headers: { Accept: 'text/markdown' } });
+
+    expect(assets).not.toHaveBeenCalled();
+    expect(res.status).toBe(404);
+    expect(res.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');
+    expect(await res.text()).toContain('https://fushihara.net/sitemap.xml');
+  });
+
+  it('robots.txt も GET と HEAD 以外は 404 にする', async () => {
+    const res = await call('/robots.txt', { method: 'POST' });
+
+    expect(res.status).toBe(404);
   });
 });
 

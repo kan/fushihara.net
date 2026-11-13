@@ -54,7 +54,7 @@ export async function layout(
   options: LayoutOptions,
   body: HtmlEscapedString | Promise<HtmlEscapedString>,
 ): Promise<string> {
-  const { site, urls, canonicalUrl } = context;
+  const { site, urls, canonicalUrl, jsonLd } = context;
   const title = pageTitle(site.name, options.page);
   const description = options.description ?? site.description;
   const brand = options.brandIsHeading ? 'h1' : 'p';
@@ -105,6 +105,11 @@ export async function layout(
     <!-- カードの形だけ指定する。**どのアカウントのものかは示さない**
          (twitter:site は Astro から引き継いだだけで、何も担っていなかった)。 -->
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- schema.org のデータ（一覧は Blog、タグは CollectionPage、記事は BlogPosting）。
+         **組むのも script 要素向けに逃がすのも lily**（core）で、テーマは置くだけ。
+         ここで逃がし直すと JSON が壊れる。404 とプレビューでは null。 -->
+    ${jsonLd == null ? '' : html`<script type="application/ld+json">${raw(jsonLd)}</script>`}
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

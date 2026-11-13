@@ -6,5 +6,15 @@
     "lib": ["ES2022"],
     "types": ["./worker-configuration.d.ts"]
   },
-  "include": ["worker", "worker-configuration.d.ts"]
+  // src/ のうち DOM に触れないものだけ。トップページの Markdown 版を付箋のデータから
+  // 組むため（worker/pages.ts → src/agent.ts）。
+  "include": [
+    "worker",
+    "worker-configuration.d.ts",
+    "src/agent.ts",
+    "src/board-data.ts",
+    "src/layout.ts",
+    "src/note-html.ts",
+    "shared/profile.ts"
+  ]
 }

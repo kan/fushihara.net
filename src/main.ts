@@ -3,6 +3,7 @@ import '@kanf/wema/style.css';
 import './style.css';
 import { boardData, EMAIL, EXTRA_SKILLS, GITHUB_USER, OSS_REPOS, ossRow } from './board-data';
 import { initTheme } from './theme-toggle';
+import { BLOG_PATHS } from './agent';
 import { fetchBlogPosts, fetchGitHubRepos, fetchGitHubLanguages } from './api';
 import { escapeHtml, moreLink } from './note-html';
 import { isoDate } from '../shared/date';
@@ -15,7 +16,8 @@ import {
 const appEl = document.getElementById('app')!;
 const INTERESTS_EDGE = 'e-interests';
 // The blog's feed (lily serves it; blog/CONTRACT.md lists it as a public URL).
-const BLOG_RSS = '/blog/rss.xml';
+// Same constant as the `Link` header on `/` (src/agent.ts).
+const BLOG_RSS = BLOG_PATHS.feed;
 // How long the copy button says "Copied".
 const COPIED_MS = 2000;
 

@@ -1,4 +1,15 @@
 import { blog, githubLanguages, githubRepos, jsonError } from './api';
+import { home, notFound, robots, sitemap } from './pages';
+
+/**
+ * API 以外で Worker が組むページ。**キャッシュ（`caches.default`）は通さない。**
+ * 中身はリクエストに依らず、組むのも安いので。
+ */
+const PAGES: Record<string, (request: Request, env: Env) => Response | Promise<Response>> = {
+  '/': home,
+  '/robots.txt': robots,
+  '/sitemap.xml': sitemap,
+};
 
 interface Route {
   handler: (url: URL, env: Env) => Promise<Response>;
@@ -69,9 +80,14 @@ export default {
     const url = new URL(request.url);
     const route = ROUTES[url.pathname];
 
-    // wrangler.jsonc の run_worker_first により通常は /api/* しか届かないが、
-    // 未定義の /api/xxx はここから静的アセット側にフォールバックして 404 になる。
-    if (!route) return env.ASSETS.fetch(request);
+    // ここに届くのは 3 種類。`run_worker_first` の `/api/*` と `/`、それから
+    // どの静的アセットにも一致しなかったリクエスト（`not_found_handling` を
+    // 指定していないので、アセット側は 404 を返さずにこちらへ回す）。
+    if (!route) {
+      const page = PAGES[url.pathname];
+      if (page && (request.method === 'GET' || request.method === 'HEAD')) return page(request, env);
+      return notFound(request, env);
+    }
     if (request.method !== 'GET') {
       return new Response('Method Not Allowed', { status: 405 });
     }

@@ -11,9 +11,11 @@
     "test",
     "worker-configuration.d.ts",
     "worker",
+    "src/agent.ts",
     "src/board-data.ts",
     "src/layout.ts",
     "src/note-html.ts",
-    "shared/theme.ts"
+    "shared/theme.ts",
+    "shared/profile.ts"
   ]
 }

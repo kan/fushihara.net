@@ -13,6 +13,7 @@
  * `@kanf/lily/paths` は Workers の型を 1 つも使わない。
  */
 import { createPaths } from '@kanf/lily/paths';
+import { OWNER_URL, SITE_ORIGIN, SOCIAL_URLS } from '../../../shared/profile.ts';
 
 /**
  * マウント位置。**mount を変えるときに触るのはここ 1 行**（ユニットテストも E2E も
@@ -39,7 +40,7 @@ export const ASSET = {
 
 export const ASSETS: readonly string[] = Object.values(ASSET);
 
-const ORIGIN = 'https://fushihara.net';
+const ORIGIN = SITE_ORIGIN;
 
 /**
  * 静的アセットの URL を組む口。**配信側と同じ `createPaths()` を通す。**
@@ -57,6 +58,13 @@ export const SITE = {
   name: 'ふしはらねっとのぶろぐ',
   description: `${AUTHOR} のブログ`,
   author: AUTHOR,
+  /**
+   * JSON-LD の著者（`Person`）の `url` と `sameAs`。lily が記事と一覧の JSON-LD に
+   * 載せる。**値の正は `shared/profile.ts`。** 本体の `<link rel="me">` と
+   * トップページの JSON-LD も同じものを読むので、`/` と `/blog/` で同じ人として読める
+   */
+  authorUrl: OWNER_URL,
+  sameAs: SOCIAL_URLS,
   // `<html lang>` と Bluesky の告知に出る。**言語を書く場所はここだけ。**
   lang: 'ja',
   /**

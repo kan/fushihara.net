@@ -1,5 +1,7 @@
 import type { WemaBoardData } from '@kanf/wema';
-import { moreLink } from './note-html';
+// 拡張子付きで読む（`vite.config.ts` からも読まれるため）
+import { escapeHtml, moreLink } from './note-html.ts';
+import { SOCIAL } from '../shared/profile.ts';
 import {
   siBluesky, siX, siGithub, siFacebook, siInstagram,
   siCloudflareworkers, siVite, siTypescript, siClaude,
@@ -18,6 +20,13 @@ const C = {
   poweredby: '#555',   // Subtle gray
 } as const;
 
+/**
+ * 動的データ（`main.ts` が API から埋める）が入るまでの仮の文字。
+ * **トップページの Markdown 版（`src/agent.ts`）はこの文字の行を出さない。**
+ * 付箋とあちらで同じ定数を使うので、文言を変えても Markdown に漏れない。
+ */
+export const LOADING = 'Loading...';
+
 /** Email 付箋のアドレス。付箋の下の「Copy」ボタン（main.ts）も同じものを入れる */
 export const EMAIL = 'kan.fushihara@gmail.com';
 
@@ -26,9 +35,13 @@ export const EMAIL = 'kan.fushihara@gmail.com';
  *
  * 出どころは 3 種類（simple-icons / wema / lily）あるが、**出る形はどれも同じ**。
  * 寸法や属性を直すときに 3 箇所を探さずに済むよう、包む側はここだけに置く。
+ *
+ * **`alt` は省かないこと。** リンクの文字はこれしか無い。スクリーンリーダーが
+ * 読むのもこれで、`Accept: text/markdown` の版（`src/agent.ts`）では
+ * これがリンクの文字になる。省くと `[](https://…)` になる。
  */
-const iconLink = (svg: string, href: string) =>
-  `<a href="${href}" target="_blank"><img src="data:image/svg+xml,${encodeURIComponent(svg)}" width="22" height="22" style="vertical-align:middle"></a>`;
+const iconLink = (svg: string, href: string, name: string) =>
+  `<a href="${href}" target="_blank"><img src="data:image/svg+xml,${encodeURIComponent(svg)}" alt="${escapeHtml(name)}" width="22" height="22" style="vertical-align:middle"></a>`;
 
 /**
  * lily のアイコン。**あちらにロゴが無いので、ここで起こした**（favicon も無い）。
@@ -43,34 +56,44 @@ const lilyIcon = (href: string) => {
   const petal = (deg: number) =>
     `<path d="M12 14C9.4 10.5 9.4 6 12 2.5C14.6 6 14.6 10.5 12 14Z" transform="rotate(${deg} 12 14)"/>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#999">${petal(-55)}${petal(0)}${petal(55)}<path d="M12 14v7.5" stroke="#999" stroke-width="1.6" stroke-linecap="round"/></svg>`;
-  return iconLink(svg, href);
+  return iconLink(svg, href, 'lily');
 };
 
 // Monochrome wema icon (official logo with #999 tones)
 const wemaIcon = (href: string) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M15 9.5C21 9.5 23.5 12 23.5 15" fill="none" stroke="#999" stroke-width="1.5" stroke-linecap="round"/><polygon points="23.5,17 21.5,14 25.5,14" fill="#999"/><rect x="2" y="4" width="13" height="11" rx="2" fill="#999"/><line x1="5" y1="8" x2="12" y2="8" stroke="#fff" opacity=".6" stroke-linecap="round"/><line x1="5" y1="11" x2="10" y2="11" stroke="#fff" opacity=".6" stroke-linecap="round"/><rect x="17" y="17" width="13" height="11" rx="2" fill="#999"/><line x1="20" y1="21" x2="27" y2="21" stroke="#fff" opacity=".6" stroke-linecap="round"/><line x1="20" y1="24" x2="25" y2="24" stroke="#fff" opacity=".6" stroke-linecap="round"/></svg>`;
-  return iconLink(svg, href);
+  return iconLink(svg, href, 'wema');
 };
 
 export const GITHUB_USER = 'kan';
 
+type Icon = { readonly path: string; readonly title: string };
+
 /**
- * Social 付箋に出すアカウント。**`<link rel="me">` もここから作る**
- * （`vite.config.ts` がビルド時に `<head>` へ差し込む）。
+ * Social 付箋に出すアカウント。**URL の正は `shared/profile.ts` の `SOCIAL`**
+ * （ブログの JSON-LD の `sameAs` も同じものを読む）。ここはアイコンを当てるだけ。
  *
- * 「このアカウントは自分だ」の宣言を、付箋と `<head>` の 2 箇所に手で書くと
- * 片方だけ古くなる。`rel="me"` は相互リンクで初めて意味を持つ仕組みなので、
- * URL が 1 文字違うだけで黙って効かなくなる。
+ * **`<link rel="me">` とトップページの JSON-LD もここから作る**
+ * （`vite.config.ts` がビルド時に `<head>` へ差し込む）。「このアカウントは
+ * 自分だ」の宣言を付箋と `<head>` の 2 箇所に手で書くと片方だけ古くなる。
+ * `rel="me"` は相互リンクで初めて意味を持つ仕組みなので、URL が 1 文字違う
+ * だけで黙って効かなくなる。
  *
- * 並び順はそのまま付箋のアイコンの並びになる。
+ * 並び順は `SOCIAL` のキーの順で、そのまま付箋のアイコンの並びになる。
  */
-export const SOCIAL_LINKS: readonly { readonly icon: { path: string }; readonly url: string }[] = [
-  { icon: siBluesky, url: 'https://bsky.app/profile/kan.fushihara.net' },
-  { icon: siX, url: 'https://twitter.com/__kan' },
-  { icon: siGithub, url: 'https://github.com/kan' },
-  { icon: siFacebook, url: 'https://www.facebook.com/kan.fushihara' },
-  { icon: siInstagram, url: 'https://www.instagram.com/kanf' },
-];
+const SOCIAL_ICONS: Record<keyof typeof SOCIAL, Icon> = {
+  bluesky: siBluesky,
+  x: siX,
+  github: siGithub,
+  facebook: siFacebook,
+  instagram: siInstagram,
+};
+
+export const SOCIAL_LINKS: readonly { readonly icon: Icon; readonly url: string }[] =
+  (Object.keys(SOCIAL) as (keyof typeof SOCIAL)[]).map((key) => ({
+    icon: SOCIAL_ICONS[key],
+    url: SOCIAL[key],
+  }));
 
 /**
  * OSS 付箋に出すリポジトリ。**順番どおりに出る。**
@@ -110,10 +133,11 @@ export const ossRow = (name: string, extra = '') =>
   `<div class="oss-row"><a href="https://github.com/${GITHUB_USER}/${name}" target="_blank">${name}</a>${extra}</div>`;
 
 // Build a data URI from a simple-icons path (monochrome #999)
-const siIcon = (si: { path: string }, href: string) =>
+const siIcon = (si: Icon, href: string) =>
   iconLink(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#999"><path d="${si.path}"/></svg>`,
     href,
+    si.title,
   );
 
 export const boardData: WemaBoardData = {
@@ -159,7 +183,7 @@ export const boardData: WemaBoardData = {
       // 高さは言語 + EXTRA_SKILLS の行数で決まる。増やすと縦スクロールが出る
       // （e2e/render.spec.ts の「付箋の中身がはみ出さない」で検知する）。
       width: 240, height: 155,
-      text: '<b>Skills</b><br><br><span class="muted">Loading...</span>',
+      text: `<b>Skills</b><br><br><span class="muted">${LOADING}</span>`,
       color: C.skills,
       zIndex: 1,
     },
@@ -171,7 +195,7 @@ export const boardData: WemaBoardData = {
       width: 280, height: 220,
       // more... は静的なテキストにも置く。/api/blog が落ちた日に、API を要らない
       // 唯一の行き先（自分のブログ）まで辿れなくなるのは割に合わない。
-      text: `<b>Blog</b><br><br><span class="muted">Loading...</span>${moreLink('/blog/')}`,
+      text: `<b>Blog</b><br><br><span class="muted">${LOADING}</span>${moreLink('/blog/')}`,
       color: C.blog,
       zIndex: 1,
     },

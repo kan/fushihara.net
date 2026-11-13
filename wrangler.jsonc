@@ -5,12 +5,20 @@
   "compatibility_date": "2026-08-23",
   "assets": {
     "binding": "ASSETS",
-    // このサイトはクライアントルータを持たないので SPA モードにはしない。
-    // dist に 404.html を置けばそれが返る。
-    "not_found_handling": "404-page",
-    // Workers は既定で assets を先に見るため、API パスだけ Worker に流す
-    // (Pages の _routes.json 相当)。
-    "run_worker_first": ["/api/*"]
+    // **not_found_handling は指定しない（既定の "none"）。** どのアセットにも
+    // 一致しないリクエストを Worker に回すため。Worker が robots.txt と
+    // sitemap.xml を組み、`Accept: text/markdown` の 404 には Markdown を返す
+    // （worker/pages.ts）。
+    //
+    // 以前の "404-page" でも、404.html が無い今はローカルの workerd で Worker に
+    // 届いた（実測）。ただし 404.html を置いた日にアセット側が答えて Worker に
+    // 届かなくなるので、外れたリクエストを Worker に回すと文書化されている
+    // "none" にしてある。
+    //
+    // Workers は既定で assets を先に見るため、API パスとトップページだけ Worker に
+    // 流す (Pages の _routes.json 相当)。`/` は `Accept` で HTML と Markdown を
+    // 出し分ける（HTML はそのまま ASSETS に渡す）。
+    "run_worker_first": ["/api/*", "/"]
   },
   // ブログ (/blog) を配っている別 Worker を直接呼ぶための binding。
   //

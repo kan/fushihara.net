@@ -17,6 +17,19 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ESCAPES[c]);
 }
 
+const UNESCAPES: Record<string, string> = Object.fromEntries(
+  Object.entries(ESCAPES).map(([c, e]) => [e, c]),
+);
+const ENTITY = new RegExp(Object.keys(UNESCAPES).join('|'), 'g');
+
+/**
+ * `escapeHtml()` の逆。付箋の text から Markdown を組むとき（`src/agent.ts`）に使う。
+ * **表は `ESCAPES` から作る**ので、逃がす文字を増やしても取り残されない。
+ */
+export function unescapeHtml(s: string): string {
+  return s.replace(ENTITY, (e) => UNESCAPES[e] ?? e);
+}
+
 /** カード右下の「more...」。サイト内（`/blog/`）は同じタブで開く */
 export function moreLink(href: string): string {
   const target = href.startsWith('/') ? '' : ' target="_blank"';

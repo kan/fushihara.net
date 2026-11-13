@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { OWNER_URL, SOCIAL_URLS } from '../../shared/profile.ts';
 import { STORAGE_KEY } from '../../shared/theme.ts';
 import { SITE } from '../src/site/meta.ts';
 import { ID, MOUNT, ORIGIN, url } from './helpers.ts';
@@ -517,6 +518,85 @@ test.describe('配信物', () => {
       'href',
       url.asset('rss.xml'),
     );
+  });
+});
+
+/**
+ * CONTRACT.md の「AI エージェント向け」。画面には何も出ないので、HTTP のヘッダーと
+ * 本文だけで見る。
+ */
+test.describe('AI エージェント向け', () => {
+  const MARKDOWN = { Accept: 'text/markdown' };
+  const BROWSER = { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' };
+
+  test('記事は Accept: text/markdown に同じ URL で原本の Markdown を返す', async ({ request }) => {
+    const res = await request.get(POST, { headers: MARKDOWN });
+    const body = await res.text();
+
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toBe('text/markdown; charset=utf-8');
+    expect(res.headers()['vary']).toContain('Accept');
+    // エッジは Vary: Accept を見ないので、Markdown を共有キャッシュに載せない
+    expect(res.headers()['cache-control']).toContain('private');
+    expect(res.headers()['link']).toContain('rel="alternate"; type="text/html"');
+    expect(body).toContain(`# ${POST_TITLE}`);
+    // 原本の Markdown で、HTML への変換ではない
+    expect(body).toContain('**E2E のフィクスチャ**');
+    // 添付の相対参照は絶対 URL になる（エージェントは相対 URL を解決できないことがある）
+    // リンク先を `(<URL>)` で包むかどうかは生成器の自由なので、URL だけを見る
+    expect(body).not.toContain('./sample.png');
+    expect(body).toMatch(new RegExp(`\\(<?${SITE_URL}${MOUNT}/media/[^)>]+/sample\\.png>?\\)`));
+  });
+
+  test('一覧は記事へのリンクの一覧を返す', async ({ request }) => {
+    const res = await request.get(url.index(), { headers: MARKDOWN });
+    const body = await res.text();
+
+    expect(res.headers()['content-type']).toBe('text/markdown; charset=utf-8');
+    // リンク先を `(<URL>)` で包むかどうかは生成器の自由なので、どちらも通す
+    expect(body).toMatch(new RegExp(`\\[${POST_TITLE}\\]\\(<?${SITE_URL}${POST}>?\\)`));
+    expect(body).not.toContain('下書きの例');
+  });
+
+  test('ブラウザには HTML を返し、Markdown 版とサイトマップとフィードを Link で指す', async ({
+    request,
+  }) => {
+    const res = await request.get(POST, { headers: BROWSER });
+    const link = res.headers()['link'] ?? '';
+
+    expect(res.headers()['content-type']).toContain('text/html');
+    expect(res.headers()['vary']).toContain('Accept');
+    expect(link).toContain('rel="alternate"; type="text/markdown"');
+    expect(link).toContain('rel="sitemap"');
+    expect(link).toContain('rel="alternate"; type="application/rss+xml"');
+  });
+
+  test('404 は Markdown でも 404 のまま', async ({ request }) => {
+    const res = await request.get(url.post('no-such-post'), { headers: MARKDOWN });
+
+    expect(res.status()).toBe(404);
+    expect(res.headers()['content-type']).toBe('text/markdown; charset=utf-8');
+  });
+
+  test('記事と一覧の JSON-LD に、本体と同じ著者が載る', async ({ page }) => {
+    const read = async () => {
+      const scripts = await page.locator('script[type="application/ld+json"]').allTextContents();
+      expect(scripts).toHaveLength(1);
+      return JSON.parse(scripts[0]!) as {
+        '@type': string;
+        author?: { url?: string; sameAs?: string[] };
+      };
+    };
+
+    await page.goto(POST);
+    const post = await read();
+    expect(post['@type']).toBe('BlogPosting');
+    // 本体の rel="me" と JSON-LD と同じ一覧（shared/profile.ts）
+    expect(post.author?.url).toBe(OWNER_URL);
+    expect(post.author?.sameAs).toEqual(SOCIAL_URLS);
+
+    await page.goto(url.index());
+    expect((await read())['@type']).toBe('Blog');
   });
 });
 

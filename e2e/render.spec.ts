@@ -263,6 +263,78 @@ test('rel=me が Social 付箋のアカウントと一致する', async ({ page 
   expect(declared).toEqual(shown);
 });
 
+test.describe('AI エージェント向け', () => {
+  // ヘッダーと本文だけを見るので、ブラウザは要らない。desktop / mobile の
+  // どちらかで 1 回だけ回す
+  test.skip(({ isMobile }) => isMobile, 'ブラウザの幅に依らない');
+
+  test('JSON-LD の sameAs が rel=me と一致する', async ({ page }) => {
+    await page.goto('/');
+
+    const declared = await page.locator('head link[rel="me"]').evaluateAll((links) =>
+      links.map((link) => (link as HTMLLinkElement).getAttribute('href')),
+    );
+    const scripts = await page.locator('script[type="application/ld+json"]').allTextContents();
+    expect(scripts).toHaveLength(1);
+    const graph = (JSON.parse(scripts[0]!) as { '@graph': { '@type': string; sameAs?: string[] }[] })['@graph'];
+    const person = graph.find((n) => n['@type'] === 'Person');
+
+    expect(declared.length).toBeGreaterThan(0);
+    expect(person?.sameAs).toEqual(declared);
+  });
+
+  test('Accept: text/markdown には同じ URL で Markdown を返す', async ({ page, request }) => {
+    await page.goto('/');
+    const title = await page.title();
+
+    const res = await request.get('/', { headers: { Accept: 'text/markdown' } });
+    const body = await res.text();
+
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toBe('text/markdown; charset=utf-8');
+    expect(res.headers()['vary']).toContain('Accept');
+    expect(res.headers()['link']).toContain('rel="alternate"; type="text/html"');
+    // frontmatter のタイトルは HTML の <title> と同じ（src/agent.ts の SITE_TITLE）
+    expect(body).toContain(`title: ${JSON.stringify(title)}`);
+    // 付箋の文言がそのまま入っている
+    expect(body).toContain('# KAN Fushihara');
+    expect(body).toContain(`(mailto:${EMAIL})`);
+    for (const name of OSS_REPOS) expect(body).toContain(`[${name}]`);
+  });
+
+  test('ブラウザには今までどおり HTML を返し、Markdown 版を Link で指す', async ({ request }) => {
+    const res = await request.get('/', {
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+    });
+
+    expect(res.headers()['content-type']).toContain('text/html');
+    expect(res.headers()['vary']).toContain('Accept');
+    expect(res.headers()['link']).toContain('</>; rel="alternate"; type="text/markdown"');
+    expect(await res.text()).toContain('<div id="app">');
+  });
+
+  test('404 は Markdown でも 404 のまま', async ({ request }) => {
+    const md = await request.get('/does-not-exist', { headers: { Accept: 'text/markdown' } });
+    expect(md.status()).toBe(404);
+    expect(md.headers()['content-type']).toBe('text/markdown; charset=utf-8');
+    expect(await md.text()).toContain('/sitemap.xml');
+
+    const html = await request.get('/does-not-exist');
+    expect(html.status()).toBe(404);
+    expect(html.headers()['content-type'] ?? '').not.toContain('markdown');
+  });
+
+  test('robots.txt が sitemap.xml を指し、sitemap.xml が配られる', async ({ request }) => {
+    const robots = await request.get('/robots.txt');
+    expect(robots.status()).toBe(200);
+    expect(await robots.text()).toMatch(/^Sitemap: https:\/\/fushihara\.net\/sitemap\.xml$/m);
+
+    const sitemap = await request.get('/sitemap.xml');
+    expect(sitemap.status()).toBe(200);
+    expect(await sitemap.text()).toContain('<loc>https://fushihara.net/</loc>');
+  });
+});
+
 test('API が全滅しても静的な内容は残る', async ({ page }) => {
   await page.route('**/api/**', (r) => r.fulfill({ status: 500, body: 'boom' }));
 

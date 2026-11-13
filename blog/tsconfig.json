@@ -40,6 +40,7 @@
     "vitest.config.ts",
     "worker-configuration.d.ts",
     "../shared/theme.ts",
+    "../shared/profile.ts",
     "../shared/tokens.css"
   ]
 }

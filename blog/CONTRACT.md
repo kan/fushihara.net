@@ -93,6 +93,30 @@ export → import で `public_id` と canonical path が変わる実装は、こ
   `CLAUDE.md`）。生成器を替えるときは、`title` / `url` / `published_at` が
   そのまま読めることを確認する
 
+## AI エージェント向け
+
+**URL は増やさない。** 同じ URL が `Accept` で HTML と Markdown を出し分ける
+（経緯はリポジトリ直下の issue #58）。
+
+- **`text/markdown` が `text/html` より上に来るリクエストにだけ Markdown を返す。**
+  同点は HTML。ブラウザ、`Accept` の無い `curl`、素の `fetch` には HTML を返す
+- 対象は一覧（ページ送りを含む）、タグの一覧、記事、404。記事は**原本の Markdown**
+  （HTML からの変換ではない）で、添付の相対参照は絶対 URL にして返す。一覧は
+  記事へのリンクの一覧。**404 は Markdown でもステータス 404 のまま**
+- **出し分けるレスポンスには `Vary: Accept` を付け、Markdown は共有キャッシュに
+  載せない**（`private`）。Cloudflare のエッジは `Accept-Encoding` 以外の `Vary` を
+  見ないので、載せると次にブラウザで開いた人に Markdown が返る
+- `Link` ヘッダーで、同じ URL のもう片方の形（`rel="alternate"`）、サイトマップ
+  （`rel="sitemap"`）、RSS（`rel="alternate"; type="application/rss+xml"`）を指す
+- 一覧・タグ・記事の HTML は JSON-LD（`Blog` / `CollectionPage` / `BlogPosting`）を
+  持つ。**著者の `url` と `sameAs` は本体サイトと同じ値。** 値の正はリポジトリ直下の
+  `shared/profile.ts` で、本体の `<link rel="me">` とトップページの JSON-LD も
+  そこから出る。そのため `/` と `/blog/` が同じ人として読める
+- robots.txt は、本体の Worker が配るルートの 1 枚をブログも共有する。管理画面と
+  管理 API はそこで `Disallow` してある
+
+`e2e/blog.spec.ts` の「AI エージェント向け」が見ている。
+
 ## 日付
 
 表示・`<time datetime>`・`pubDate` はすべて **Asia/Tokyo 基準**。動かす機械の TZ に
