@@ -647,6 +647,19 @@ test.describe('AI エージェント向け', () => {
       remotes: { url: string }[];
     };
     expect(card.remotes[0]?.url).toBe(`${SITE_URL}${url.asset('mcp')}`);
+
+    // AI Catalog は Server Card を指す。ARD はエントリの displayName を必須にしていて、
+    // 無いと isitagentready の ard の検査が「有効なエントリが無い」と落とす（#59）
+    const catalog = (await (await request.get(url.asset('.well-known/ai-catalog.json'))).json()) as {
+      host?: { displayName?: string };
+      entries: { displayName?: string; type: string; url?: string }[];
+    };
+    expect(catalog.host?.displayName).toBe(SITE_NAME);
+    expect(catalog.entries[0]).toMatchObject({
+      displayName: SITE_NAME,
+      type: 'application/mcp-server-card+json',
+      url: `${SITE_URL}${url.asset('mcp/server-card')}`,
+    });
   });
 
   /**
