@@ -629,6 +629,7 @@ sitemap.xml もこの経路で返している（静的ファイルではない�
 | `/`（それ以外） | 静的な `index.html`。`env.ASSETS.fetch(request)` にそのまま渡す |
 | `/robots.txt` | AI のクローラを含めて全部許可。ブログの管理画面と API（`/blog/admin/` と `/blog/api/`）だけ `Disallow` |
 | `/sitemap.xml` | `/` の 1 件だけ。ブログの記事はブログのサイトマップが持つ |
+| `/.well-known/api-catalog` / `ai-catalog.json` / `mcp/server-card.json` | ブログ（lily）の文書へ 307 で転送する（`worker/pages.ts` の `WELL_KNOWN_REDIRECTS`） |
 | どれにも一致しないもの | `Accept: text/markdown` なら Markdown の 404。それ以外は素の 404 |
 
 - **Markdown は付箋のデータ（`board-data.ts`）から組む。** `index.html` には
@@ -651,7 +652,8 @@ sitemap.xml もこの経路で返している（静的ファイルではない�
   `env.ASSETS.fetch(request)` に渡し、返ってきたものに `Vary: Accept` と `Link` を
   足すだけ（`Vary` は上書きせずに足す）
 - **`Link` は `rel="alternate"`**（同じ URL のもう片方の形と、ブログの RSS）と
-  `rel="sitemap"`。isitagentready は `alternate` で合格にする
+  `rel="sitemap"`、`rel="api-catalog"`（`worker/pages.ts` の `DISCOVERY`）。
+  isitagentready は `alternate` で合格にする
 - **robots.txt の方針（全部許可、`ai-train=yes` を含む）はユーザーの判断。**
   AI のクローラは名指しのグループにも同じ規則を書いてある。自分の名前のグループが
   あるクローラは `*` のグループを読まないので（RFC 9309）、`Disallow` も
@@ -670,6 +672,34 @@ sitemap.xml もこの経路で返している（静的ファイルではない�
   付箋に直書きすると Markdown に漏れる
 - `test/worker.test.ts` と `test/agent.test.ts`、`e2e/render.spec.ts` の
   「AI エージェント向け」が見ている
+
+#### root の `/.well-known/`
+
+**root の `/.well-known/` は本体が受ける。** lily は mount（`/blog`）の外を配らないため。
+経緯は [issue #59](https://github.com/kan/fushihara.net/issues/59)。転送の表は
+`worker/pages.ts` の `WELL_KNOWN_REDIRECTS`。
+
+- **中身を写さずに転送する。** RFC 9727 が、同じ文書を複数の場所に置くときは転送を
+  勧めているため。中身の正はブログ側の 1 つになる
+- **`mcp/server-card.json` は lily の置き場（`/blog/mcp/server-card`）と名前が違う。**
+  isitagentready は SEP-1649 の決まった名前（`/.well-known/mcp/server-card.json` など）しか
+  見ない。`/blog/mcp/server-card` は見に行かない（2026-11-14 に isitagentready の
+  llms-full.txt で確認）
+- **307 にする。** 308 / 301 はブラウザが恒久的に覚えるので、行き先を変えた日に戻せない
+- **307 にも `Access-Control-Allow-Origin: *` を付け、OPTIONS には 204 を返す。** lily は
+  3 文書とも `*` で配るが、別のオリジンのブラウザは 307 の時点で CORS の検査を通れない。
+  GET / HEAD / OPTIONS 以外は 405
+- **API Catalog は 307 にも `Link: rel="api-catalog"` を付ける**（RFC 9727 の 2 節）。
+  転送を追わずに HEAD の応答だけを見るクライアントのため
+- **転送は `PAGES` より先に引く**（`worker/index.ts`）。`PAGES` は GET / HEAD しか
+  通さないので、そこに入れると OPTIONS が 404 になる
+- `/.well-known/*` は `run_worker_first` に入れていない。静的アセットに無いので
+  Worker に届く（上の「ルーティング設定」の `not_found_handling`）
+- **lily で `mcp: false` にしたら、`ai-catalog.json` と `mcp/server-card.json` の行を消す。**
+  lily はその 2 つを配らなくなり、転送の先が 404 になる
+- **転送先が実在するかはテストで見ていない**（lily のパスは本体のテストから引けない）。
+  lily を上げたら `curl -sIL https://fushihara.net/.well-known/api-catalog` などで確かめる
+- `test/worker.test.ts` の「root の /.well-known/」が見ている
 
 ### tsconfig を分けている理由
 

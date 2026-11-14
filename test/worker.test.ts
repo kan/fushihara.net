@@ -217,6 +217,60 @@ describe('robots.txt と sitemap.xml', () => {
   });
 });
 
+describe('root の /.well-known/', () => {
+  it.each([
+    ['/.well-known/api-catalog', '/blog/.well-known/api-catalog'],
+    ['/.well-known/ai-catalog.json', '/blog/.well-known/ai-catalog.json'],
+    // isitagentready が見る名前（SEP-1649）。lily の置き場とは名前が違う
+    ['/.well-known/mcp/server-card.json', '/blog/mcp/server-card'],
+  ])('%s はブログの %s へ 307 で転送する', async (path, target) => {
+    for (const method of ['GET', 'HEAD']) {
+      const res = await call(path, { method });
+      expect(res.status, method).toBe(307);
+      expect(res.headers.get('Location'), method).toBe(target);
+      // 転送先（lily）と同じく別のオリジンから読める。307 で CORS に落ちると先へ進めない
+      expect(res.headers.get('Access-Control-Allow-Origin'), method).toBe('*');
+    }
+    expect(assets).not.toHaveBeenCalled();
+    expect(blogService).not.toHaveBeenCalled();
+  });
+
+  it('API Catalog は 307 にも Link: rel="api-catalog" を付ける（RFC 9727 の 2 節）', async () => {
+    for (const method of ['GET', 'HEAD']) {
+      const res = await call('/.well-known/api-catalog', { method });
+      expect(res.headers.get('Link'), method).toBe('</.well-known/api-catalog>; rel="api-catalog"');
+    }
+    expect((await call('/.well-known/ai-catalog.json')).headers.get('Link')).toBeNull();
+  });
+
+  it('OPTIONS には CORS の 204、ほかのメソッドには 405 を返す', async () => {
+    const preflight = await call('/.well-known/mcp/server-card.json', { method: 'OPTIONS' });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(preflight.headers.get('Access-Control-Allow-Methods')).toBe('GET, HEAD');
+
+    const post = await call('/.well-known/api-catalog', { method: 'POST' });
+    expect(post.status).toBe(405);
+    expect(assets).not.toHaveBeenCalled();
+  });
+
+  it('クエリは転送先へ引き継ぐ', async () => {
+    const res = await call('/.well-known/api-catalog?x=1');
+    expect(res.headers.get('Location')).toBe('/blog/.well-known/api-catalog?x=1');
+  });
+
+  it('知らない well-known は 404 のまま', async () => {
+    const res = await call('/.well-known/agent-card.json');
+    expect(res.status).toBe(404);
+  });
+
+  it('トップページの Link が API Catalog を指す', async () => {
+    assets.mockResolvedValueOnce(new Response('<html></html>'));
+    const res = await call('/');
+    expect(res.headers.get('Link')).toContain('</.well-known/api-catalog>; rel="api-catalog"');
+  });
+});
+
 describe('404', () => {
   it('HTML はアセットの 404 をそのまま返す', async () => {
     const res = await call('/nope');

@@ -1,5 +1,5 @@
 import { blog, githubLanguages, githubRepos, jsonError } from './api';
-import { home, notFound, robots, sitemap } from './pages';
+import { home, notFound, robots, sitemap, WELL_KNOWN } from './pages';
 
 /**
  * API 以外で Worker が組むページ。**キャッシュ（`caches.default`）は通さない。**
@@ -84,6 +84,11 @@ export default {
     // どの静的アセットにも一致しなかったリクエスト（`not_found_handling` を
     // 指定していないので、アセット側は 404 を返さずにこちらへ回す）。
     if (!route) {
+      // root の /.well-known/ の転送。メソッド（OPTIONS / 405）は転送のハンドラが見る。
+      // `run_worker_first` に入れていないが、静的アセットに無いのでここに届く
+      const wellKnown = WELL_KNOWN[url.pathname];
+      if (wellKnown) return wellKnown(request);
+
       const page = PAGES[url.pathname];
       if (page && (request.method === 'GET' || request.method === 'HEAD')) return page(request, env);
       return notFound(request, env);

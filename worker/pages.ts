@@ -48,10 +48,31 @@ export function prefersMarkdown(accept: string | null): boolean {
   return markdown > 0 && markdown > quality('text/html');
 }
 
-/** `Link` の共通部分。サイトマップとブログのフィード */
+/** root の API Catalog（RFC 9727）。中身はブログ（lily）のもので、下の転送で届ける */
+export const API_CATALOG_PATH = '/.well-known/api-catalog';
+
+/**
+ * root の `/.well-known/` から、ブログ（lily）の文書への転送。issue #59。
+ *
+ * **lily は mount（`/blog`）の外を配らない**ので、root の well-known は本体が受ける。
+ * 中身を写さずに転送するのは、RFC 9727 が同じ文書を複数の場所に置くときは転送を
+ * 勧めているため（中身の正はブログの 1 つだけになる）。
+ *
+ * - `/.well-known/mcp/server-card.json` は lily の置き場（`/blog/mcp/server-card`）と
+ *   名前が違う。isitagentready はこの名前（SEP-1649 の場所）しか見ない
+ * - **307 にする。** 308 / 301 はブラウザが恒久的に覚えるので、行き先を変えた日に戻せない
+ */
+export const WELL_KNOWN_REDIRECTS: Readonly<Record<string, string>> = {
+  [API_CATALOG_PATH]: '/blog/.well-known/api-catalog',
+  '/.well-known/ai-catalog.json': '/blog/.well-known/ai-catalog.json',
+  '/.well-known/mcp/server-card.json': '/blog/mcp/server-card',
+};
+
+/** `Link` の共通部分。サイトマップ、ブログのフィード、API Catalog */
 const DISCOVERY = [
   `<${SITEMAP_PATH}>; rel="sitemap"; type="application/xml"`,
   `<${BLOG_PATHS.feed}>; rel="alternate"; type="application/rss+xml"`,
+  `<${API_CATALOG_PATH}>; rel="api-catalog"`,
 ];
 
 /** トップページの `Link`。**同じ URL のもう片方の形**を `alternate` で指す */
@@ -120,6 +141,52 @@ export function robots(request: Request): Response {
 export function sitemap(request: Request): Response {
   return text(request, sitemapXml(), 'application/xml; charset=utf-8');
 }
+
+/**
+ * 転送 1 本分。**メソッドの扱いもここで持つ**（`PAGES` は GET / HEAD しか通さないため、
+ * `worker/index.ts` はこちらを先に引く）。
+ *
+ * - **`Access-Control-Allow-Origin: *` を付ける。** 転送先（lily）は 3 文書とも `*` で
+ *   配るが、別のオリジンのブラウザは 307 の時点で CORS の検査に落ちて先へ進めない。
+ *   OPTIONS（`If-None-Match` などで飛ぶ preflight）には 204 を返す
+ * - **API Catalog は 307 にも `Link: rel="api-catalog"` を付ける**（RFC 9727 の 2 節の
+ *   SHALL）。転送を追わずに HEAD の応答だけを見るクライアントにも見えるように
+ * - GET / HEAD / OPTIONS 以外は 405。クエリは転送先へそのまま渡す
+ */
+function redirectTo(target: string, link: string | null) {
+  return (request: Request): Response => {
+    const cors = { 'Access-Control-Allow-Origin': '*' };
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          ...cors,
+          'Access-Control-Allow-Methods': 'GET, HEAD',
+          'Access-Control-Allow-Headers': '*',
+        },
+      });
+    }
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
+    }
+    const headers: Record<string, string> = {
+      ...cors,
+      Location: `${target}${new URL(request.url).search}`,
+      'Cache-Control': 'public, max-age=3600',
+    };
+    if (link !== null) headers.Link = link;
+    return new Response(null, { status: 307, headers });
+  };
+}
+
+/** `WELL_KNOWN_REDIRECTS` の各パスのハンドラ。`worker/index.ts` が `PAGES` より先に引く */
+export const WELL_KNOWN: Readonly<Record<string, (request: Request) => Response>> =
+  Object.fromEntries(
+    Object.entries(WELL_KNOWN_REDIRECTS).map(([path, target]) => [
+      path,
+      redirectTo(target, path === API_CATALOG_PATH ? `<${API_CATALOG_PATH}>; rel="api-catalog"` : null),
+    ]),
+  );
 
 /**
  * どの静的アセットにも一致しなかったリクエスト。
