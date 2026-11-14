@@ -66,6 +66,9 @@ export → import で `public_id` と canonical path が変わる実装は、こ
 | `/blog/rss.xml` | RSS 2.0。全文配信 |
 | `/blog/atom.xml` | Atom。全文配信 |
 | `/blog/posts.json` | 本体サイトの Blog 付箋が読む口 |
+| `/blog/search.json?q=` | 公開記事の全文検索。下書きは索引に入らない |
+| `/blog/mcp` / `/blog/mcp/server-card` | MCP サーバー（読み取りのツールだけ）と、その Server Card |
+| `/blog/.well-known/api-catalog` / `ai-catalog.json` | API Catalog（RFC 9727）と AI Catalog。root の `/.well-known/` は本体の Worker が配る |
 | `/blog/media/<public_id>/<filename>` | 添付 |
 | `/blog/sitemap-index.xml` / `/blog/sitemap-0.xml` | サイトマップ（2 本に分けるのは現行の URL を維持するため） |
 | `/blog/styles.css` | スタイルシート |
@@ -95,8 +98,9 @@ export → import で `public_id` と canonical path が変わる実装は、こ
 
 ## AI エージェント向け
 
-**URL は増やさない。** 同じ URL が `Accept` で HTML と Markdown を出し分ける
-（経緯はリポジトリ直下の issue #58）。
+**Markdown のために URL は増やさない。** 同じ URL が `Accept` で HTML と Markdown を
+出し分ける（経緯はリポジトリ直下の issue #58）。検索と MCP は別の URL を持つ
+（issue #59。上の URL の表）。
 
 - **`text/markdown` が `text/html` より上に来るリクエストにだけ Markdown を返す。**
   同点は HTML。ブラウザ、`Accept` の無い `curl`、素の `fetch` には HTML を返す
@@ -107,7 +111,14 @@ export → import で `public_id` と canonical path が変わる実装は、こ
   載せない**（`private`）。Cloudflare のエッジは `Accept-Encoding` 以外の `Vary` を
   見ないので、載せると次にブラウザで開いた人に Markdown が返る
 - `Link` ヘッダーで、同じ URL のもう片方の形（`rel="alternate"`）、サイトマップ
-  （`rel="sitemap"`）、RSS（`rel="alternate"; type="application/rss+xml"`）を指す
+  （`rel="sitemap"`）、RSS（`rel="alternate"; type="application/rss+xml"`）を指す。
+  API Catalog（`rel="api-catalog"`）も指す
+- **検索と MCP は公開記事だけを返し、書き込むツールを持たない。** 公開ページで既に
+  見えるもの以上は出さない。レート制限は lily に無い（要るなら Cloudflare の
+  rate limiting rule を掛ける）
+- 一覧・タグ・記事の HTML は WebMCP（`document.modelContext`）で `search_posts` /
+  `get_post` を登録する。**スクリプトを組むのは lily、置くのは自前のテーマ**
+  （`src/site/layout.ts`）。置き忘れても画面は変わらない
 - 一覧・タグ・記事の HTML は JSON-LD（`Blog` / `CollectionPage` / `BlogPosting`）を
   持つ。**著者の `url` と `sameAs` は本体サイトと同じ値。** 値の正はリポジトリ直下の
   `shared/profile.ts` で、本体の `<link rel="me">` とトップページの JSON-LD も

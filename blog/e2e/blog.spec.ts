@@ -585,6 +585,105 @@ test.describe('AI エージェント向け', () => {
     expect(res.headers()['content-type']).toBe('text/markdown; charset=utf-8');
   });
 
+  test('search.json が公開記事だけを検索する', async ({ request }) => {
+    const search = async (q: string) => {
+      const res = await request.get(`${url.asset('search.json')}?q=${encodeURIComponent(q)}`);
+      expect(res.status(), q).toBe(200);
+      return ((await res.json()) as { posts: { title: string; url: string }[] }).posts;
+    };
+
+    const hits = await search(POST_TITLE);
+    expect(hits.map((post) => post.title)).toContain(POST_TITLE);
+    expect(hits.find((post) => post.title === POST_TITLE)?.url).toBe(`${SITE_URL}${POST}`);
+    // 下書きの本文にしか無い語。下書きは索引に入らない
+    expect(await search('プレビュー URL でだけ見える')).toEqual([]);
+  });
+
+  test('一覧と記事の Link が API Catalog を指し、カタログが検索と MCP を載せる', async ({
+    request,
+  }) => {
+    const catalog = `${SITE_URL}${url.asset('.well-known/api-catalog')}`;
+    for (const path of [url.index(), POST]) {
+      expect((await request.get(path, { headers: BROWSER })).headers()['link'], path).toContain(
+        `<${catalog}>; rel="api-catalog"`,
+      );
+    }
+
+    const res = await request.get(url.asset('.well-known/api-catalog'));
+    expect(res.headers()['content-type']).toContain('application/linkset+json');
+    const { linkset } = (await res.json()) as { linkset: { anchor: string }[] };
+    expect(linkset.map((entry) => entry.anchor)).toEqual(
+      expect.arrayContaining([
+        `${SITE_URL}${url.asset('search.json')}`,
+        `${SITE_URL}${url.asset('mcp')}`,
+      ]),
+    );
+    // RFC 9727 の 2 節。HEAD にも Link: rel="api-catalog" が要る
+    const head = await request.head(url.asset('.well-known/api-catalog'));
+    expect(head.headers()['link']).toContain('rel="api-catalog"');
+  });
+
+  test('MCP サーバーが読み取りの道具を 3 つ返し、Server Card が公開 URL を指す', async ({
+    request,
+  }) => {
+    const res = await request.post(url.asset('mcp'), {
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+    });
+    expect(res.status()).toBe(200);
+    // 応答は JSON でも SSE（`data: {…}`）でもよい
+    const text = await res.text();
+    const json = text.trimStart().startsWith('{')
+      ? text
+      : text.split('\n').find((line) => line.startsWith('data: '))!.slice('data: '.length);
+    const { result } = JSON.parse(json) as { result: { tools: { name: string }[] } };
+    expect(result.tools.map((tool) => tool.name).sort()).toEqual([
+      'get_post',
+      'list_tags',
+      'search_posts',
+    ]);
+
+    const card = (await (await request.get(url.asset('mcp/server-card'))).json()) as {
+      remotes: { url: string }[];
+    };
+    expect(card.remotes[0]?.url).toBe(`${SITE_URL}${url.asset('mcp')}`);
+  });
+
+  /**
+   * WebMCP はテーマが置く（`src/site/layout.ts`）。置き忘れても画面は変わらないので、
+   * `document.modelContext` を差し込んで登録された道具を数える。
+   */
+  test('記事と一覧で WebMCP の道具が登録され、404 では登録されない', async ({ page }) => {
+    await page.addInitScript(() => {
+      const tools: { name: string; execute: (input: unknown) => Promise<unknown> }[] = [];
+      Object.assign(window, { __tools: tools });
+      Object.defineProperty(document, 'modelContext', {
+        value: { registerTool: (tool: (typeof tools)[number]) => void tools.push(tool) },
+      });
+    });
+    const names = () =>
+      page.evaluate(() =>
+        (window as unknown as { __tools: { name: string }[] }).__tools.map((t) => t.name).sort(),
+      );
+
+    for (const path of [url.index(), POST]) {
+      await page.goto(path);
+      expect(await names(), path).toEqual(['get_post', 'search_posts']);
+    }
+
+    // 登録した道具が、そのページから実際に検索できる
+    const found = await page.evaluate(async (q) => {
+      const { __tools } = window as unknown as {
+        __tools: { name: string; execute: (input: unknown) => Promise<unknown> }[];
+      };
+      return JSON.stringify(await __tools.find((t) => t.name === 'search_posts')!.execute({ query: q }));
+    }, POST_TITLE);
+    expect(found).toContain(POST_TITLE);
+
+    await page.goto(url.post('no-such-post'));
+    expect(await names()).toEqual([]);
+  });
+
   test('記事と一覧の JSON-LD に、本体と同じ著者が載る', async ({ page }) => {
     const read = async () => {
       const scripts = await page.locator('script[type="application/ld+json"]').allTextContents();

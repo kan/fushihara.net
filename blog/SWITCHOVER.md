@@ -189,6 +189,13 @@ npx wrangler d1 export DB -c ./wrangler.jsonc --remote --output ~/backup/…/lil
 # 添付は media テーブルの r2_key を回して wrangler r2 object get
 ```
 
+**lily 0.7.0 からは、この `wrangler d1 export` はそのままでは通らない。** 検索の索引
+（`posts_fts`。FTS5 の仮想テーブル）があると D1 は export を拒む。索引のトリガーと
+表を落としてから export し、`0004_posts_fts.sql` で作り直す。手順は lily の
+[docs/portable.md](https://github.com/kan/lily/blob/main/docs/portable.md#exporting-d1-with-the-search-index)
+（どのコマンドにも `-c ./wrangler.jsonc` を付ける）。記事を外へ出すだけなら、
+portable export（`/blog/api/export` の zip）と R2 への日次の控えはこの影響を受けない。
+
 ### 5-1. Worker 名の変更（`fushihara-net-lily` → `fushihara-blog`）
 
 **これも route の付け替えなので、手順 2 と同じ制約を受ける。** 同じ route を 2 つの

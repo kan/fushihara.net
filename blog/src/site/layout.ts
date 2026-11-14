@@ -54,7 +54,7 @@ export async function layout(
   options: LayoutOptions,
   body: HtmlEscapedString | Promise<HtmlEscapedString>,
 ): Promise<string> {
-  const { site, urls, canonicalUrl, jsonLd } = context;
+  const { site, urls, canonicalUrl, jsonLd, webMcp } = context;
   const title = pageTitle(site.name, options.page);
   const description = options.description ?? site.description;
   const brand = options.brandIsHeading ? 'h1' : 'p';
@@ -110,6 +110,11 @@ export async function layout(
          **組むのも script 要素向けに逃がすのも lily**（core）で、テーマは置くだけ。
          ここで逃がし直すと JSON が壊れる。404 とプレビューでは null。 -->
     ${jsonLd == null ? '' : html`<script type="application/ld+json">${raw(jsonLd)}</script>`}
+
+    <!-- WebMCP（document.modelContext）で search_posts / get_post を登録する。
+         **組むのは lily**（core）で、テーマは置くだけ。置かないと道具がページに出ない。
+         WebMCP の無いブラウザでは何もしない。404 とプレビューでは null。 -->
+    ${webMcp == null ? '' : html`<script>${raw(webMcp)}</script>`}
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
