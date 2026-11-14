@@ -25,6 +25,13 @@ const SITE_URL: string = SITE.url;
 const pageTitle = (page: string) => `${page} | ${SITE_NAME}`;
 
 /**
+ * 正規表現に文字列を埋め込むときのエスケープ。素のままだと URL の `.` が任意の
+ * 1 文字に一致し、アサーションが緩くなる（CodeQL の `js/regex/missing-regexp-anchor`）。
+ * `RegExp.escape` は lib が `ES2022` のこの tsconfig では型が無いので自前で持つ。
+ */
+const re = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
  * ブラウザがデコードした実寸。**EXIF の回転を反映した値**が返る (読み込みが
  * 終わるまでは 0)。属性の検証はこれと突き合わせる。
  */
@@ -545,7 +552,7 @@ test.describe('AI エージェント向け', () => {
     // 添付の相対参照は絶対 URL になる（エージェントは相対 URL を解決できないことがある）
     // リンク先を `(<URL>)` で包むかどうかは生成器の自由なので、URL だけを見る
     expect(body).not.toContain('./sample.png');
-    expect(body).toMatch(new RegExp(`\\(<?${SITE_URL}${MOUNT}/media/[^)>]+/sample\\.png>?\\)`));
+    expect(body).toMatch(new RegExp(`\\(<?${re(SITE_URL + MOUNT)}/media/[^)>]+/sample\\.png>?\\)`));
   });
 
   test('一覧は記事へのリンクの一覧を返す', async ({ request }) => {
@@ -554,7 +561,7 @@ test.describe('AI エージェント向け', () => {
 
     expect(res.headers()['content-type']).toBe('text/markdown; charset=utf-8');
     // リンク先を `(<URL>)` で包むかどうかは生成器の自由なので、どちらも通す
-    expect(body).toMatch(new RegExp(`\\[${POST_TITLE}\\]\\(<?${SITE_URL}${POST}>?\\)`));
+    expect(body).toMatch(new RegExp(`\\[${re(POST_TITLE)}\\]\\(<?${re(SITE_URL + POST)}>?\\)`));
     expect(body).not.toContain('下書きの例');
   });
 
