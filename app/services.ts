@@ -36,13 +36,6 @@ export const SERVICES: Service[] = [
     url: 'https://rss.fushihara.net/',
   },
   {
-    // 複製元: kan/booky の src/favicon.ts
-    id: 'booky',
-    name: 'booky',
-    description: 'BOOKSCAN の PDF 整理',
-    url: 'https://booky.fushihara.net/',
-  },
-  {
     // 複製元: @kanf/wema-kake の dist/web/favicon.svg
     id: 'wema-kake',
     name: 'wema-kake',

@@ -18,7 +18,7 @@ import { SERVICES, iconPath, type Service } from '../services.ts';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dist = join(root, 'dist');
 
-const APP_NAME = 'fushihara.net apps';
+const APP_NAME = "kan app's";
 /** ホーム画面のアイコンの下に出る名前。長いと端末が省略する */
 const SHORT_NAME = 'apps';
 /** manifest の背景とテーマの色。アイコンの板（`public/icon.svg`）と同じ紺 */
