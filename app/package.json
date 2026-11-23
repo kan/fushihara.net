@@ -15,10 +15,10 @@
     "deploy": "npm run build && wrangler deploy -c ./wrangler.jsonc"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.6",
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",
-    "wrangler": "^4.161.0"
+    "wrangler": "^4.165.0"
   }
 }
